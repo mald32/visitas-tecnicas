@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visitas Técnicas</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2e6b3e">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header>
+  <h1>Visitas técnicas</h1>
+  <div class="header-derecha">
+    <span id="estado-conexion">-</span>
+    <button id="btn-sincronizar">Sincronizar</button>
+  </div>
+</header>
+
+<nav id="nav-tabs" hidden>
+  <button type="button" class="tab-boton activa" data-tab="capturar">Capturar</button>
+  <button type="button" class="tab-boton" data-tab="informes">Informes</button>
+</nav>
+
+<section id="pantalla-login" hidden>
+  <p>Conecta tu cuenta de Microsoft para capturar puntos de muestreo directo en tu Excel de OneDrive.</p>
+  <button id="btn-login">Conectar con Microsoft</button>
+</section>
+
+<!-- Paso 1: datos generales de la visita -->
+<section id="pantalla-visita" hidden>
+  <div id="resumen-hoy"></div>
+
+  <h2>Nueva visita</h2>
+
+  <label>Cliente
+    <select id="cliente"></select>
+  </label>
+  <div id="nuevo-cliente-caja" class="caja-nueva" hidden>
+    <label>Nombre del cliente nuevo <input id="nuevo-cliente" placeholder="Ej: Wilson"></label>
+  </div>
+
+  <label>Finca
+    <select id="finca"></select>
+  </label>
+  <div id="nueva-finca-caja" class="caja-nueva" hidden>
+    <label>Nombre de la finca nueva <input id="nueva-finca" placeholder="Ej: Soledad"></label>
+    <label>Número de lotes de esta finca
+      <input type="number" id="nueva-finca-lotes" min="1" max="20" value="2">
+    </label>
+    <p class="hint">Usualmente 1 o 2 lotes, pueden ser hasta 5 o más.</p>
+  </div>
+
+  <label>Fecha de la visita <input type="date" id="fecha"></label>
+
+  <button id="btn-iniciar-monitoreo">Iniciar monitoreo</button>
+</section>
+
+<!-- Paso 2: elegir lote a muestrear -->
+<section id="pantalla-lotes" hidden>
+  <h2>¿Qué lote vas a muestrear?</h2>
+  <p id="resumen-visita" class="hint"></p>
+  <div id="botones-lotes" class="grid-lotes"></div>
+  <button id="btn-nuevo-lote" class="secundario">+ Nuevo lote</button>
+  <button id="btn-fin-muestreo-lotes" class="secundario">Fin del muestreo</button>
+</section>
+
+<!-- Paso 3: capturar puntos de muestreo del lote elegido -->
+<section id="pantalla-punto" hidden>
+  <h2>Lote <span id="lote-actual-num"></span> · punto <span id="punto-actual-num"></span></h2>
+
+  <form id="form-punto">
+    <h3>Collaria scenica</h3>
+    <div class="fila">
+      <label>Individuos adultos <input type="number" id="adultos" min="0" required></label>
+      <label>Ninfas <input type="number" id="ninfas" min="0" required></label>
+    </div>
+    <div class="fila">
+      <label>Incidencia daño (%) <input type="number" id="incid-coll" min="0" max="100" step="any" required></label>
+      <label>Severidad daño (%) <input type="number" id="sev-coll" min="0" max="100" step="any" required></label>
+    </div>
+
+    <h3>Loritos y lepidópteros</h3>
+    <div class="fila">
+      <label>Número de loritos <input type="number" id="loritos" min="0" required></label>
+      <label>Número de lepidópteros <input type="number" id="lepidopteros" min="0" required></label>
+    </div>
+
+    <h3>Moluscos</h3>
+    <div class="fila">
+      <label>Hojas atacadas (#) <input type="number" id="hojas-moluscos" min="0" required></label>
+    </div>
+
+    <h3>Hongos del Kikuyo</h3>
+    <div class="fila">
+      <label>Incidencia mancha (%) <input type="number" id="incid-hongos" min="0" max="100" step="any" required></label>
+      <label>Severidad mancha (%) <input type="number" id="sev-hongos" min="0" max="100" step="any" required></label>
+    </div>
+
+    <h3>Observaciones de este punto</h3>
+    <label>Observaciones <textarea id="observaciones" rows="2"></textarea></label>
+
+    <button type="submit">Guardar punto</button>
+  </form>
+
+  <button id="btn-terminar-lote" class="secundario">Terminar lote</button>
+
+  <p id="resumen-cola" class="hint"></p>
+</section>
+
+<!-- Paso 4: fin de la visita -->
+<section id="pantalla-fin" hidden>
+  <h2>Visita guardada</h2>
+  <p id="resumen-final"></p>
+  <button id="btn-nueva-visita">Iniciar nueva visita</button>
+</section>
+
+<!-- Pestaña Informes -->
+<section id="pantalla-informes" hidden>
+  <h2>Generar informe</h2>
+
+  <label>Cliente <select id="informe-cliente"></select></label>
+  <label>Finca <select id="informe-finca"></select></label>
+  <label>Fecha de la visita <select id="informe-fecha"></select></label>
+
+  <button id="btn-generar-informe">Generar informe</button>
+  <p id="informe-estado" class="hint"></p>
+  <div id="informe-resultado" hidden>
+    <p>Informe listo.</p>
+    <button id="btn-ver-informe" class="secundario">Ver informe</button>
+    <a id="link-descargar-informe" class="secundario boton-enlace" download>Descargar informe (.html)</a>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4/lib/msal-browser.min.js"></script>
+<script src="config.js"></script>
+<script src="db.js"></script>
+<script src="graph.js"></script>
+<script src="informes.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
