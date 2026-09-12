@@ -170,10 +170,15 @@ const Informes = {
     });
 
     // Solo variables en "numero promedio de individuos" (se excluye Hojas por Moluscos, que es otra unidad).
-    // El umbral se deja fijo en 5 para las cuatro, igual escala para todas. Barras de error = +-1 desv. estandar / 2.
+    // Umbrales leidos en vivo de Configuracion (si falta alguno, se usa 5 como respaldo). Barras de error = +-1 desv. estandar / 2.
     const barrasEstatica = {
       categorias: ["Individuos Adultos de Collaria", "Ninfas de Collaria", "Individuos de Lorito", "Numero de Lepidopteros"],
-      umbrales: [5, 5, 5, 5],
+      umbrales: [
+        umbrales["Umbral de Adultos de Collaria"] ?? 5,
+        umbrales["Umbral de Ninfas de Collaria"] ?? 5,
+        umbrales["Umbral de Individuos de Lorito"] ?? 5,
+        umbrales["Umbral de Numero de Lepidopteros"] ?? 5,
+      ],
       lotes: Object.fromEntries(tablaLotes.map((t) => [
         String(t.lote), [t.adultos, t.ninfas, t.loritos, t.lepidopteros],
       ])),
