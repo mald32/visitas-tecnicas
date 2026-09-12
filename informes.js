@@ -261,10 +261,6 @@ const Informes = {
       <td${claseAlerta(t.pasto_sano, um("pasto_sano"), true)}>${fmt(t.pasto_sano, true)}</td>
     </tr>`).join("");
 
-    const alertasHtml = D.alertas.length
-      ? `<h2>Alertas de esta visita</h2><ul class="alertas-lista">${D.alertas.map((a) => `<li>${a}</li>`).join("")}</ul>`
-      : `<h2>Alertas de esta visita</h2><p class="hint">Ningun indicador supero su umbral en esta visita.</p>`;
-
     function manejoHtml(m) {
       const filasM = [
         ["Tipo de fumigacion", m.tipoFumigacion], ["Litros de mezcla/ha", m.litrosMezclaHa],
@@ -284,30 +280,30 @@ const Informes = {
       const manejo = manejoHtml(t.manejo);
       return `<div class="lote-bloque">
         <h3>Lote ${t.lote}${t.potrero ? ` — Potrero ${t.potrero}` : ""}</h3>
-        <div class="chart-box"><canvas id="barrasLote${t.lote}" width="700" height="260"></canvas></div>
-        <div class="torta-y-manejo">
+        <div class="lote-fila">
+          <div class="chart-box chart-barras"><canvas id="barrasLote${t.lote}" width="480" height="220"></canvas></div>
           <div class="torta-box">
             <canvas id="torta${i}" width="200" height="200"></canvas>
             <ul class="torta-legend">${leyenda}</ul>
           </div>
-          ${manejo ? `<div class="manejo-box"><strong>Manejo agronomico aplicado</strong>${manejo}</div>` : ""}
         </div>
+        ${manejo ? `<div class="manejo-box"><strong>Manejo agronomico aplicado</strong>${manejo}</div>` : ""}
       </div>`;
     }).join("");
 
     const opcionesVariable = Object.keys(D.historial).map((v) => `<option value="${v}">${v}</option>`).join("");
 
-    const historialCanvasHtml = D.lotes_finca.map((lote) =>
-      `<div class="chart-box"><h3>Lote ${lote}</h3><canvas id="historialLote${lote}" width="700" height="240"></canvas></div>`
-    ).join("");
+    const historialCanvasHtml = `<div class="historial-fila">${D.lotes_finca.map((lote) =>
+      `<div class="chart-box historial-item"><h3>Lote ${lote}</h3><canvas id="historialLote${lote}" width="380" height="220"></canvas></div>`
+    ).join("")}</div>`;
 
     const observacionesTexto = D.tabla_lotes.map((t) => {
       const etiqueta = `Lote ${t.lote}` + (t.potrero ? ` (Potrero ${t.potrero})` : "");
       return `${etiqueta}: ${t.observaciones || "Sin observaciones."}`;
     }).join("\n\n");
 
-    const analisisBorrador = D.alertas.length
-      ? D.alertas.join("\n")
+    const resultadosHtml = D.alertas.length
+      ? D.alertas.map((a) => `• ${a}`).join("<br>")
       : "Ningun indicador supero su umbral en esta visita.";
 
     const recomendacionHtml = recomendacionTexto && recomendacionTexto.trim()
@@ -335,12 +331,15 @@ th,td{text-align:center;padding:6px 4px;border-bottom:1px solid var(--borde);}
 th{background:#f5f5f5;color:var(--gris);font-weight:600;}
 td:first-child,th:first-child{text-align:left;}
 td.alerta{background:#fbe4e1;color:var(--rojo);font-weight:600;}
-.alertas-lista{margin:10px 0 0;padding-left:18px;font-size:13px;color:var(--rojo);}
 .chart-box{margin-top:12px;border:1px solid var(--borde);border-radius:8px;padding:14px;}
+.chart-box canvas{max-width:100%;height:auto;}
 .lote-bloque{margin-top:20px;padding-top:4px;border-top:1px dashed var(--borde);}
 .lote-bloque:first-child{border-top:none;}
-.torta-y-manejo{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-top:10px;}
+.lote-fila{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-top:10px;}
+.chart-barras{flex:2;min-width:320px;}
 .torta-box{text-align:center;}
+.historial-fila{display:flex;gap:16px;flex-wrap:wrap;}
+.historial-item{flex:1;min-width:300px;margin-top:12px;}
 .torta-legend{list-style:none;padding:0;margin:6px 0 0;font-size:11px;color:var(--gris);text-align:left;display:inline-block;}
 .torta-legend li{display:flex;align-items:center;gap:5px;margin:2px 0;}
 .manejo-box{flex:1;min-width:220px;background:#fafafa;border:1px solid var(--borde);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--gris);}
@@ -375,8 +374,6 @@ footer{margin-top:40px;font-size:11px;color:#999;text-align:center;}
   <div><span>Lotes revisados</span>${D.lotes_reales.map((l) => "Lote " + l).join(", ")}</div>
 </div>
 
-${alertasHtml}
-
 <h2>Tabla de resultados por lote</h2>
 <table><thead><tr>
 <th>Lote</th><th>Incid. Collaria</th><th>Sev. Collaria</th><th>Incid. hongos</th><th>Sev. hongos</th>
@@ -395,8 +392,8 @@ ${historialCanvasHtml}
 <h2>Observaciones</h2>
 <textarea>${observacionesTexto}</textarea>
 
-<h2>Analisis de resultados y discusion</h2>
-<textarea>${analisisBorrador}</textarea>
+<h2>Resultados</h2>
+<div class="caja-fija">${resultadosHtml}</div>
 
 <h2>Recomendaciones</h2>
 <div class="caja-fija">${recomendacionHtml}</div>
