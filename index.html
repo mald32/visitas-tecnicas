@@ -23,7 +23,7 @@
 </header>
 
 <nav id="nav-tabs" hidden>
-  <button type="button" class="tab-boton activa" data-tab="capturar">Capturar</button>
+  <button type="button" class="tab-boton activa" data-tab="capturar">Visitas</button>
   <button type="button" class="tab-boton" data-tab="informes">Informes</button>
 </nav>
 
@@ -83,11 +83,37 @@
     </select>
   </label>
   <label>Litros de mezcla / ha <input type="number" step="any" id="m-litros-mezcla"></label>
-  <label>Regulador de pH y dosis <input type="text" id="m-regulador-ph" placeholder="Ej: Producto X, 200cc/200L"></label>
-  <label>Insecticida y dosis <input type="text" id="m-insecticida"></label>
-  <label>Fungicida y dosis <input type="text" id="m-fungicida"></label>
-  <label>Fertilizante y dosis <input type="text" id="m-fertilizante"></label>
-  <label>Abono aplicado y dosis/ha <input type="text" id="m-abono"></label>
+
+  <h3>Acondicionador de aguas (regulador de pH)</h3>
+  <div class="fila">
+    <label>Producto <input type="text" id="m-acond-producto"></label>
+    <label>Dosis <input type="text" id="m-acond-dosis" placeholder="Ej: 200cc/200L"></label>
+  </div>
+
+  <h3>Insecticida</h3>
+  <div class="fila">
+    <label>Producto <input type="text" id="m-insecticida-producto"></label>
+    <label>Dosis <input type="text" id="m-insecticida-dosis"></label>
+  </div>
+
+  <h3>Fungicida</h3>
+  <div class="fila">
+    <label>Producto <input type="text" id="m-fungicida-producto"></label>
+    <label>Dosis <input type="text" id="m-fungicida-dosis"></label>
+  </div>
+
+  <h3>Fertilizante foliar</h3>
+  <div class="fila">
+    <label>Producto <input type="text" id="m-fertilizante-producto"></label>
+    <label>Dosis <input type="text" id="m-fertilizante-dosis"></label>
+  </div>
+
+  <h3>Abono</h3>
+  <div class="fila">
+    <label>Producto <input type="text" id="m-abono-producto"></label>
+    <label>Dosis/ha <input type="text" id="m-abono-dosis"></label>
+  </div>
+
   <label>Orden de mezcla correcto
     <select id="m-orden-mezcla">
       <option value="">-</option>
@@ -135,7 +161,7 @@
     <h3>Observaciones de este punto</h3>
     <label>Observaciones <textarea id="observaciones" rows="2"></textarea></label>
 
-    <button type="submit">Guardar punto</button>
+    <button type="submit">Siguiente punto</button>
   </form>
 
   <button id="btn-terminar-lote" class="secundario">Terminar lote</button>

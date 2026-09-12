@@ -11,11 +11,16 @@ let manejoActual = {}; // manejo agronomico del lote que se esta capturando ahor
 const CAMPOS_MANEJO = [
   { id: "m-tipo-fumigacion", key: "tipoFumigacion" },
   { id: "m-litros-mezcla", key: "litrosMezclaHa" },
-  { id: "m-regulador-ph", key: "reguladorPhDosis" },
-  { id: "m-insecticida", key: "insecticidaDosis" },
-  { id: "m-fungicida", key: "fungicidaDosis" },
-  { id: "m-fertilizante", key: "fertilizanteDosis" },
-  { id: "m-abono", key: "abonoDosisHa" },
+  { id: "m-acond-producto", key: "acondicionadorAguas" },
+  { id: "m-acond-dosis", key: "dosisAcondicionador" },
+  { id: "m-insecticida-producto", key: "insecticida" },
+  { id: "m-insecticida-dosis", key: "dosisInsecticida" },
+  { id: "m-fungicida-producto", key: "fungicida" },
+  { id: "m-fungicida-dosis", key: "dosisFungicida" },
+  { id: "m-fertilizante-producto", key: "fertilizanteFoliar" },
+  { id: "m-fertilizante-dosis", key: "dosisFertilizante" },
+  { id: "m-abono-producto", key: "abono" },
+  { id: "m-abono-dosis", key: "dosisAbonoHa" },
   { id: "m-orden-mezcla", key: "ordenMezclaCorrecto" },
   { id: "m-ph-final", key: "phFinalMezcla" },
 ];
@@ -88,17 +93,39 @@ async function renderResumenHoy() {
   let html = "<h2>Visitas de hoy sin sincronizar</h2>";
   let i = 1;
   for (const v of Object.values(visitas)) {
-    html += `<p class="visita-hoy"><strong>Visita ${i}</strong><br>${v.cliente} · ${v.finca}<br>`;
+    html += `<p class="visita-hoy" data-cliente="${v.cliente}" data-finca="${v.finca}" data-fecha="${hoy}"><strong>Visita ${i}</strong><br>${v.cliente} · ${v.finca}<br>`;
     html += Object.entries(v.lotes)
       .map(([lote, info]) => {
         const etiqueta = info.potrero ? `Lote ${lote} (Potrero ${info.potrero})` : `Lote ${lote}`;
         return `${etiqueta}: ${info.cantidad} punto(s)`;
       })
       .join("<br>");
-    html += "</p>";
+    html += "<br><span class=\"hint\">Toca para continuar muestreando</span></p>";
     i++;
   }
   el("resumen-hoy").innerHTML = html;
+  el("resumen-hoy").querySelectorAll(".visita-hoy").forEach((elem) => {
+    elem.addEventListener("click", () =>
+      onRetomarVisita(elem.dataset.cliente, elem.dataset.finca, elem.dataset.fecha)
+    );
+  });
+}
+
+// Reabre una visita de hoy que ya tiene puntos guardados localmente, para seguir muestreando o agregar lotes.
+async function onRetomarVisita(cliente, finca, fecha) {
+  const f = clientesFincas.find((c) => c.cliente === cliente && c.finca === finca);
+  let numeroLotes = f ? f.numeroLotes : 1;
+
+  const items = await DB.listarItems();
+  const lotesUsados = items
+    .filter((it) => it.tipo === "punto" && it.datos.cliente === cliente && it.datos.finca === finca && it.datos.fecha === fecha)
+    .map((it) => it.datos.lote);
+  if (lotesUsados.length > 0) numeroLotes = Math.max(numeroLotes, ...lotesUsados);
+
+  visita = { cliente, finca, fecha, numeroLotes };
+  el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
+  mostrarPantalla("pantalla-lotes");
+  renderBotonesLotes();
 }
 
 async function cargarConfigYClientes() {
@@ -248,9 +275,7 @@ function pct(idCampo) {
   return Number(el(idCampo).value || 0) / 100;
 }
 
-async function onGuardarPunto(ev) {
-  ev.preventDefault();
-
+async function guardarPuntoActual() {
   const incidColl = pct("incid-coll");
   const sevColl = pct("sev-coll");
   const incidHongos = pct("incid-hongos");
@@ -269,16 +294,24 @@ async function onGuardarPunto(ev) {
     Number(el("loritos").value || 0), Number(el("lepidopteros").value || 0),
     hojasMoluscos, incidMoluscos, danoMoluscos,
     incidHongos, sevHongos, danoHongos,
-    "", el("observaciones").value || "", // Potrero (columna S) se completa al terminar el lote
-    manejoActual.tipoFumigacion || "", manejoActual.litrosMezclaHa || "", manejoActual.reguladorPhDosis || "",
-    manejoActual.insecticidaDosis || "", manejoActual.fungicidaDosis || "", manejoActual.fertilizanteDosis || "",
-    manejoActual.abonoDosisHa || "", manejoActual.ordenMezclaCorrecto || "", manejoActual.phFinalMezcla || "",
+    "", el("observaciones").value || "", // Potrero se completa al terminar el lote
+    manejoActual.tipoFumigacion || "", manejoActual.litrosMezclaHa || "",
+    manejoActual.acondicionadorAguas || "", manejoActual.dosisAcondicionador || "",
+    manejoActual.insecticida || "", manejoActual.dosisInsecticida || "",
+    manejoActual.fungicida || "", manejoActual.dosisFungicida || "",
+    manejoActual.fertilizanteFoliar || "", manejoActual.dosisFertilizante || "",
+    manejoActual.abono || "", manejoActual.dosisAbonoHa || "",
+    manejoActual.ordenMezclaCorrecto || "", manejoActual.phFinalMezcla || "",
   ];
 
   await DB.agregarItem("punto", {
     cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: loteActual, fila,
   });
+}
 
+async function onGuardarPunto(ev) {
+  ev.preventDefault();
+  await guardarPuntoActual();
   el("form-punto").reset();
   puntoActual += 1;
   el("punto-actual-num").textContent = puntoActual;
@@ -308,6 +341,10 @@ async function cerrarLoteActual() {
 }
 
 async function onTerminarLote() {
+  if (capturandoLote && el("form-punto").checkValidity()) {
+    await guardarPuntoActual();
+    el("form-punto").reset();
+  }
   await cerrarLoteActual();
   mostrarPantalla("pantalla-lotes");
   await refrescarResumenCola();
@@ -388,7 +425,9 @@ async function onGenerarInforme() {
   const finca = el("informe-finca").value;
   const fecha = el("informe-fecha").value;
   if (!cliente || !finca || !fecha) { alert("Elige cliente, finca y fecha."); return; }
-  if (!navigator.onLine) { alert("Necesitas conexión a internet para generar el informe (lee tu Excel en OneDrive)."); return; }
+  if (!navigator.onLine) {
+    el("informe-estado").textContent = "Sin conexión: el informe se generará con la última copia guardada localmente (puede no incluir cambios recientes de otros dispositivos).";
+  }
 
   el("btn-generar-informe").disabled = true;
   el("informe-estado").textContent = "Generando informe...";

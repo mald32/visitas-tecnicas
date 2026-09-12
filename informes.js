@@ -6,10 +6,16 @@ const COL = {
   adultos: 5, ninfas: 6, incidColl: 7, sevColl: 8, danoCollTotal: 9,
   loritos: 10, lepidopteros: 11, hojasMoluscos: 12, incidMoluscos: 13, danoMoluscos: 14,
   incidHongos: 15, sevHongos: 16, danoHongos: 17, potrero: 18, observaciones: 19,
-  tipoFumigacion: 20, litrosMezclaHa: 21, reguladorPhDosis: 22, insecticidaDosis: 23, fungicidaDosis: 24,
-  fertilizanteDosis: 25, abonoDosisHa: 26, ordenMezclaCorrecto: 27, phFinalMezcla: 28,
+  tipoFumigacion: 20, litrosMezclaHa: 21,
+  acondicionadorAguas: 22, dosisAcondicionador: 23,
+  insecticida: 24, dosisInsecticida: 25,
+  fungicida: 26, dosisFungicida: 27,
+  fertilizanteFoliar: 28, dosisFertilizante: 29,
+  abono: 30, dosisAbonoHa: 31,
+  ordenMezclaCorrecto: 32, phFinalMezcla: 33,
 };
 
+// El valor puede ser el indice de columna, o una funcion(fila) para variables calculadas (ej. Pasto Sano).
 const VARIABLES_HISTORIAL = {
   "Individuos Adultos de Collaria": COL.adultos,
   "Ninfas de Collaria": COL.ninfas,
@@ -20,6 +26,10 @@ const VARIABLES_HISTORIAL = {
   "Hojas atacadas por Moluscos": COL.hojasMoluscos,
   "Incidencia mancha fungica (%)": COL.incidHongos,
   "Severidad mancha fungica (%)": COL.sevHongos,
+  "Dano Collaria (%)": COL.danoCollTotal,
+  "Dano Hongos (%)": COL.danoHongos,
+  "Dano Moluscos (%)": COL.danoMoluscos,
+  "Pasto Sano (%)": (fila) => 1 - (fila[COL.danoCollTotal] || 0) - (fila[COL.danoMoluscos] || 0) - (fila[COL.danoHongos] || 0),
 };
 
 // Nombre del umbral en Configuracion para cada variable del historial (null = no tiene umbral comparable).
@@ -33,6 +43,10 @@ const UMBRAL_POR_VARIABLE_HISTORIAL = {
   "Hojas atacadas por Moluscos": null,
   "Incidencia mancha fungica (%)": "Umbral de Incidencia de Manchas del Kikuyo",
   "Severidad mancha fungica (%)": "Umbral de Severidad Promedio del Ataque de Hongos",
+  "Dano Collaria (%)": "Umbral de Dano Total de la Pastura por Collaria",
+  "Dano Hongos (%)": "Umbral de Dano a la pastura por Hongos",
+  "Dano Moluscos (%)": "Umbral de Dano por Moluscos",
+  "Pasto Sano (%)": "Umbral (Min) de Pasto Sano",
 };
 
 // Umbral y etiqueta de cada indicador de la tabla de resultados (para el semaforo y las alertas).
@@ -100,10 +114,27 @@ const Informes = {
   _filasCache: null,
   _umbralesCache: null,
 
+  // Lee la tabla completa de Excel y la deja en caché local (IndexedDB) para poder generar
+  // informes sin internet. Si no hay red o Graph falla, usa la última copia guardada.
   async filas() {
     if (!this._filasCache) {
-      const crudas = await Graph.leerTabla(CONFIG.TABLE_NAME);
-      this._filasCache = crudas.map((f) => {
+      let crudas = null;
+      if (navigator.onLine) {
+        try {
+          crudas = await Graph.leerTabla(CONFIG.TABLE_NAME);
+          await DB.guardarCache("filasBase", crudas);
+        } catch (e) {
+          console.warn("No se pudo leer la base de datos de Excel, usando caché local:", e.message);
+        }
+      }
+      if (!crudas) crudas = (await DB.leerCache("filasBase")) || [];
+
+      // Se agregan los puntos guardados localmente que aun no se han sincronizado, para poder
+      // generar el informe de una visita recien capturada antes de subirla a Excel.
+      const pendientes = (await DB.listarItems()).filter((it) => it.tipo === "punto" && it.estado === "pendiente");
+      const filasPendientes = pendientes.map((it) => it.datos.fila);
+
+      this._filasCache = [...crudas, ...filasPendientes].map((f) => {
         const copia = [...f];
         copia[COL.fecha] = normalizarFecha(copia[COL.fecha]);
         return copia;
@@ -116,9 +147,18 @@ const Informes = {
 
   async umbrales() {
     if (!this._umbralesCache) {
-      const filas = await Graph.leerRango(CONFIG.HOJA_CONFIG, "A8:B19");
-      this._umbralesCache = {};
-      filas.forEach(([nombre, valor]) => { if (nombre) this._umbralesCache[nombre] = valor; });
+      let valores = null;
+      if (navigator.onLine) {
+        try {
+          const filas = await Graph.leerRango(CONFIG.HOJA_CONFIG, "A8:B19");
+          valores = {};
+          filas.forEach(([nombre, valor]) => { if (nombre) valores[nombre] = valor; });
+          await DB.guardarCache("umbralesBase", valores);
+        } catch (e) {
+          console.warn("No se pudieron leer los umbrales de Excel, usando caché local:", e.message);
+        }
+      }
+      this._umbralesCache = valores || (await DB.leerCache("umbralesBase")) || {};
     }
     return this._umbralesCache;
   },
@@ -171,11 +211,16 @@ const Informes = {
         manejo: {
           tipoFumigacion: primero[COL.tipoFumigacion] || "",
           litrosMezclaHa: primero[COL.litrosMezclaHa] || "",
-          reguladorPhDosis: primero[COL.reguladorPhDosis] || "",
-          insecticidaDosis: primero[COL.insecticidaDosis] || "",
-          fungicidaDosis: primero[COL.fungicidaDosis] || "",
-          fertilizanteDosis: primero[COL.fertilizanteDosis] || "",
-          abonoDosisHa: primero[COL.abonoDosisHa] || "",
+          acondicionadorAguas: primero[COL.acondicionadorAguas] || "",
+          dosisAcondicionador: primero[COL.dosisAcondicionador] || "",
+          insecticida: primero[COL.insecticida] || "",
+          dosisInsecticida: primero[COL.dosisInsecticida] || "",
+          fungicida: primero[COL.fungicida] || "",
+          dosisFungicida: primero[COL.dosisFungicida] || "",
+          fertilizanteFoliar: primero[COL.fertilizanteFoliar] || "",
+          dosisFertilizante: primero[COL.dosisFertilizante] || "",
+          abono: primero[COL.abono] || "",
+          dosisAbonoHa: primero[COL.dosisAbonoHa] || "",
           ordenMezclaCorrecto: primero[COL.ordenMezclaCorrecto] || "",
           phFinalMezcla: primero[COL.phFinalMezcla] || "",
         },
@@ -209,7 +254,8 @@ const Informes = {
     )].sort((a, b) => a - b);
 
     const historial = {};
-    for (const [nombreVar, idxCol] of Object.entries(VARIABLES_HISTORIAL)) {
+    for (const [nombreVar, colOFn] of Object.entries(VARIABLES_HISTORIAL)) {
+      const extraer = typeof colOFn === "function" ? colOFn : (fila) => fila[colOFn];
       const porLote = {}, erroresPorLote = {};
       for (const lote of lotesFinca) {
         const promedios = [], errores = [];
@@ -217,8 +263,8 @@ const Informes = {
           const sub = filas.filter(
             (r) => r[COL.cliente] === cliente && r[COL.finca] === finca && r[COL.lote] === lote && r[COL.fecha] === f
           );
-          promedios.push(promedio(sub.map((s) => s[idxCol])));
-          errores.push(desviacion(sub.map((s) => s[idxCol])));
+          promedios.push(promedio(sub.map(extraer)));
+          errores.push(desviacion(sub.map(extraer)));
         }
         porLote[String(lote)] = promedios;
         erroresPorLote[String(lote)] = errores;
@@ -285,12 +331,20 @@ const Informes = {
       <td${claseAlerta(t.pasto_sano, um("pasto_sano"), true)}>${fmt(t.pasto_sano, true)}</td>
     </tr>`).join("");
 
+    function combinar(producto, dosis) {
+      if (producto && dosis) return `${producto} — ${dosis}`;
+      return producto || dosis || "";
+    }
+
     function manejoHtml(m) {
       const filasM = [
         ["Tipo de fumigacion", m.tipoFumigacion], ["Litros de mezcla/ha", m.litrosMezclaHa],
-        ["Regulador de pH y dosis", m.reguladorPhDosis], ["Insecticida y dosis", m.insecticidaDosis],
-        ["Fungicida y dosis", m.fungicidaDosis], ["Fertilizante y dosis", m.fertilizanteDosis],
-        ["Abono y dosis/ha", m.abonoDosisHa], ["Orden de mezcla correcto", m.ordenMezclaCorrecto],
+        ["Acondicionador de aguas", combinar(m.acondicionadorAguas, m.dosisAcondicionador)],
+        ["Insecticida", combinar(m.insecticida, m.dosisInsecticida)],
+        ["Fungicida", combinar(m.fungicida, m.dosisFungicida)],
+        ["Fertilizante foliar", combinar(m.fertilizanteFoliar, m.dosisFertilizante)],
+        ["Abono", combinar(m.abono, m.dosisAbonoHa)],
+        ["Orden de mezcla correcto", m.ordenMezclaCorrecto],
         ["pH final de la mezcla", m.phFinalMezcla],
       ].filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "");
       if (filasM.length === 0) return "";
