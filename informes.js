@@ -22,6 +22,19 @@ const VARIABLES_HISTORIAL = {
   "Severidad mancha fungica (%)": COL.sevHongos,
 };
 
+// Nombre del umbral en Configuracion para cada variable del historial (null = no tiene umbral comparable).
+const UMBRAL_POR_VARIABLE_HISTORIAL = {
+  "Individuos Adultos de Collaria": "Umbral de Adultos de Collaria",
+  "Ninfas de Collaria": "Umbral de Ninfas de Collaria",
+  "Incidencia dano Collaria (%)": "Umbral de Incidencia de ataques de Collaria",
+  "Severidad dano Collaria (%)": "Umbral de Severidad promedio del Dano por Collaria",
+  "Individuos de Lorito": "Umbral de Individuos de Lorito",
+  "Numero de Lepidopteros": "Umbral de Numero de Lepidopteros",
+  "Hojas atacadas por Moluscos": null,
+  "Incidencia mancha fungica (%)": "Umbral de Incidencia de Manchas del Kikuyo",
+  "Severidad mancha fungica (%)": "Umbral de Severidad Promedio del Ataque de Hongos",
+};
+
 // Umbral y etiqueta de cada indicador de la tabla de resultados (para el semaforo y las alertas).
 const DEFINICIONES_UMBRAL = [
   { campo: "incid_coll", nombre: "Incidencia de dano Collaria", umbral: "Umbral de Incidencia de ataques de Collaria", pct: true },
@@ -213,6 +226,12 @@ const Informes = {
       historial[nombreVar] = { fechas: ultimas6.map(fmtFechaCorta), lotes: porLote, errores: erroresPorLote };
     }
 
+    const umbralesHistorial = {};
+    for (const nombreVar of Object.keys(VARIABLES_HISTORIAL)) {
+      const nombreUmbral = UMBRAL_POR_VARIABLE_HISTORIAL[nombreVar];
+      umbralesHistorial[nombreVar] = nombreUmbral ? (umbrales[nombreUmbral] ?? null) : null;
+    }
+
     const tortas = tablaLotes.map((t) => ({
       lote: t.lote, valores: [t.dano_coll || 0, t.dano_mol || 0, t.dano_hongos || 0, Math.max(t.pasto_sano || 0, 0)],
     }));
@@ -237,7 +256,7 @@ const Informes = {
 
     return {
       cliente, finca, fecha, visita_numero: visitaNumero, lotes_reales: lotesReales, lotes_finca: lotesFinca,
-      tabla_lotes: tablaLotes, barras_estatica: barrasEstatica, historial, tortas, alertas, umbrales,
+      tabla_lotes: tablaLotes, barras_estatica: barrasEstatica, historial, umbrales_historial: umbralesHistorial, tortas, alertas, umbrales,
     };
   },
 
@@ -413,6 +432,7 @@ ${historialCanvasHtml}
 const COLORES = ${JSON.stringify(COLORES_LOTE)};
 const barrasEstatica = ${JSON.stringify(D.barras_estatica)};
 const historial = ${JSON.stringify(D.historial)};
+const umbralesHistorial = ${JSON.stringify(D.umbrales_historial)};
 const tortas = ${JSON.stringify(D.tortas)};
 const lotesFinca = ${JSON.stringify(D.lotes_finca.map(String))};
 
@@ -510,8 +530,10 @@ const varSelect = document.getElementById("varSelect");
 function redrawHistorial() {
   const v = varSelect.value;
   const h = historial[v];
+  const umbralVal = umbralesHistorial[v];
+  const umbralesLinea = umbralVal != null ? h.fechas.map(() => umbralVal) : null;
   lotesFinca.forEach((lote, i) => {
-    drawGroupedBars("historialLote"+lote, h.fechas, { [lote]: h.lotes[lote] }, [lote], null,
+    drawGroupedBars("historialLote"+lote, h.fechas, { [lote]: h.lotes[lote] }, [lote], umbralesLinea,
       { [lote]: (h.errores||{})[lote] }, i);
   });
 }
