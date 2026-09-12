@@ -26,6 +26,8 @@ header {
 }
 
 header h1 { font-size: 18px; color: var(--verde); margin: 0; }
+.titulo-box { display: flex; align-items: center; gap: 10px; }
+.titulo-box .logo { height: 32px; width: auto; }
 
 .header-derecha { display: flex; align-items: center; gap: 8px; }
 #btn-sincronizar { padding: 6px 12px; font-size: 12px; margin: 0; width: auto; }
