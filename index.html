@@ -67,6 +67,36 @@
   <button id="btn-fin-muestreo-lotes" class="secundario">Fin del muestreo</button>
 </section>
 
+<!-- Paso 2.5: manejo agronomico aplicado a este lote (opcional, una vez por lote) -->
+<section id="pantalla-manejo" hidden>
+  <h2>Manejo agronómico — Lote <span id="manejo-lote-num"></span></h2>
+  <p class="hint">Todo es opcional. Se guarda igual para todos los puntos de este lote. Se recuerdan los últimos valores que usaste.</p>
+
+  <label>Tipo de fumigación
+    <select id="m-tipo-fumigacion">
+      <option value="">-</option>
+      <option value="Aerea">Aérea</option>
+      <option value="Terrestre">Terrestre</option>
+    </select>
+  </label>
+  <label>Litros de mezcla / ha <input type="number" step="any" id="m-litros-mezcla"></label>
+  <label>Regulador de pH y dosis <input type="text" id="m-regulador-ph" placeholder="Ej: Producto X, 200cc/200L"></label>
+  <label>Insecticida y dosis <input type="text" id="m-insecticida"></label>
+  <label>Fungicida y dosis <input type="text" id="m-fungicida"></label>
+  <label>Fertilizante y dosis <input type="text" id="m-fertilizante"></label>
+  <label>Abono aplicado y dosis/ha <input type="text" id="m-abono"></label>
+  <label>Orden de mezcla correcto
+    <select id="m-orden-mezcla">
+      <option value="">-</option>
+      <option value="Si">Sí</option>
+      <option value="No">No</option>
+    </select>
+  </label>
+  <label>pH final de la mezcla <input type="number" step="any" id="m-ph-final"></label>
+
+  <button id="btn-iniciar-monitoreo-lote">Iniciar monitoreo</button>
+</section>
+
 <!-- Paso 3: capturar puntos de muestreo del lote elegido -->
 <section id="pantalla-punto" hidden>
   <h2>Lote <span id="lote-actual-num"></span> · punto <span id="punto-actual-num"></span></h2>
@@ -124,6 +154,10 @@
   <label>Cliente <select id="informe-cliente"></select></label>
   <label>Finca <select id="informe-finca"></select></label>
   <label>Fecha de la visita <select id="informe-fecha"></select></label>
+
+  <label>Recomendaciones para el cliente (quedan fijas en el informe, no editables)
+    <textarea id="informe-recomendaciones" rows="4" placeholder="Escribe aqui las recomendaciones y productos a usar..."></textarea>
+  </label>
 
   <button id="btn-generar-informe">Generar informe</button>
   <p id="informe-estado" class="hint"></p>

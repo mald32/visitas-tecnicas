@@ -6,9 +6,22 @@ let visita = null; // {cliente, finca, fecha, numeroLotes}
 let loteActual = null;
 let puntoActual = 1;
 let capturandoLote = false; // mientras es true, no se sincroniza (para poder fijar el Potrero antes de subir los puntos)
+let manejoActual = {}; // manejo agronomico del lote que se esta capturando ahora mismo
+
+const CAMPOS_MANEJO = [
+  { id: "m-tipo-fumigacion", key: "tipoFumigacion" },
+  { id: "m-litros-mezcla", key: "litrosMezclaHa" },
+  { id: "m-regulador-ph", key: "reguladorPhDosis" },
+  { id: "m-insecticida", key: "insecticidaDosis" },
+  { id: "m-fungicida", key: "fungicidaDosis" },
+  { id: "m-fertilizante", key: "fertilizanteDosis" },
+  { id: "m-abono", key: "abonoDosisHa" },
+  { id: "m-orden-mezcla", key: "ordenMezclaCorrecto" },
+  { id: "m-ph-final", key: "phFinalMezcla" },
+];
 
 const el = (id) => document.getElementById(id);
-const PANTALLAS = ["pantalla-login", "pantalla-visita", "pantalla-lotes", "pantalla-punto", "pantalla-fin", "pantalla-informes"];
+const PANTALLAS = ["pantalla-login", "pantalla-visita", "pantalla-lotes", "pantalla-manejo", "pantalla-punto", "pantalla-fin", "pantalla-informes"];
 
 function mostrarPantalla(id) {
   PANTALLAS.forEach((p) => (el(p).hidden = p !== id));
@@ -192,11 +205,24 @@ async function onAgregarLoteNuevo() {
 
 // ---------- Paso 2: elegir lote ----------
 
-async function onElegirLote(lote) {
+function onElegirLote(lote) {
   loteActual = lote;
+  el("manejo-lote-num").textContent = lote;
+
+  const cache = JSON.parse(localStorage.getItem("manejoAgronomicoUltimo") || "{}");
+  CAMPOS_MANEJO.forEach((c) => { el(c.id).value = cache[c.key] || ""; });
+
+  mostrarPantalla("pantalla-manejo");
+}
+
+async function onIniciarMonitoreoLote() {
+  manejoActual = {};
+  CAMPOS_MANEJO.forEach((c) => { manejoActual[c.key] = el(c.id).value.trim(); });
+  localStorage.setItem("manejoAgronomicoUltimo", JSON.stringify(manejoActual));
+
   capturandoLote = true;
   await calcularSiguientePunto();
-  el("lote-actual-num").textContent = lote;
+  el("lote-actual-num").textContent = loteActual;
   el("form-punto").reset();
   mostrarPantalla("pantalla-punto");
   await refrescarResumenCola();
@@ -244,6 +270,9 @@ async function onGuardarPunto(ev) {
     hojasMoluscos, incidMoluscos, danoMoluscos,
     incidHongos, sevHongos, danoHongos,
     "", el("observaciones").value || "", // Potrero (columna S) se completa al terminar el lote
+    manejoActual.tipoFumigacion || "", manejoActual.litrosMezclaHa || "", manejoActual.reguladorPhDosis || "",
+    manejoActual.insecticidaDosis || "", manejoActual.fungicidaDosis || "", manejoActual.fertilizanteDosis || "",
+    manejoActual.abonoDosisHa || "", manejoActual.ordenMezclaCorrecto || "", manejoActual.phFinalMezcla || "",
   ];
 
   await DB.agregarItem("punto", {
@@ -365,7 +394,8 @@ async function onGenerarInforme() {
   el("informe-estado").textContent = "Generando informe...";
   el("informe-resultado").hidden = true;
   try {
-    const html = await Informes.generar(cliente, finca, fecha);
+    const recomendaciones = el("informe-recomendaciones").value.trim();
+    const html = await Informes.generar(cliente, finca, fecha, recomendaciones);
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
 
@@ -433,6 +463,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-iniciar-monitoreo").addEventListener("click", onIniciarMonitoreo);
 
   el("btn-nuevo-lote").addEventListener("click", onAgregarLoteNuevo);
+  el("btn-iniciar-monitoreo-lote").addEventListener("click", onIniciarMonitoreoLote);
   el("btn-fin-muestreo-lotes").addEventListener("click", onFinMuestreo);
   el("btn-terminar-lote").addEventListener("click", onTerminarLote);
 

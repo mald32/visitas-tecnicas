@@ -9,4 +9,10 @@ const CONFIG = {
   TABLE_NAME: "TablaBaseDatos",
   HOJA_CONFIG: "Configuracion",
   HOJA_CLIENTES: "Clientes_Fincas",
+  ASESOR: {
+    nombre: "Miguel Leon",
+    telefono: "3229636167",
+    profesion: "Ingeniero Agronomo",
+    cargo: "Asesor Tecnico Comercial - Galagro Norte de Antioquia",
+  },
 };
