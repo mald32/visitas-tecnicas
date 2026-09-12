@@ -7,8 +7,10 @@ const CONFIG = {
   EXCEL_FILENAME: "BASE_DE_DATOS_v2.xlsx",
   RUTA_ARCHIVO: "Documents/BASE_DE_DATOS_v2.xlsx",
   TABLE_NAME: "TablaBaseDatos",
+  TABLA_PRODUCTOS_APLICADOS: "TablaProductosAplicados",
   HOJA_CONFIG: "Configuracion",
   HOJA_CLIENTES: "Clientes_Fincas",
+  HOJA_PRODUCTOS: "Productos",
   ASESOR: {
     nombre: "Miguel Leon",
     telefono: "3229636167",

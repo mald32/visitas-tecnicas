@@ -119,4 +119,19 @@ const Graph = {
     const fila = 4 + idx;
     await this.escribirRango(CONFIG.HOJA_CLIENTES, `C${fila}:C${fila}`, [[numeroLotes]]);
   },
+
+  // Agrega un producto nuevo al catálogo de la hoja Productos (igual patrón que Clientes_Fincas).
+  async agregarProductoCatalogo(nombre, tipo, formulacion, unidad) {
+    const filas = await this.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:D500");
+    const usadas = filas.filter((f) => f[0]).length;
+    const fila = 4 + usadas;
+    await this.escribirRango(CONFIG.HOJA_PRODUCTOS, `A${fila}:D${fila}`, [[nombre, tipo, formulacion, unidad]]);
+  },
+
+  // Agrega una fila a la tabla Productos_Aplicados (un producto usado en un lote/visita).
+  async agregarProductoAplicado(valores) {
+    const id = await this.idArchivo();
+    const path = `/me/drive/items/${id}/workbook/tables('${CONFIG.TABLA_PRODUCTOS_APLICADOS}')/rows/add`;
+    return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [valores] }) });
+  },
 };

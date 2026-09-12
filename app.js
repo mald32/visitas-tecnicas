@@ -7,23 +7,85 @@ let loteActual = null;
 let puntoActual = 1;
 let capturandoLote = false; // mientras es true, no se sincroniza (para poder fijar el Potrero antes de subir los puntos)
 let manejoActual = {}; // manejo agronomico del lote que se esta capturando ahora mismo
+let catalogoProductos = []; // [{nombre, tipo, formulacion, unidad}] cargado de la hoja Productos
+let contadorProductos = 0;
 
 const CAMPOS_MANEJO = [
   { id: "m-tipo-fumigacion", key: "tipoFumigacion" },
   { id: "m-litros-mezcla", key: "litrosMezclaHa" },
-  { id: "m-acond-producto", key: "acondicionadorAguas" },
-  { id: "m-acond-dosis", key: "dosisAcondicionador" },
-  { id: "m-insecticida-producto", key: "insecticida" },
-  { id: "m-insecticida-dosis", key: "dosisInsecticida" },
-  { id: "m-fungicida-producto", key: "fungicida" },
-  { id: "m-fungicida-dosis", key: "dosisFungicida" },
-  { id: "m-fertilizante-producto", key: "fertilizanteFoliar" },
-  { id: "m-fertilizante-dosis", key: "dosisFertilizante" },
-  { id: "m-abono-producto", key: "abono" },
-  { id: "m-abono-dosis", key: "dosisAbonoHa" },
   { id: "m-orden-mezcla", key: "ordenMezclaCorrecto" },
   { id: "m-ph-final", key: "phFinalMezcla" },
 ];
+
+const TIPOS_PRODUCTO = ["Acondicionador de aguas", "Insecticida", "Fungicida", "Fertilizante Foliar", "Coadyuvante"];
+const FORMULACIONES = ["Hidrosoluble", "WP", "WG", "SC", "EC", "SL", "Otra"];
+const FORMULACIONES_LIQUIDAS = ["Hidrosoluble", "SC", "EC", "SL"];
+const FORMULACIONES_SOLIDAS = ["WP", "WG"];
+
+function unidadPorFormulacion(formulacion) {
+  if (FORMULACIONES_LIQUIDAS.includes(formulacion)) return "cc";
+  if (FORMULACIONES_SOLIDAS.includes(formulacion)) return "g";
+  return "";
+}
+
+function poblarDatalistProductos() {
+  el("datalist-productos").innerHTML = catalogoProductos.map((p) => `<option value="${p.nombre}">`).join("");
+}
+
+// Agrega un bloque de "producto aplicado" al formulario de manejo. valores permite prellenar (cache/edicion).
+function agregarBloqueProducto(valores = {}) {
+  contadorProductos += 1;
+  const div = document.createElement("div");
+  div.className = "producto-bloque";
+  div.innerHTML = `
+    <div class="fila">
+      <label>Tipo
+        <select class="p-tipo">
+          <option value="">-</option>
+          ${TIPOS_PRODUCTO.map((t) => `<option value="${t}" ${valores.tipo === t ? "selected" : ""}>${t}</option>`).join("")}
+        </select>
+      </label>
+      <label>Producto <input type="text" class="p-nombre" list="datalist-productos" value="${valores.nombre || ""}"></label>
+    </div>
+    <div class="fila">
+      <label>Formulación
+        <select class="p-formulacion">
+          <option value="">-</option>
+          ${FORMULACIONES.map((f) => `<option value="${f}" ${valores.formulacion === f ? "selected" : ""}>${f}</option>`).join("")}
+        </select>
+      </label>
+      <label>Unidad <input type="text" class="p-unidad" value="${valores.unidad || ""}" readonly></label>
+      <label>Dosis <input type="text" class="p-dosis" value="${valores.dosis || ""}"></label>
+    </div>
+    <button type="button" class="secundario btn-quitar-producto">Quitar producto</button>
+  `;
+  el("lista-productos").appendChild(div);
+
+  div.querySelector(".p-formulacion").addEventListener("change", (e) => {
+    div.querySelector(".p-unidad").value = unidadPorFormulacion(e.target.value);
+  });
+  div.querySelector(".p-nombre").addEventListener("change", (e) => {
+    const encontrado = catalogoProductos.find((p) => p.nombre.toLowerCase() === e.target.value.trim().toLowerCase());
+    if (encontrado) {
+      div.querySelector(".p-tipo").value = encontrado.tipo || "";
+      div.querySelector(".p-formulacion").value = encontrado.formulacion || "";
+      div.querySelector(".p-unidad").value = encontrado.unidad || unidadPorFormulacion(encontrado.formulacion);
+    }
+  });
+  div.querySelector(".btn-quitar-producto").addEventListener("click", () => div.remove());
+}
+
+function leerProductosFormulario() {
+  return [...document.querySelectorAll(".producto-bloque")]
+    .map((div) => ({
+      tipo: div.querySelector(".p-tipo").value,
+      nombre: div.querySelector(".p-nombre").value.trim(),
+      formulacion: div.querySelector(".p-formulacion").value,
+      unidad: div.querySelector(".p-unidad").value,
+      dosis: div.querySelector(".p-dosis").value.trim(),
+    }))
+    .filter((p) => p.nombre);
+}
 
 const el = (id) => document.getElementById(id);
 const PANTALLAS = ["pantalla-login", "pantalla-visita", "pantalla-lotes", "pantalla-manejo", "pantalla-punto", "pantalla-fin", "pantalla-informes"];
@@ -140,6 +202,13 @@ async function cargarConfigYClientes() {
         .filter((f) => f[0])
         .map((f) => ({ cliente: f[0], finca: f[1], numeroLotes: Number(f[2]) }));
       await DB.guardarCache("clientesFincas", clientesFincas);
+
+      const filasProductos = await Graph.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:D500");
+      catalogoProductos = filasProductos
+        .filter((f) => f[0])
+        .map((f) => ({ nombre: f[0], tipo: f[1], formulacion: f[2], unidad: f[3] }));
+      await DB.guardarCache("catalogoProductos", catalogoProductos);
+      poblarDatalistProductos();
       return;
     } catch (e) {
       console.warn("No se pudo leer de Graph, usando caché local:", e.message);
@@ -148,6 +217,8 @@ async function cargarConfigYClientes() {
   }
   parametros = (await DB.leerCache("parametros")) || parametros;
   clientesFincas = (await DB.leerCache("clientesFincas")) || [];
+  catalogoProductos = (await DB.leerCache("catalogoProductos")) || [];
+  poblarDatalistProductos();
 }
 
 // ---------- Paso 1: Cliente / Finca ----------
@@ -239,6 +310,14 @@ function onElegirLote(lote) {
   const cache = JSON.parse(localStorage.getItem("manejoAgronomicoUltimo") || "{}");
   CAMPOS_MANEJO.forEach((c) => { el(c.id).value = cache[c.key] || ""; });
 
+  el("lista-productos").innerHTML = "";
+  const productosCache = JSON.parse(localStorage.getItem("productosUltimos") || "[]");
+  if (productosCache.length > 0) {
+    productosCache.forEach((p) => agregarBloqueProducto(p));
+  } else {
+    agregarBloqueProducto();
+  }
+
   mostrarPantalla("pantalla-manejo");
 }
 
@@ -246,6 +325,23 @@ async function onIniciarMonitoreoLote() {
   manejoActual = {};
   CAMPOS_MANEJO.forEach((c) => { manejoActual[c.key] = el(c.id).value.trim(); });
   localStorage.setItem("manejoAgronomicoUltimo", JSON.stringify(manejoActual));
+
+  const productos = leerProductosFormulario();
+  localStorage.setItem("productosUltimos", JSON.stringify(productos));
+
+  for (const p of productos) {
+    await DB.agregarItem("producto_aplicado", {
+      cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: loteActual,
+      producto: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad, dosis: p.dosis,
+    });
+    const yaExiste = catalogoProductos.some((c) => c.nombre.toLowerCase() === p.nombre.toLowerCase());
+    if (!yaExiste) {
+      catalogoProductos.push({ nombre: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad });
+      await DB.guardarCache("catalogoProductos", catalogoProductos);
+      await DB.agregarItem("producto_nuevo", { nombre: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad });
+      poblarDatalistProductos();
+    }
+  }
 
   capturandoLote = true;
   await calcularSiguientePunto();
@@ -296,11 +392,6 @@ async function guardarPuntoActual() {
     incidHongos, sevHongos, danoHongos,
     "", el("observaciones").value || "", // Potrero se completa al terminar el lote
     manejoActual.tipoFumigacion || "", manejoActual.litrosMezclaHa || "",
-    manejoActual.acondicionadorAguas || "", manejoActual.dosisAcondicionador || "",
-    manejoActual.insecticida || "", manejoActual.dosisInsecticida || "",
-    manejoActual.fungicida || "", manejoActual.dosisFungicida || "",
-    manejoActual.fertilizanteFoliar || "", manejoActual.dosisFertilizante || "",
-    manejoActual.abono || "", manejoActual.dosisAbonoHa || "",
     manejoActual.ordenMezclaCorrecto || "", manejoActual.phFinalMezcla || "",
   ];
 
@@ -469,6 +560,13 @@ async function sincronizar() {
           await Graph.agregarClienteFinca(it.datos.cliente, it.datos.finca, it.datos.numeroLotes);
         } else if (it.tipo === "actualizar_lotes") {
           await Graph.actualizarNumeroLotes(it.datos.cliente, it.datos.finca, it.datos.numeroLotes);
+        } else if (it.tipo === "producto_nuevo") {
+          await Graph.agregarProductoCatalogo(it.datos.nombre, it.datos.tipo, it.datos.formulacion, it.datos.unidad);
+        } else if (it.tipo === "producto_aplicado") {
+          await Graph.agregarProductoAplicado([
+            it.datos.cliente, it.datos.finca, it.datos.fecha, it.datos.lote,
+            it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
+          ]);
         }
         await DB.marcarSincronizado(it.id);
       } catch (e) {
@@ -502,6 +600,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-iniciar-monitoreo").addEventListener("click", onIniciarMonitoreo);
 
   el("btn-nuevo-lote").addEventListener("click", onAgregarLoteNuevo);
+  el("btn-agregar-producto").addEventListener("click", () => agregarBloqueProducto());
   el("btn-iniciar-monitoreo-lote").addEventListener("click", onIniciarMonitoreoLote);
   el("btn-fin-muestreo-lotes").addEventListener("click", onFinMuestreo);
   el("btn-terminar-lote").addEventListener("click", onTerminarLote);

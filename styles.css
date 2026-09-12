@@ -75,6 +75,10 @@ label { display: block; margin-bottom: 12px; font-size: 13px; color: var(--gris)
 
 .caja-nueva { background: var(--verde-claro); border-radius: 8px; padding: 10px 12px; margin: -6px 0 12px; }
 
+.producto-bloque { background: #fafafa; border: 1px solid var(--borde); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.producto-bloque .fila { margin-bottom: 6px; }
+.producto-bloque button.secundario { width: auto; padding: 6px 12px; font-size: 13px; margin-top: 2px; }
+
 h3 { font-size: 13px; color: var(--gris); margin: 18px 0 8px; }
 
 #form-punto button[type="submit"],

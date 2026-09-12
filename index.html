@@ -78,41 +78,18 @@
   <label>Tipo de fumigación
     <select id="m-tipo-fumigacion">
       <option value="">-</option>
-      <option value="Aerea">Aérea</option>
-      <option value="Terrestre">Terrestre</option>
+      <option value="Aerea (Dron)">Aérea (Dron)</option>
+      <option value="Terrestre (Estacionaria)">Terrestre (Estacionaria)</option>
+      <option value="Terrestre (Bomba de espalda)">Terrestre (Bomba de espalda)</option>
     </select>
   </label>
   <label>Litros de mezcla / ha <input type="number" step="any" id="m-litros-mezcla"></label>
 
-  <h3>Acondicionador de aguas (regulador de pH)</h3>
-  <div class="fila">
-    <label>Producto <input type="text" id="m-acond-producto"></label>
-    <label>Dosis <input type="text" id="m-acond-dosis" placeholder="Ej: 200cc/200L"></label>
-  </div>
-
-  <h3>Insecticida</h3>
-  <div class="fila">
-    <label>Producto <input type="text" id="m-insecticida-producto"></label>
-    <label>Dosis <input type="text" id="m-insecticida-dosis"></label>
-  </div>
-
-  <h3>Fungicida</h3>
-  <div class="fila">
-    <label>Producto <input type="text" id="m-fungicida-producto"></label>
-    <label>Dosis <input type="text" id="m-fungicida-dosis"></label>
-  </div>
-
-  <h3>Fertilizante foliar</h3>
-  <div class="fila">
-    <label>Producto <input type="text" id="m-fertilizante-producto"></label>
-    <label>Dosis <input type="text" id="m-fertilizante-dosis"></label>
-  </div>
-
-  <h3>Abono</h3>
-  <div class="fila">
-    <label>Producto <input type="text" id="m-abono-producto"></label>
-    <label>Dosis/ha <input type="text" id="m-abono-dosis"></label>
-  </div>
+  <h3>Productos aplicados</h3>
+  <p class="hint">Agrega uno por uno los productos usados (acondicionador, insecticida, fungicida, fertilizante foliar, coadyuvante, etc.).</p>
+  <div id="lista-productos"></div>
+  <button type="button" id="btn-agregar-producto" class="secundario">+ Agregar producto</button>
+  <datalist id="datalist-productos"></datalist>
 
   <label>Orden de mezcla correcto
     <select id="m-orden-mezcla">

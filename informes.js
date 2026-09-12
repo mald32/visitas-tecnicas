@@ -6,14 +6,11 @@ const COL = {
   adultos: 5, ninfas: 6, incidColl: 7, sevColl: 8, danoCollTotal: 9,
   loritos: 10, lepidopteros: 11, hojasMoluscos: 12, incidMoluscos: 13, danoMoluscos: 14,
   incidHongos: 15, sevHongos: 16, danoHongos: 17, potrero: 18, observaciones: 19,
-  tipoFumigacion: 20, litrosMezclaHa: 21,
-  acondicionadorAguas: 22, dosisAcondicionador: 23,
-  insecticida: 24, dosisInsecticida: 25,
-  fungicida: 26, dosisFungicida: 27,
-  fertilizanteFoliar: 28, dosisFertilizante: 29,
-  abono: 30, dosisAbonoHa: 31,
-  ordenMezclaCorrecto: 32, phFinalMezcla: 33,
+  tipoFumigacion: 20, litrosMezclaHa: 21, ordenMezclaCorrecto: 22, phFinalMezcla: 23,
 };
+
+// Columnas de la tabla Productos_Aplicados (un producto usado en un lote/visita, una fila por producto).
+const COL_PA = { cliente: 0, finca: 1, fecha: 2, lote: 3, producto: 4, tipo: 5, formulacion: 6, unidad: 7, dosis: 8 };
 
 // El valor puede ser el indice de columna, o una funcion(fila) para variables calculadas (ej. Pasto Sano).
 const VARIABLES_HISTORIAL = {
@@ -113,6 +110,7 @@ function formatoFechaVisible(fechaISO) {
 const Informes = {
   _filasCache: null,
   _umbralesCache: null,
+  _productosCache: null,
 
   // Lee la tabla completa de Excel y la deja en caché local (IndexedDB) para poder generar
   // informes sin internet. Si no hay red o Graph falla, usa la última copia guardada.
@@ -143,6 +141,35 @@ const Informes = {
     return this._filasCache;
   },
 
+  // Igual que filas(), pero para la tabla Productos_Aplicados (uno o mas productos por lote/visita).
+  async filasProductos() {
+    if (!this._productosCache) {
+      let crudas = null;
+      if (navigator.onLine) {
+        try {
+          crudas = await Graph.leerTabla(CONFIG.TABLA_PRODUCTOS_APLICADOS);
+          await DB.guardarCache("productosAplicadosBase", crudas);
+        } catch (e) {
+          console.warn("No se pudo leer Productos_Aplicados, usando caché local:", e.message);
+        }
+      }
+      if (!crudas) crudas = (await DB.leerCache("productosAplicadosBase")) || [];
+
+      const pendientes = (await DB.listarItems()).filter((it) => it.tipo === "producto_aplicado" && it.estado === "pendiente");
+      const filasPendientes = pendientes.map((it) => [
+        it.datos.cliente, it.datos.finca, it.datos.fecha, it.datos.lote,
+        it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
+      ]);
+
+      this._productosCache = [...crudas, ...filasPendientes].map((f) => {
+        const copia = [...f];
+        copia[COL_PA.fecha] = normalizarFecha(copia[COL_PA.fecha]);
+        return copia;
+      });
+    }
+    return this._productosCache;
+  },
+
   formatoFechaVisible,
 
   async umbrales() {
@@ -166,6 +193,7 @@ const Informes = {
   invalidarCache() {
     this._filasCache = null;
     this._umbralesCache = null;
+    this._productosCache = null;
   },
 
   async fechasDisponibles(cliente, finca) {
@@ -179,6 +207,7 @@ const Informes = {
   async calcularDatos(cliente, finca, fecha) {
     const filas = await this.filas();
     const umbrales = await this.umbrales();
+    const productosAplicados = await this.filasProductos();
 
     const visita = filas.filter((f) => f[COL.cliente] === cliente && f[COL.finca] === finca && f[COL.fecha] === fecha);
     const lotesReales = [...new Set(visita.map((f) => f[COL.lote]))].sort((a, b) => a - b);
@@ -191,8 +220,14 @@ const Informes = {
       const potreros = [...new Set(sub.map((s) => s[COL.potrero]).filter(Boolean))];
       const observaciones = sub.map((s) => s[COL.observaciones]).filter((o) => o && String(o).trim()).join(" · ");
       const primero = sub[0] || [];
+      const productosLote = productosAplicados
+        .filter((p) => p[COL_PA.cliente] === cliente && p[COL_PA.finca] === finca && p[COL_PA.fecha] === fecha && p[COL_PA.lote] === lote)
+        .map((p) => ({
+          tipo: p[COL_PA.tipo], nombre: p[COL_PA.producto], formulacion: p[COL_PA.formulacion],
+          unidad: p[COL_PA.unidad], dosis: p[COL_PA.dosis],
+        }));
       return {
-        lote, potrero: potreros.join(", "), observaciones,
+        lote, potrero: potreros.join(", "), observaciones, productos: productosLote,
         incid_coll: promedio(sub.map((s) => s[COL.incidColl])),
         sev_coll: promedio(sub.map((s) => s[COL.sevColl])),
         incid_hongos: promedio(sub.map((s) => s[COL.incidHongos])),
@@ -211,16 +246,6 @@ const Informes = {
         manejo: {
           tipoFumigacion: primero[COL.tipoFumigacion] || "",
           litrosMezclaHa: primero[COL.litrosMezclaHa] || "",
-          acondicionadorAguas: primero[COL.acondicionadorAguas] || "",
-          dosisAcondicionador: primero[COL.dosisAcondicionador] || "",
-          insecticida: primero[COL.insecticida] || "",
-          dosisInsecticida: primero[COL.dosisInsecticida] || "",
-          fungicida: primero[COL.fungicida] || "",
-          dosisFungicida: primero[COL.dosisFungicida] || "",
-          fertilizanteFoliar: primero[COL.fertilizanteFoliar] || "",
-          dosisFertilizante: primero[COL.dosisFertilizante] || "",
-          abono: primero[COL.abono] || "",
-          dosisAbonoHa: primero[COL.dosisAbonoHa] || "",
           ordenMezclaCorrecto: primero[COL.ordenMezclaCorrecto] || "",
           phFinalMezcla: primero[COL.phFinalMezcla] || "",
         },
@@ -331,31 +356,26 @@ const Informes = {
       <td${claseAlerta(t.pasto_sano, um("pasto_sano"), true)}>${fmt(t.pasto_sano, true)}</td>
     </tr>`).join("");
 
-    function combinar(producto, dosis) {
-      if (producto && dosis) return `${producto} — ${dosis}`;
-      return producto || dosis || "";
-    }
-
-    function manejoHtml(m) {
+    function manejoHtml(m, productos) {
       const filasM = [
         ["Tipo de fumigacion", m.tipoFumigacion], ["Litros de mezcla/ha", m.litrosMezclaHa],
-        ["Acondicionador de aguas", combinar(m.acondicionadorAguas, m.dosisAcondicionador)],
-        ["Insecticida", combinar(m.insecticida, m.dosisInsecticida)],
-        ["Fungicida", combinar(m.fungicida, m.dosisFungicida)],
-        ["Fertilizante foliar", combinar(m.fertilizanteFoliar, m.dosisFertilizante)],
-        ["Abono", combinar(m.abono, m.dosisAbonoHa)],
-        ["Orden de mezcla correcto", m.ordenMezclaCorrecto],
-        ["pH final de la mezcla", m.phFinalMezcla],
+        ["Orden de mezcla correcto", m.ordenMezclaCorrecto], ["pH final de la mezcla", m.phFinalMezcla],
       ].filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "");
-      if (filasM.length === 0) return "";
-      return `<ul class="manejo-lista">${filasM.map(([k, v]) => `<li><strong>${k}:</strong> ${v}</li>`).join("")}</ul>`;
+      const productosLi = (productos || [])
+        .map((p) => {
+          const detalle = [p.formulacion, [p.dosis, p.unidad].filter(Boolean).join(" ")].filter(Boolean).join(" · ");
+          return `<li><strong>${p.tipo || "Producto"}:</strong> ${p.nombre}${detalle ? ` (${detalle})` : ""}</li>`;
+        })
+        .join("");
+      if (filasM.length === 0 && !productosLi) return "";
+      return `<ul class="manejo-lista">${filasM.map(([k, v]) => `<li><strong>${k}:</strong> ${v}</li>`).join("")}${productosLi}</ul>`;
     }
 
     const porLoteHtml = D.tabla_lotes.map((t, i) => {
       const leyenda = D.tortas[i].valores.map((v, vi) =>
         `<li><span class="leg-swatch" style="background:${COLORES_TORTA[vi]}"></span>${ETIQUETAS_TORTA[vi]}: ${fmt(v, true)}</li>`
       ).join("");
-      const manejo = manejoHtml(t.manejo);
+      const manejo = manejoHtml(t.manejo, t.productos);
       return `<div class="lote-bloque">
         <h3>Lote ${t.lote}${t.potrero ? ` — Potrero ${t.potrero}` : ""}</h3>
         <div class="lote-fila">
