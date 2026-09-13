@@ -308,6 +308,33 @@ const Informes = {
       lote: t.lote, valores: [t.dano_coll || 0, t.dano_mol || 0, t.dano_hongos || 0, Math.max(t.pasto_sano || 0, 0)],
     }));
 
+    // Fila y graficas extra con el promedio de todos los lotes: el estado general de la finca en esta visita.
+    const promedioFinca = {
+      incid_coll: promedio(tablaLotes.map((t) => t.incid_coll)),
+      sev_coll: promedio(tablaLotes.map((t) => t.sev_coll)),
+      incid_hongos: promedio(tablaLotes.map((t) => t.incid_hongos)),
+      sev_hongos: promedio(tablaLotes.map((t) => t.sev_hongos)),
+      adultos: promedio(tablaLotes.map((t) => t.adultos)),
+      ninfas: promedio(tablaLotes.map((t) => t.ninfas)),
+      loritos: promedio(tablaLotes.map((t) => t.loritos)),
+      lepidopteros: promedio(tablaLotes.map((t) => t.lepidopteros)),
+      dano_mol: promedio(tablaLotes.map((t) => t.dano_mol)),
+      dano_coll: promedio(tablaLotes.map((t) => t.dano_coll)),
+      dano_hongos: promedio(tablaLotes.map((t) => t.dano_hongos)),
+      pasto_sano: promedio(tablaLotes.map((t) => t.pasto_sano)),
+    };
+    const promedioBarras = {
+      valores: [promedioFinca.adultos, promedioFinca.ninfas, promedioFinca.loritos, promedioFinca.lepidopteros],
+      errores: [
+        promedio(tablaLotes.map((t) => t.adultos_sd)), promedio(tablaLotes.map((t) => t.ninfas_sd)),
+        promedio(tablaLotes.map((t) => t.loritos_sd)), promedio(tablaLotes.map((t) => t.lepidopteros_sd)),
+      ],
+    };
+    const promedioTorta = [
+      promedioFinca.dano_coll || 0, promedioFinca.dano_mol || 0, promedioFinca.dano_hongos || 0,
+      Math.max(promedioFinca.pasto_sano || 0, 0),
+    ];
+
     // Alertas: cualquier indicador que supere (o, para pasto sano, no alcance) su umbral configurado.
     const alertas = [];
     for (const t of tablaLotes) {
@@ -329,6 +356,7 @@ const Informes = {
     return {
       cliente, finca, fecha, visita_numero: visitaNumero, lotes_reales: lotesReales, lotes_finca: lotesFinca,
       tabla_lotes: tablaLotes, barras_estatica: barrasEstatica, historial, umbrales_historial: umbralesHistorial, tortas, alertas, umbrales,
+      promedio_finca: promedioFinca, promedio_barras: promedioBarras, promedio_torta: promedioTorta,
     };
   },
 
@@ -355,7 +383,21 @@ const Informes = {
       <td${claseAlerta(t.dano_coll, um("dano_coll"))}>${fmt(t.dano_coll, true)}</td>
       <td${claseAlerta(t.dano_hongos, um("dano_hongos"))}>${fmt(t.dano_hongos, true)}</td>
       <td${claseAlerta(t.pasto_sano, um("pasto_sano"), true)}>${fmt(t.pasto_sano, true)}</td>
-    </tr>`).join("");
+    </tr>`).join("") + `<tr class="fila-promedio">
+      <td>Promedio general</td>
+      <td${claseAlerta(D.promedio_finca.incid_coll, um("incid_coll"))}>${fmt(D.promedio_finca.incid_coll, true)}</td>
+      <td${claseAlerta(D.promedio_finca.sev_coll, um("sev_coll"))}>${fmt(D.promedio_finca.sev_coll, true)}</td>
+      <td${claseAlerta(D.promedio_finca.incid_hongos, um("incid_hongos"))}>${fmt(D.promedio_finca.incid_hongos, true)}</td>
+      <td${claseAlerta(D.promedio_finca.sev_hongos, um("sev_hongos"))}>${fmt(D.promedio_finca.sev_hongos, true)}</td>
+      <td${claseAlerta(D.promedio_finca.adultos, um("adultos"))}>${fmt(D.promedio_finca.adultos)}</td>
+      <td${claseAlerta(D.promedio_finca.ninfas, um("ninfas"))}>${fmt(D.promedio_finca.ninfas)}</td>
+      <td${claseAlerta(D.promedio_finca.loritos, um("loritos"))}>${fmt(D.promedio_finca.loritos)}</td>
+      <td${claseAlerta(D.promedio_finca.lepidopteros, um("lepidopteros"))}>${fmt(D.promedio_finca.lepidopteros)}</td>
+      <td${claseAlerta(D.promedio_finca.dano_mol, um("dano_mol"))}>${fmt(D.promedio_finca.dano_mol, true)}</td>
+      <td${claseAlerta(D.promedio_finca.dano_coll, um("dano_coll"))}>${fmt(D.promedio_finca.dano_coll, true)}</td>
+      <td${claseAlerta(D.promedio_finca.dano_hongos, um("dano_hongos"))}>${fmt(D.promedio_finca.dano_hongos, true)}</td>
+      <td${claseAlerta(D.promedio_finca.pasto_sano, um("pasto_sano"), true)}>${fmt(D.promedio_finca.pasto_sano, true)}</td>
+    </tr>`;
 
     function manejoHtml(m, productos) {
       const filasM = [
@@ -388,7 +430,21 @@ const Informes = {
         </div>
         ${manejo ? `<div class="manejo-box"><strong>Manejo agronómico aplicado</strong>${manejo}</div>` : ""}
       </div>`;
-    }).join("");
+    }).join("") + (() => {
+      const leyendaProm = D.promedio_torta.map((v, vi) =>
+        `<li><span class="leg-swatch" style="background:${COLORES_TORTA[vi]}"></span>${ETIQUETAS_TORTA[vi]}: ${fmt(v, true)}</li>`
+      ).join("");
+      return `<div class="lote-bloque">
+        <h3>Estado general de la finca (promedio de todos los lotes)</h3>
+        <div class="lote-fila">
+          <div class="chart-box chart-barras"><canvas id="barrasPromedio" width="480" height="220"></canvas></div>
+          <div class="torta-box">
+            <canvas id="tortaPromedio" width="200" height="200"></canvas>
+            <ul class="torta-legend">${leyendaProm}</ul>
+          </div>
+        </div>
+      </div>`;
+    })();
 
     const opcionesVariable = Object.keys(D.historial).map((v) => `<option value="${v}">${v}</option>`).join("");
 
@@ -464,6 +520,7 @@ th,td{text-align:center;padding:8px 6px;border-bottom:1px solid var(--borde);}
 th{background:var(--principal-oscuro);color:#fdf9f4;font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;}
 td:first-child,th:first-child{text-align:left;padding-left:12px;}
 td.alerta{background:#f6e4df;color:var(--rojo);font-weight:700;}
+.fila-promedio td{font-weight:700;background:var(--fondo-suave);border-top:2px solid var(--principal);}
 .chart-box{margin-top:14px;border:1px solid var(--borde);padding:14px;background:#fff;}
 .chart-box canvas{max-width:100%;height:auto;}
 .lote-bloque{margin-top:22px;padding-top:18px;border-top:1px solid var(--borde);}
@@ -570,6 +627,8 @@ const historial = ${JSON.stringify(D.historial)};
 const umbralesHistorial = ${JSON.stringify(D.umbrales_historial)};
 const tortas = ${JSON.stringify(D.tortas)};
 const lotesFinca = ${JSON.stringify(D.lotes_finca.map(String))};
+const promedioBarras = ${JSON.stringify(D.promedio_barras)};
+const promedioTorta = ${JSON.stringify(D.promedio_torta)};
 
 // Calcula un maximo y un paso "bonitos" para el eje Y, ajustados al tamano real de los datos
 // (en vez de un eje siempre fijo hasta el 100%). En porcentaje usa multiplos de 5 y nunca pasa de 100.
@@ -703,6 +762,11 @@ lotesFinca.forEach((lote, i) => {
   }
 });
 tortas.forEach((t,i) => drawPie("torta"+i, t.valores));
+drawGroupedBars("barrasPromedio", barrasEstatica.categorias,
+  { "Promedio": promedioBarras.valores }, ["Promedio"], barrasEstatica.umbrales,
+  { "Promedio": promedioBarras.errores }, lotesFinca.length,
+  { tituloX: "Plaga o indicador evaluado", tituloY: "Cantidad promedio de individuos" });
+drawPie("tortaPromedio", promedioTorta);
 
 const varSelect = document.getElementById("varSelect");
 function redrawHistorial() {
