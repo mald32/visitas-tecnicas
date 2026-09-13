@@ -496,6 +496,19 @@ textarea{width:100%;min-height:70px;border:1px solid var(--borde);border-radius:
 .firma{margin-top:38px;font-size:12px;color:var(--gris);border-top:1px solid var(--borde);padding-top:14px;}
 .hint{font-size:12px;color:var(--gris);}
 footer{margin-top:36px;font-size:11px;color:#a3a9b0;text-align:center;}
+.tabla-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:8px;box-shadow:var(--sombra);}
+.tabla-scroll table{box-shadow:none;margin-top:0;}
+.torta-box canvas{max-width:100%;height:auto;}
+@media (max-width:640px){
+  .hoja{margin:0;padding:20px 16px 32px;border-radius:0;box-shadow:none;}
+  header{flex-direction:column;}
+  .asesor-box{text-align:left;white-space:normal;}
+  .datos-grid{grid-template-columns:1fr;}
+  .datos-grid div+div{border-left:none;border-top:1px solid rgba(46,107,62,0.18);}
+  .chart-barras{min-width:0;flex-basis:100%;}
+  .torta-box{flex-basis:100%;}
+  .manejo-box{flex-basis:100%;}
+}
 </style></head>
 <body>
 <div class="hoja">
@@ -520,11 +533,13 @@ footer{margin-top:36px;font-size:11px;color:#a3a9b0;text-align:center;}
 </div>
 
 <h2>Tabla de resultados por lote</h2>
+<div class="tabla-scroll">
 <table><thead><tr>
 <th>Lote</th><th>Incid. Collaria</th><th>Sev. Collaria</th><th>Incid. hongos</th><th>Sev. hongos</th>
 <th>Adultos</th><th>Ninfas</th><th>Loritos</th><th>Lepidópteros</th>
 <th>Daño moluscos</th><th>Daño collaria</th><th>Daño hongos</th><th>Pasto sano</th>
 </tr></thead><tbody>${filasTabla}</tbody></table>
+</div>
 
 <h2>Plagas y estado por lote (vs. umbral)</h2>
 ${porLoteHtml}

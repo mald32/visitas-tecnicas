@@ -541,7 +541,15 @@ async function onVerDatos() {
   try {
     const datos = await Informes.calcularDatos(cliente, finca, fecha);
     const html = Informes.generarHtml(datos, [], "");
-    el("informe-preview").srcdoc = html;
+    const preview = el("informe-preview");
+    preview.srcdoc = html;
+    // Ajusta la altura del iframe al contenido real, para que solo haya un scroll (el de la pagina)
+    // en vez de un scroll interno del recuadro que se ve mal en el celular.
+    preview.onload = () => {
+      try {
+        preview.style.height = preview.contentDocument.documentElement.scrollHeight + "px";
+      } catch (e) { /* si por algo no se puede leer, se queda con la altura por defecto */ }
+    };
     el("datos-estado").textContent = "";
     el("informe-datos").hidden = false;
   } catch (e) {
