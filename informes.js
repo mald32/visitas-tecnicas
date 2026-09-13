@@ -256,7 +256,7 @@ const Informes = {
     // Solo variables en "numero promedio de individuos" (se excluye Hojas por Moluscos, que es otra unidad).
     // Umbrales leidos en vivo de Configuracion (si falta alguno, se usa 5 como respaldo). Barras de error = +-1 desv. estandar / 2.
     const barrasEstatica = {
-      categorias: ["Individuos Adultos de Collaria", "Ninfas de Collaria", "Individuos de Lorito", "Numero de Lepidopteros"],
+      categorias: ["Adultos de Collaria", "Ninfas de Collaria", "Loritos", "Lepidópteros"],
       umbrales: [
         umbrales["Umbral de Adultos de Collaria"] ?? 5,
         umbrales["Umbral de Ninfas de Collaria"] ?? 5,
@@ -332,7 +332,7 @@ const Informes = {
     };
   },
 
-  generarHtml(D, recomendacionTexto) {
+  generarHtml(D, productosRecomendados, notasAdicionales) {
     const claseAlerta = (valor, umbral, esMinimo) => {
       if (valor == null || umbral == null) return "";
       const excede = esMinimo ? valor < umbral : valor > umbral;
@@ -405,60 +405,106 @@ const Informes = {
       ? D.alertas.map((a) => `• ${a}`).join("<br>")
       : "Ningún indicador superó su umbral en esta visita.";
 
-    const recomendacionHtml = recomendacionTexto && recomendacionTexto.trim()
-      ? recomendacionTexto.trim().replace(/\n/g, "<br>")
-      : "Sin recomendaciones registradas para esta visita.";
+    // Cada producto puede llevar hasta 3 dosis (una por tipo de fumigacion), porque el informe se
+    // entrega antes de saber con que equipo va a aplicar el cliente en esa visita puntual.
+    function formatearDosis(p) {
+      const partes = [];
+      if (p.dosisDron) partes.push(`${p.dosisDron}${p.unidad || ""}/Hectárea (Dron)`);
+      if (p.dosisEstacionaria) partes.push(`${p.dosisEstacionaria}${p.unidad || ""}/Caneca (Estacionaria)`);
+      if (p.dosisBomba) partes.push(`${p.dosisBomba}${p.unidad || ""}/Bomba (Bomba de espalda)`);
+      if (partes.length === 0) return "";
+      if (partes.length === 1) return partes[0];
+      return partes.slice(0, -1).join(", ") + " o " + partes[partes.length - 1];
+    }
+
+    const productosRecomendadosHtml = (productosRecomendados || []).length
+      ? `<ol class="reco-lista">${productosRecomendados.map((p) => {
+          const detalle = [p.tipo, p.formulacion].filter(Boolean).join(" · ");
+          const dosis = formatearDosis(p);
+          return `<li>
+            <div class="reco-texto">
+              <strong>${p.nombre}</strong>${detalle ? `<span class="reco-detalle"> — ${detalle}</span>` : ""}
+              ${dosis ? `<div class="reco-dosis">${dosis}</div>` : ""}
+            </div>
+          </li>`;
+        }).join("")}</ol>`
+      : `<p class="hint">Sin productos recomendados para esta visita.</p>`;
+
+    const notasHtml = notasAdicionales && notasAdicionales.trim()
+      ? notasAdicionales.trim().replace(/\n/g, "<br>")
+      : "Sin observaciones adicionales.";
 
     const asesor = (typeof CONFIG !== "undefined" && CONFIG.ASESOR) || {};
 
     return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"><title>Informe de Visita - ${D.cliente}</title>
 <style>
-:root{--verde:#2e6b3e;--verde-claro:#eaf3ec;--gris:#555;--borde:#dcdcdc;--rojo:#c0392b;}
-body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:820px;margin:0 auto;padding:24px 20px 60px;color:#222;}
-header{border-bottom:3px solid var(--verde);padding-bottom:14px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;}
-.titulo-box{display:flex;align-items:center;gap:14px;}
-.logo{height:56px;width:auto;}
-header h1{margin:0 0 4px;font-size:22px;color:var(--verde);}
-.asesor-box{text-align:right;font-size:11px;color:var(--gris);line-height:1.5;white-space:nowrap;}
-.datos-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;background:var(--verde-claro);padding:14px 16px;border-radius:8px;margin-bottom:24px;font-size:14px;}
-.datos-grid div span{color:var(--gris);display:block;font-size:12px;}
-h2{font-size:16px;color:var(--verde);border-bottom:1px solid var(--borde);padding-bottom:6px;margin-top:32px;}
-h3{font-size:14px;color:#333;margin:18px 0 8px;}
-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px;}
-th,td{text-align:center;padding:6px 4px;border-bottom:1px solid var(--borde);}
-th{background:#f5f5f5;color:var(--gris);font-weight:600;}
-td:first-child,th:first-child{text-align:left;}
-td.alerta{background:#fbe4e1;color:var(--rojo);font-weight:600;}
-.chart-box{margin-top:12px;border:1px solid var(--borde);border-radius:8px;padding:14px;}
+:root{
+  --verde:#2e6b3e; --verde-oscuro:#1f4d2c; --verde-claro:#eaf3ec;
+  --gris:#5b6470; --borde:#e3e6ea; --rojo:#c0392b; --texto:#1c2126;
+  --sombra:0 2px 10px rgba(20,40,30,0.07);
+}
+*{box-sizing:border-box;}
+html,body{background:#eef1ee;}
+body{font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;max-width:900px;margin:0 auto;padding:0 0 40px;color:var(--texto);}
+.hoja{background:#fff;margin:20px auto;padding:32px 36px 44px;border-radius:14px;box-shadow:var(--sombra);}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;border-bottom:2px solid var(--verde);padding-bottom:18px;margin-bottom:24px;}
+.titulo-box{display:flex;align-items:center;gap:16px;}
+.logo{height:52px;width:auto;}
+header h1{margin:0 0 4px;font-size:22px;letter-spacing:.2px;color:var(--verde-oscuro);}
+.subtitulo{color:var(--gris);font-size:13.5px;margin:0;}
+.asesor-box{text-align:right;font-size:11.5px;color:var(--gris);line-height:1.55;white-space:nowrap;}
+.asesor-box strong{color:var(--texto);font-size:12.5px;}
+.datos-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;background:var(--verde-claro);border-radius:10px;margin-bottom:26px;font-size:14px;overflow:hidden;}
+.datos-grid div{padding:14px 18px;}
+.datos-grid div+div{border-left:1px solid rgba(46,107,62,0.18);}
+.datos-grid div span{color:var(--verde-oscuro);opacity:.8;display:block;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px;}
+h2{font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--verde-oscuro);margin:32px 0 14px;padding-left:12px;border-left:4px solid var(--verde);}
+h3{font-size:14px;color:var(--texto);margin:16px 0 8px;font-weight:600;}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;border-radius:8px;overflow:hidden;box-shadow:var(--sombra);}
+th,td{text-align:center;padding:9px 6px;border-bottom:1px solid var(--borde);}
+th{background:var(--verde-oscuro);color:#fff;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px;}
+tbody tr:nth-child(even){background:#f7faf7;}
+td:first-child,th:first-child{text-align:left;padding-left:14px;}
+td.alerta{background:#fdecea;color:var(--rojo);font-weight:700;}
+.chart-box{margin-top:14px;border:1px solid var(--borde);border-radius:10px;padding:16px;background:#fff;box-shadow:var(--sombra);}
 .chart-box canvas{max-width:100%;height:auto;}
-.lote-bloque{margin-top:20px;padding-top:4px;border-top:1px dashed var(--borde);}
-.lote-bloque:first-child{border-top:none;}
-.lote-fila{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-top:10px;}
+.lote-bloque{margin-top:18px;padding:20px 22px;border-radius:12px;background:#fbfcfb;border:1px solid var(--borde);}
+.lote-bloque h3{display:flex;align-items:center;gap:8px;color:var(--verde-oscuro);}
+.lote-bloque h3::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--verde);display:inline-block;flex:none;}
+.lote-fila{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-top:12px;}
 .chart-barras{flex:2;min-width:320px;}
 .torta-box{text-align:center;}
 .historial-fila{display:flex;gap:16px;flex-wrap:wrap;}
-.historial-item{flex:1;min-width:300px;margin-top:12px;}
-.torta-legend{list-style:none;padding:0;margin:6px 0 0;font-size:11px;color:var(--gris);text-align:left;display:inline-block;}
-.torta-legend li{display:flex;align-items:center;gap:5px;margin:2px 0;}
-.manejo-box{flex:1;min-width:220px;background:#fafafa;border:1px solid var(--borde);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--gris);}
-.manejo-lista{list-style:none;padding:0;margin:6px 0 0;}
-.manejo-lista li{margin:3px 0;}
-.leg-swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}
+.historial-item{flex:1;min-width:300px;margin-top:14px;}
+.torta-legend{list-style:none;padding:0;margin:8px 0 0;font-size:11px;color:var(--gris);text-align:left;display:inline-block;}
+.torta-legend li{display:flex;align-items:center;gap:6px;margin:3px 0;}
+.manejo-box{flex:1;min-width:220px;background:#fff;border:1px solid var(--borde);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--gris);box-shadow:var(--sombra);}
+.manejo-box strong{color:var(--texto);display:block;margin-bottom:6px;font-size:12.5px;}
+.manejo-lista{list-style:none;padding:0;margin:0;}
+.manejo-lista li{margin:4px 0;}
+.leg-swatch{width:10px;height:10px;border-radius:3px;display:inline-block;}
+.reco-lista{list-style:none;counter-reset:reco;padding:0;margin:0 0 24px;display:flex;flex-direction:column;gap:10px;}
+.reco-lista li{counter-increment:reco;position:relative;background:#fff;border:1px solid var(--borde);border-left:4px solid var(--verde);border-radius:10px;padding:12px 16px 12px 46px;box-shadow:var(--sombra);}
+.reco-lista li::before{content:counter(reco);position:absolute;left:14px;top:50%;transform:translateY(-50%);width:22px;height:22px;border-radius:50%;background:var(--verde);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+.reco-texto strong{font-size:14px;color:var(--texto);}
+.reco-detalle{color:var(--gris);font-size:12px;}
+.reco-dosis{margin-top:5px;font-size:12.5px;color:var(--verde-oscuro);background:var(--verde-claro);display:inline-block;padding:3px 10px;border-radius:20px;}
 select{padding:6px 10px;border-radius:6px;border:1px solid var(--borde);font-size:13px;}
-textarea{width:100%;min-height:70px;border:1px solid var(--borde);border-radius:6px;padding:8px;font-family:inherit;font-size:13px;box-sizing:border-box;}
-.caja-fija{white-space:pre-wrap;border:1px solid var(--borde);border-radius:6px;padding:10px;font-size:13px;background:#fafafa;min-height:40px;}
-.firma{margin-top:36px;font-size:12px;color:var(--gris);border-top:1px solid var(--borde);padding-top:12px;}
+textarea{width:100%;min-height:70px;border:1px solid var(--borde);border-radius:8px;padding:10px;font-family:inherit;font-size:13px;box-sizing:border-box;}
+.caja-fija{white-space:pre-wrap;border:1px solid var(--borde);border-radius:8px;padding:12px 14px;font-size:13px;background:#fbfcfb;min-height:40px;color:var(--gris);}
+.firma{margin-top:38px;font-size:12px;color:var(--gris);border-top:1px solid var(--borde);padding-top:14px;}
 .hint{font-size:12px;color:var(--gris);}
-footer{margin-top:40px;font-size:11px;color:#999;text-align:center;}
+footer{margin-top:36px;font-size:11px;color:#a3a9b0;text-align:center;}
 </style></head>
 <body>
+<div class="hoja">
 
 <header>
   <div class="titulo-box">
     <img src="${LOGO_DATA_URI}" alt="Logo" class="logo">
     <div><h1>Informe de Visita Técnica</h1>
-    <p style="color:var(--gris)">${D.cliente} - Finca ${D.finca} · Visita No. ${D.visita_numero}</p></div>
+    <p class="subtitulo">${D.cliente} - Finca ${D.finca} · Visita No. ${D.visita_numero}</p></div>
   </div>
   <div class="asesor-box">
     ${asesor.nombre ? `<strong>${asesor.nombre}</strong><br>` : ""}
@@ -495,7 +541,10 @@ ${historialCanvasHtml}
 <div class="caja-fija">${resultadosHtml}</div>
 
 <h2>Recomendaciones</h2>
-<div class="caja-fija">${recomendacionHtml}</div>
+${productosRecomendadosHtml}
+
+<h3>Observaciones adicionales</h3>
+<div class="caja-fija">${notasHtml}</div>
 
 <div class="firma">
   ${asesor.nombre || ""}${asesor.profesion ? " — " + asesor.profesion : ""}${asesor.cargo ? " — " + asesor.cargo : ""}
@@ -503,6 +552,7 @@ ${historialCanvasHtml}
 
 <footer>Informe generado automáticamente a partir del registro de visitas técnicas.</footer>
 
+</div>
 <script>
 const COLORES = ${JSON.stringify(COLORES_LOTE)};
 const barrasEstatica = ${JSON.stringify(D.barras_estatica)};
@@ -663,8 +713,8 @@ redrawHistorial();
 </body></html>`;
   },
 
-  async generar(cliente, finca, fecha, recomendacionTexto) {
+  async generar(cliente, finca, fecha, productosRecomendados, notasAdicionales) {
     const D = await this.calcularDatos(cliente, finca, fecha);
-    return this.generarHtml(D, recomendacionTexto);
+    return this.generarHtml(D, productosRecomendados, notasAdicionales);
   },
 };

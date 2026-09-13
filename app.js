@@ -28,10 +28,21 @@ function actualizarOpcionesCatalogo() {
 }
 
 // Agrega un bloque de "producto" (Manejo agronomico o Recomendaciones). valores permite prellenar (cache/edicion).
+// En Recomendaciones se piden 3 dosis (una por tipo de fumigacion), porque el informe se entrega
+// antes de saber con que equipo va a aplicar el cliente. En Manejo agronomico es una sola dosis
+// (lo que realmente se aplico en este lote durante la visita).
 function agregarBloqueProducto(containerId, valores = {}) {
+  const esRecomendacion = containerId === "lista-productos-informe";
   contadorProductos += 1;
   const div = document.createElement("div");
   div.className = "producto-bloque";
+  const filaDosis = esRecomendacion
+    ? `<div class="fila">
+        <label>Dosis Dron (por Hectárea) <input type="text" class="p-dosis-dron" placeholder="Ej: 200" value="${valores.dosisDron || ""}"></label>
+        <label>Dosis Estacionaria (por Caneca) <input type="text" class="p-dosis-est" placeholder="Ej: 200" value="${valores.dosisEstacionaria || ""}"></label>
+        <label>Dosis Bomba de espalda (por Bomba) <input type="text" class="p-dosis-bomba" placeholder="Ej: 20" value="${valores.dosisBomba || ""}"></label>
+      </div>`
+    : `<label>Dosis <input type="text" class="p-dosis" value="${valores.dosis || ""}"></label>`;
   div.innerHTML = `
     <div class="fila">
       <label>Tipo
@@ -50,8 +61,9 @@ function agregarBloqueProducto(containerId, valores = {}) {
         </select>
       </label>
       <label>Unidad <input type="text" class="p-unidad" value="${valores.unidad || ""}"></label>
-      <label>Dosis <input type="text" class="p-dosis" value="${valores.dosis || ""}"></label>
+      ${esRecomendacion ? "" : filaDosis}
     </div>
+    ${esRecomendacion ? filaDosis : ""}
     <button type="button" class="secundario btn-quitar-producto">Quitar producto</button>
   `;
   el(containerId).appendChild(div);
@@ -69,13 +81,19 @@ function agregarBloqueProducto(containerId, valores = {}) {
 
 function leerProductosFormulario(containerId) {
   return [...el(containerId).querySelectorAll(".producto-bloque")]
-    .map((div) => ({
-      tipo: div.querySelector(".p-tipo").value,
-      nombre: div.querySelector(".p-nombre").value.trim(),
-      formulacion: div.querySelector(".p-formulacion").value,
-      unidad: div.querySelector(".p-unidad").value,
-      dosis: div.querySelector(".p-dosis").value.trim(),
-    }))
+    .map((div) => {
+      const valor = (selector) => { const campo = div.querySelector(selector); return campo ? campo.value.trim() : ""; };
+      return {
+        tipo: valor(".p-tipo"),
+        nombre: valor(".p-nombre"),
+        formulacion: valor(".p-formulacion"),
+        unidad: valor(".p-unidad"),
+        dosis: valor(".p-dosis"),
+        dosisDron: valor(".p-dosis-dron"),
+        dosisEstacionaria: valor(".p-dosis-est"),
+        dosisBomba: valor(".p-dosis-bomba"),
+      };
+    })
     .filter((p) => p.nombre);
 }
 
@@ -522,7 +540,7 @@ async function onVerDatos() {
   ocultarDatosInforme();
   try {
     const datos = await Informes.calcularDatos(cliente, finca, fecha);
-    const html = Informes.generarHtml(datos, "");
+    const html = Informes.generarHtml(datos, [], "");
     el("informe-preview").srcdoc = html;
     el("datos-estado").textContent = "";
     el("informe-datos").hidden = false;
@@ -541,21 +559,10 @@ function ordenDeMezcla(nombreProducto) {
   return orden != null && !Number.isNaN(orden) ? orden : Infinity;
 }
 
-function construirTextoRecomendaciones() {
-  const productos = leerProductosFormulario("lista-productos-informe")
+function productosRecomendadosOrdenados() {
+  return leerProductosFormulario("lista-productos-informe")
     .slice()
     .sort((a, b) => ordenDeMezcla(a.nombre) - ordenDeMezcla(b.nombre));
-  const lineasProductos = productos.map((p) => {
-    const detalle = [p.tipo, p.formulacion].filter(Boolean).join(" - ");
-    const dosis = p.dosis ? `${p.dosis}${p.unidad ? " " + p.unidad : ""}` : "";
-    return `- ${p.nombre}${detalle ? " (" + detalle + ")" : ""}${dosis ? ": " + dosis : ""}`;
-  });
-
-  const notas = el("informe-recomendaciones").value.trim();
-  const partes = [];
-  if (lineasProductos.length > 0) partes.push("Productos recomendados:\n" + lineasProductos.join("\n"));
-  if (notas) partes.push(notas);
-  return partes.join("\n\n");
 }
 
 async function onGenerarInforme() {
@@ -571,8 +578,9 @@ async function onGenerarInforme() {
   el("informe-estado").textContent = "Generando informe...";
   el("informe-resultado").hidden = true;
   try {
-    const recomendaciones = construirTextoRecomendaciones();
-    const html = await Informes.generar(cliente, finca, fecha, recomendaciones);
+    const productos = productosRecomendadosOrdenados();
+    const notas = el("informe-recomendaciones").value.trim();
+    const html = await Informes.generar(cliente, finca, fecha, productos, notas);
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
 
