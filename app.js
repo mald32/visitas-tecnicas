@@ -685,6 +685,8 @@ document.addEventListener("DOMContentLoaded", () => {
     el("btn-sincronizar").disabled = true;
     el("btn-sincronizar").textContent = "Sincronizando...";
     await sincronizar();
+    await cargarConfigYClientes();
+    poblarSelectCliente();
     await renderResumenHoy();
     await refrescarResumenCola();
     el("btn-sincronizar").disabled = false;
