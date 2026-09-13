@@ -1,22 +1,22 @@
 :root {
-  --principal: #7a1b6d;
-  --principal-oscuro: #3c2415;
-  --acento: #c17817;
-  --acento-verde: #7c9a2e;
-  --fondo-suave: #f5f2df;
-  --gris: #6b6257;
-  --borde: #ded9c0;
-  --rojo: #a02e2e;
+  --principal: #123a63;
+  --principal-oscuro: #0d2846;
+  --acento: #2f8fd1;
+  --acento-verde: #3fa845;
+  --fondo-suave: #eef1f4;
+  --gris: #5b6472;
+  --borde: #dbe1e7;
+  --rojo: #c0392b;
 }
 
 * { box-sizing: border-box; }
 
 body {
-  font-family: "Trebuchet MS", Verdana, sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
   max-width: 520px;
   margin: 0 auto;
   padding: 16px 16px 60px;
-  color: #2a2117;
+  color: #1c2430;
   background: #fff;
 }
 
@@ -29,7 +29,7 @@ header {
   margin-bottom: 16px;
 }
 
-header h1 { font-family: Georgia, "Times New Roman", serif; font-size: 19px; color: var(--principal); margin: 0; }
+header h1 { font-family: inherit; font-weight: 800; font-size: 19px; color: var(--principal); margin: 0; }
 .titulo-box { display: flex; align-items: center; gap: 10px; }
 .titulo-box .logo { height: 32px; width: auto; }
 
@@ -37,8 +37,8 @@ header h1 { font-family: Georgia, "Times New Roman", serif; font-size: 19px; col
 #btn-sincronizar { padding: 6px 14px; font-size: 12px; margin: 0; width: auto; }
 
 #estado-conexion { font-size: 12px; padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
-#estado-conexion.en-linea { background: #eef2df; color: var(--acento-verde); }
-#estado-conexion.sin-conexion { background: #f6e4df; color: var(--rojo); }
+#estado-conexion.en-linea { background: #e7f5e8; color: var(--acento-verde); }
+#estado-conexion.sin-conexion { background: #fbe4e1; color: var(--rojo); }
 
 #pantalla-login { text-align: center; padding: 40px 10px; }
 
@@ -55,12 +55,13 @@ button {
 button:disabled { opacity: 0.6; }
 
 h2 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: inherit;
   font-size: 15px;
-  font-weight: 700;
-  color: var(--principal-oscuro);
-  border-bottom: 2px solid var(--acento);
-  padding-bottom: 4px;
+  font-weight: 800;
+  color: #fff;
+  background: var(--principal);
+  border-radius: 6px;
+  padding: 8px 12px;
   margin-top: 22px;
 }
 
@@ -74,7 +75,7 @@ input, select, textarea {
   font-size: 15px;
   font-family: inherit;
   width: 100%;
-  background: #fffdf7;
+  background: #fff;
 }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); border-color: var(--acento); }
 
@@ -85,11 +86,11 @@ label { display: block; margin-bottom: 12px; font-size: 13px; color: var(--gris)
 
 .caja-nueva { background: var(--fondo-suave); border-radius: 10px; padding: 10px 12px; margin: -6px 0 12px; border: 1px solid var(--borde); }
 
-.producto-bloque { background: #fbf9ef; border: 1px solid var(--borde); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.producto-bloque { background: #f7f9fb; border: 1px solid var(--borde); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .producto-bloque .fila { margin-bottom: 6px; }
 .producto-bloque button.secundario { width: auto; padding: 6px 14px; font-size: 13px; margin-top: 2px; }
 
-h3 { font-family: Georgia, "Times New Roman", serif; font-size: 13.5px; color: var(--principal-oscuro); margin: 18px 0 8px; }
+h3 { font-family: inherit; font-weight: 700; font-size: 13.5px; color: var(--principal-oscuro); margin: 18px 0 8px; }
 
 #form-punto button[type="submit"],
 #pantalla-visita button,
