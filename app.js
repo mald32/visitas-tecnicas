@@ -201,7 +201,7 @@ async function onRetomarVisita(cliente, finca, fecha) {
 }
 
 async function cargarConfigYClientes() {
-  if (navigator.onLine) {
+  {
     try {
       const filas = await Graph.leerRango(CONFIG.HOJA_CONFIG, "B3:B4");
       parametros = { hojasEvaluadas: Number(filas[0][0]), severidadMoluscos: Number(filas[1][0]) };
