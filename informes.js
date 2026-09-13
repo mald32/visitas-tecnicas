@@ -511,6 +511,29 @@ const umbralesHistorial = ${JSON.stringify(D.umbrales_historial)};
 const tortas = ${JSON.stringify(D.tortas)};
 const lotesFinca = ${JSON.stringify(D.lotes_finca.map(String))};
 
+// Calcula un maximo y un paso "bonitos" para el eje Y, ajustados al tamano real de los datos
+// (en vez de un eje siempre fijo hasta el 100%). En porcentaje usa multiplos de 5 y nunca pasa de 100.
+function calcularEscalaEjeY(maxCrudo, esPorcentaje) {
+  if (!(maxCrudo > 0)) maxCrudo = esPorcentaje ? 0.05 : 1;
+  const acolchado = maxCrudo * 1.3;
+
+  if (esPorcentaje) {
+    const listaPct = [5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100];
+    const objetivoPct = Math.min(acolchado * 100, 100);
+    const maxPct = listaPct.find((v) => v >= objetivoPct) ?? 100;
+    return { max: maxPct / 100, paso: maxPct / 5 / 100, numTicks: 5 };
+  }
+
+  const escalado = acolchado / 5;
+  const exp = Math.floor(Math.log10(escalado));
+  const base = Math.pow(10, exp);
+  const frac = escalado / base;
+  const pasoFrac = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  const paso = pasoFrac * base;
+  const max = Math.ceil(acolchado / paso) * paso;
+  return { max, paso, numTicks: Math.round(max / paso) };
+}
+
 function drawGroupedBars(canvasId, categorias, seriesByKey, keys, umbrales, errores, colorOffset, opciones) {
   opciones = opciones || {};
   const canvas = document.getElementById(canvasId);
@@ -518,22 +541,26 @@ function drawGroupedBars(canvasId, categorias, seriesByKey, keys, umbrales, erro
   const ctx = canvas.getContext("2d");
   const w = canvas.width, h = canvas.height, padL = 58, padR = 20, padT = 20, padB = 74;
   ctx.clearRect(0,0,w,h);
-  let maxVal = 1;
+  let maxVal = 0;
   keys.forEach(k => (seriesByKey[k]||[]).forEach(v => { if (v!=null && v>maxVal) maxVal=v; }));
   if (umbrales) umbrales.forEach(u => { if (u!=null && u>maxVal) maxVal=u; });
   if (errores) keys.forEach(k => (seriesByKey[k]||[]).forEach((v,ci) => {
     const e = (errores[k]||[])[ci];
     if (v!=null && e!=null && v+e/2>maxVal) maxVal = v+e/2;
   }));
-  maxVal *= 1.15;
+  const escala = calcularEscalaEjeY(maxVal, !!opciones.pct);
+  maxVal = escala.max;
   const groupW = (w-padL-padR)/categorias.length;
   const barW = Math.min(28, groupW/(keys.length+1));
-  const fmtTick = (val) => opciones.pct ? (val*100).toFixed(1)+"%" : val.toFixed(1);
+  const fmtTick = (val) => {
+    if (opciones.pct) return Math.round(val*100)+"%";
+    const redondeado = Math.round(val*10)/10;
+    return Number.isInteger(redondeado) ? String(redondeado) : redondeado.toFixed(1);
+  };
 
-  const numTicks = 5;
   ctx.font="10px sans-serif"; ctx.textAlign="right";
-  for (let i=0;i<=numTicks;i++) {
-    const val = (maxVal/numTicks)*i;
+  for (let i=0;i<=escala.numTicks;i++) {
+    const val = escala.paso*i;
     const y = h-padB-(val/maxVal)*(h-padT-padB);
     ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w-padR, y); ctx.stroke();
     ctx.fillStyle="#888"; ctx.fillText(fmtTick(val), padL-6, y+3);

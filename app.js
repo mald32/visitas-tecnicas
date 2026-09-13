@@ -198,7 +198,7 @@ async function cargarConfigYClientes() {
       const filasProductos = await Graph.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:F500");
       catalogoProductos = filasProductos
         .filter((f) => f[0])
-        .map((f) => ({ nombre: f[0], tipo: f[1], formulacion: f[2], unidad: f[5] }));
+        .map((f) => ({ nombre: f[0], tipo: f[1], formulacion: f[2], unidad: f[5], orden: Number(f[4]) }));
       await DB.guardarCache("catalogoProductos", catalogoProductos);
       actualizarOpcionesCatalogo();
       return;
@@ -533,8 +533,18 @@ async function onVerDatos() {
   }
 }
 
+// Orden de mezcla de un producto, segun la columna "Orden" del catalogo (hoja Productos). Los
+// productos que no estan en el catalogo (o sin orden definido) quedan al final.
+function ordenDeMezcla(nombreProducto) {
+  const encontrado = catalogoProductos.find((c) => c.nombre.toLowerCase() === nombreProducto.toLowerCase());
+  const orden = encontrado && encontrado.orden;
+  return orden != null && !Number.isNaN(orden) ? orden : Infinity;
+}
+
 function construirTextoRecomendaciones() {
-  const productos = leerProductosFormulario("lista-productos-informe");
+  const productos = leerProductosFormulario("lista-productos-informe")
+    .slice()
+    .sort((a, b) => ordenDeMezcla(a.nombre) - ordenDeMezcla(b.nombre));
   const lineasProductos = productos.map((p) => {
     const detalle = [p.tipo, p.formulacion].filter(Boolean).join(" - ");
     const dosis = p.dosis ? `${p.dosis}${p.unidad ? " " + p.unidad : ""}` : "";
