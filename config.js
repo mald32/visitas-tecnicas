@@ -14,7 +14,7 @@ const CONFIG = {
   ASESOR: {
     nombre: "Miguel Leon",
     telefono: "3229636167",
-    profesion: "Ingeniero Agronomo",
-    cargo: "Asesor Tecnico Comercial - Galagro Norte de Antioquia",
+    profesion: "Ingeniero Agrónomo",
+    cargo: "Asesor Técnico Comercial - Galagro Norte de Antioquia",
   },
 };

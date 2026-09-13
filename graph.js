@@ -64,43 +64,60 @@ const Graph = {
   },
 
   // Ubica el archivo por su ruta dentro de OneDrive y cachea su ID (localStorage).
-  async idArchivo() {
-    const cacheado = localStorage.getItem("driveItemId");
-    if (cacheado) return cacheado;
+  async idArchivo(forzarRefresco = false) {
+    if (!forzarRefresco) {
+      const cacheado = localStorage.getItem("driveItemId");
+      if (cacheado) return cacheado;
+    }
     const item = await this.llamar(`/me/drive/root:/${CONFIG.RUTA_ARCHIVO}`);
     localStorage.setItem("driveItemId", item.id);
     return item.id;
   },
 
-  async leerRango(hoja, direccion) {
+  // Si el ID de archivo guardado quedo desactualizado (ej. moviste/renombraste el Excel), Graph responde
+  // "itemNotFound". Aqui se busca el archivo de nuevo por su ruta y se reintenta una sola vez.
+  async conReintento(construirYLlamar) {
     const id = await this.idArchivo();
-    const path = `/me/drive/items/${id}/workbook/worksheets('${encodeURIComponent(
-      hoja
-    )}')/range(address='${direccion}')`;
-    const r = await this.llamar(path);
-    return r.values;
+    try {
+      return await construirYLlamar(id);
+    } catch (e) {
+      if (!String(e.message).includes("itemNotFound")) throw e;
+      const idNuevo = await this.idArchivo(true);
+      return await construirYLlamar(idNuevo);
+    }
+  },
+
+  async leerRango(hoja, direccion) {
+    return this.conReintento((id) => {
+      const path = `/me/drive/items/${id}/workbook/worksheets('${encodeURIComponent(
+        hoja
+      )}')/range(address='${direccion}')`;
+      return this.llamar(path).then((r) => r.values);
+    });
   },
 
   // Devuelve todas las filas de una tabla (sin encabezados), como arreglos de valores en el orden de las columnas.
   async leerTabla(nombreTabla) {
-    const id = await this.idArchivo();
-    const path = `/me/drive/items/${id}/workbook/tables('${nombreTabla}')/rows`;
-    const r = await this.llamar(path);
-    return (r.value || []).map((fila) => fila.values[0]);
+    return this.conReintento((id) => {
+      const path = `/me/drive/items/${id}/workbook/tables('${nombreTabla}')/rows`;
+      return this.llamar(path).then((r) => (r.value || []).map((fila) => fila.values[0]));
+    });
   },
 
   async agregarFila(valores) {
-    const id = await this.idArchivo();
-    const path = `/me/drive/items/${id}/workbook/tables('${CONFIG.TABLE_NAME}')/rows/add`;
-    return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [valores] }) });
+    return this.conReintento((id) => {
+      const path = `/me/drive/items/${id}/workbook/tables('${CONFIG.TABLE_NAME}')/rows/add`;
+      return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [valores] }) });
+    });
   },
 
   async escribirRango(hoja, direccion, valores) {
-    const id = await this.idArchivo();
-    const path = `/me/drive/items/${id}/workbook/worksheets('${encodeURIComponent(
-      hoja
-    )}')/range(address='${direccion}')`;
-    return this.llamar(path, { method: "PATCH", body: JSON.stringify({ values: valores }) });
+    return this.conReintento((id) => {
+      const path = `/me/drive/items/${id}/workbook/worksheets('${encodeURIComponent(
+        hoja
+      )}')/range(address='${direccion}')`;
+      return this.llamar(path, { method: "PATCH", body: JSON.stringify({ values: valores }) });
+    });
   },
 
   // Agrega una fila a Clientes_Fincas leyendo primero cuántas filas hay, para escribir justo debajo.
@@ -121,17 +138,20 @@ const Graph = {
   },
 
   // Agrega un producto nuevo al catálogo de la hoja Productos (igual patrón que Clientes_Fincas).
+  // Columnas reales: A Nombre, B Tipo, C Formulacion, D Siglas, E Orden (calculada), F Unidad.
   async agregarProductoCatalogo(nombre, tipo, formulacion, unidad) {
-    const filas = await this.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:D500");
+    const filas = await this.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:A500");
     const usadas = filas.filter((f) => f[0]).length;
     const fila = 4 + usadas;
-    await this.escribirRango(CONFIG.HOJA_PRODUCTOS, `A${fila}:D${fila}`, [[nombre, tipo, formulacion, unidad]]);
+    await this.escribirRango(CONFIG.HOJA_PRODUCTOS, `A${fila}:C${fila}`, [[nombre, tipo, formulacion]]);
+    await this.escribirRango(CONFIG.HOJA_PRODUCTOS, `F${fila}:F${fila}`, [[unidad]]);
   },
 
   // Agrega una fila a la tabla Productos_Aplicados (un producto usado en un lote/visita).
   async agregarProductoAplicado(valores) {
-    const id = await this.idArchivo();
-    const path = `/me/drive/items/${id}/workbook/tables('${CONFIG.TABLA_PRODUCTOS_APLICADOS}')/rows/add`;
-    return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [valores] }) });
+    return this.conReintento((id) => {
+      const path = `/me/drive/items/${id}/workbook/tables('${CONFIG.TABLA_PRODUCTOS_APLICADOS}')/rows/add`;
+      return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [valores] }) });
+    });
   },
 };

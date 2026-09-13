@@ -143,6 +143,11 @@
 
   <button id="btn-terminar-lote" class="secundario">Terminar lote</button>
 
+  <div id="potrero-caja" class="caja-nueva fila" hidden>
+    <label>Nombre del potrero <input type="text" id="potrero-nombre" placeholder="Ej: Potrero 3"></label>
+    <button type="button" id="btn-finalizar-lote">Finalizar</button>
+  </div>
+
   <p id="resumen-cola" class="hint"></p>
 </section>
 
@@ -161,16 +166,29 @@
   <label>Finca <select id="informe-finca"></select></label>
   <label>Fecha de la visita <select id="informe-fecha"></select></label>
 
-  <label>Recomendaciones para el cliente (quedan fijas en el informe, no editables)
-    <textarea id="informe-recomendaciones" rows="4" placeholder="Escribe aqui las recomendaciones y productos a usar..."></textarea>
-  </label>
+  <button type="button" id="btn-ver-datos">Ver datos</button>
+  <p id="datos-estado" class="hint"></p>
 
-  <button id="btn-generar-informe">Generar informe</button>
-  <p id="informe-estado" class="hint"></p>
-  <div id="informe-resultado" hidden>
-    <p>Informe listo.</p>
-    <button id="btn-ver-informe" class="secundario">Ver informe</button>
-    <a id="link-descargar-informe" class="secundario boton-enlace" download>Descargar informe (.html)</a>
+  <div id="informe-datos" hidden>
+    <iframe id="informe-preview"></iframe>
+
+    <h2>Recomendaciones</h2>
+    <h3>Productos recomendados</h3>
+    <p class="hint">Agrega uno por uno los productos que recomiendas para el manejo de este cultivo.</p>
+    <div id="lista-productos-informe"></div>
+    <button type="button" id="btn-agregar-producto-informe" class="secundario">+ Agregar producto</button>
+
+    <label>Notas adicionales para el cliente (quedan fijas en el informe, no editables)
+      <textarea id="informe-recomendaciones" rows="4" placeholder="Escribe aquí notas adicionales..."></textarea>
+    </label>
+
+    <button id="btn-generar-informe">Generar informe</button>
+    <p id="informe-estado" class="hint"></p>
+    <div id="informe-resultado" hidden>
+      <p>Informe listo.</p>
+      <button id="btn-ver-informe" class="secundario">Ver informe</button>
+      <a id="link-descargar-informe" class="secundario boton-enlace" download>Descargar informe (.html)</a>
+    </div>
   </div>
 </section>
 

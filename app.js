@@ -17,23 +17,18 @@ const CAMPOS_MANEJO = [
   { id: "m-ph-final", key: "phFinalMezcla" },
 ];
 
-const TIPOS_PRODUCTO = ["Acondicionador de aguas", "Insecticida", "Fungicida", "Fertilizante Foliar", "Coadyuvante"];
-const FORMULACIONES = ["Hidrosoluble", "WP", "WG", "SC", "EC", "SL", "Otra"];
-const FORMULACIONES_LIQUIDAS = ["Hidrosoluble", "SC", "EC", "SL"];
-const FORMULACIONES_SOLIDAS = ["WP", "WG"];
+// Tipo y formulacion de producto salen del catalogo real (hoja Productos de Excel), no de una lista fija.
+let tiposProducto = [];
+let formulacionesProducto = [];
 
-function unidadPorFormulacion(formulacion) {
-  if (FORMULACIONES_LIQUIDAS.includes(formulacion)) return "cc";
-  if (FORMULACIONES_SOLIDAS.includes(formulacion)) return "g";
-  return "";
-}
-
-function poblarDatalistProductos() {
+function actualizarOpcionesCatalogo() {
+  tiposProducto = [...new Set(catalogoProductos.map((p) => p.tipo).filter(Boolean))].sort();
+  formulacionesProducto = [...new Set(catalogoProductos.map((p) => p.formulacion).filter(Boolean))].sort();
   el("datalist-productos").innerHTML = catalogoProductos.map((p) => `<option value="${p.nombre}">`).join("");
 }
 
-// Agrega un bloque de "producto aplicado" al formulario de manejo. valores permite prellenar (cache/edicion).
-function agregarBloqueProducto(valores = {}) {
+// Agrega un bloque de "producto" (Manejo agronomico o Recomendaciones). valores permite prellenar (cache/edicion).
+function agregarBloqueProducto(containerId, valores = {}) {
   contadorProductos += 1;
   const div = document.createElement("div");
   div.className = "producto-bloque";
@@ -42,7 +37,7 @@ function agregarBloqueProducto(valores = {}) {
       <label>Tipo
         <select class="p-tipo">
           <option value="">-</option>
-          ${TIPOS_PRODUCTO.map((t) => `<option value="${t}" ${valores.tipo === t ? "selected" : ""}>${t}</option>`).join("")}
+          ${tiposProducto.map((t) => `<option value="${t}" ${valores.tipo === t ? "selected" : ""}>${t}</option>`).join("")}
         </select>
       </label>
       <label>Producto <input type="text" class="p-nombre" list="datalist-productos" value="${valores.nombre || ""}"></label>
@@ -51,32 +46,29 @@ function agregarBloqueProducto(valores = {}) {
       <label>Formulación
         <select class="p-formulacion">
           <option value="">-</option>
-          ${FORMULACIONES.map((f) => `<option value="${f}" ${valores.formulacion === f ? "selected" : ""}>${f}</option>`).join("")}
+          ${formulacionesProducto.map((f) => `<option value="${f}" ${valores.formulacion === f ? "selected" : ""}>${f}</option>`).join("")}
         </select>
       </label>
-      <label>Unidad <input type="text" class="p-unidad" value="${valores.unidad || ""}" readonly></label>
+      <label>Unidad <input type="text" class="p-unidad" value="${valores.unidad || ""}"></label>
       <label>Dosis <input type="text" class="p-dosis" value="${valores.dosis || ""}"></label>
     </div>
     <button type="button" class="secundario btn-quitar-producto">Quitar producto</button>
   `;
-  el("lista-productos").appendChild(div);
+  el(containerId).appendChild(div);
 
-  div.querySelector(".p-formulacion").addEventListener("change", (e) => {
-    div.querySelector(".p-unidad").value = unidadPorFormulacion(e.target.value);
-  });
   div.querySelector(".p-nombre").addEventListener("change", (e) => {
     const encontrado = catalogoProductos.find((p) => p.nombre.toLowerCase() === e.target.value.trim().toLowerCase());
     if (encontrado) {
       div.querySelector(".p-tipo").value = encontrado.tipo || "";
       div.querySelector(".p-formulacion").value = encontrado.formulacion || "";
-      div.querySelector(".p-unidad").value = encontrado.unidad || unidadPorFormulacion(encontrado.formulacion);
+      div.querySelector(".p-unidad").value = encontrado.unidad || "";
     }
   });
   div.querySelector(".btn-quitar-producto").addEventListener("click", () => div.remove());
 }
 
-function leerProductosFormulario() {
-  return [...document.querySelectorAll(".producto-bloque")]
+function leerProductosFormulario(containerId) {
+  return [...el(containerId).querySelectorAll(".producto-bloque")]
     .map((div) => ({
       tipo: div.querySelector(".p-tipo").value,
       nombre: div.querySelector(".p-nombre").value.trim(),
@@ -203,12 +195,12 @@ async function cargarConfigYClientes() {
         .map((f) => ({ cliente: f[0], finca: f[1], numeroLotes: Number(f[2]) }));
       await DB.guardarCache("clientesFincas", clientesFincas);
 
-      const filasProductos = await Graph.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:D500");
+      const filasProductos = await Graph.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:F500");
       catalogoProductos = filasProductos
         .filter((f) => f[0])
-        .map((f) => ({ nombre: f[0], tipo: f[1], formulacion: f[2], unidad: f[3] }));
+        .map((f) => ({ nombre: f[0], tipo: f[1], formulacion: f[2], unidad: f[5] }));
       await DB.guardarCache("catalogoProductos", catalogoProductos);
-      poblarDatalistProductos();
+      actualizarOpcionesCatalogo();
       return;
     } catch (e) {
       console.warn("No se pudo leer de Graph, usando caché local:", e.message);
@@ -218,7 +210,7 @@ async function cargarConfigYClientes() {
   parametros = (await DB.leerCache("parametros")) || parametros;
   clientesFincas = (await DB.leerCache("clientesFincas")) || [];
   catalogoProductos = (await DB.leerCache("catalogoProductos")) || [];
-  poblarDatalistProductos();
+  actualizarOpcionesCatalogo();
 }
 
 // ---------- Paso 1: Cliente / Finca ----------
@@ -313,9 +305,9 @@ function onElegirLote(lote) {
   el("lista-productos").innerHTML = "";
   const productosCache = JSON.parse(localStorage.getItem("productosUltimos") || "[]");
   if (productosCache.length > 0) {
-    productosCache.forEach((p) => agregarBloqueProducto(p));
+    productosCache.forEach((p) => agregarBloqueProducto("lista-productos", p));
   } else {
-    agregarBloqueProducto();
+    agregarBloqueProducto("lista-productos");
   }
 
   mostrarPantalla("pantalla-manejo");
@@ -326,7 +318,7 @@ async function onIniciarMonitoreoLote() {
   CAMPOS_MANEJO.forEach((c) => { manejoActual[c.key] = el(c.id).value.trim(); });
   localStorage.setItem("manejoAgronomicoUltimo", JSON.stringify(manejoActual));
 
-  const productos = leerProductosFormulario();
+  const productos = leerProductosFormulario("lista-productos");
   localStorage.setItem("productosUltimos", JSON.stringify(productos));
 
   for (const p of productos) {
@@ -339,7 +331,7 @@ async function onIniciarMonitoreoLote() {
       catalogoProductos.push({ nombre: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad });
       await DB.guardarCache("catalogoProductos", catalogoProductos);
       await DB.agregarItem("producto_nuevo", { nombre: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad });
-      poblarDatalistProductos();
+      actualizarOpcionesCatalogo();
     }
   }
 
@@ -409,10 +401,8 @@ async function onGuardarPunto(ev) {
   await refrescarResumenCola();
 }
 
-async function cerrarLoteActual() {
-  if (!capturandoLote) return;
-  const potrero = prompt("¿Cuál es el nombre/número del potrero de este lote? (se aplicará a todos sus puntos)");
-  if (potrero !== null && potrero.trim() !== "") {
+async function aplicarPotreroLote(potrero) {
+  if (potrero) {
     const items = await DB.listarItems();
     const delLote = items.filter(
       (it) =>
@@ -424,7 +414,7 @@ async function cerrarLoteActual() {
     );
     for (const it of delLote) {
       const fila = [...it.datos.fila];
-      fila[18] = potrero.trim();
+      fila[18] = potrero;
       await DB.actualizarDatosItem(it.id, { fila });
     }
   }
@@ -436,14 +426,19 @@ async function onTerminarLote() {
     await guardarPuntoActual();
     el("form-punto").reset();
   }
-  await cerrarLoteActual();
+  el("potrero-nombre").value = "";
+  el("potrero-caja").hidden = false;
+}
+
+async function onFinalizarLote() {
+  await aplicarPotreroLote(el("potrero-nombre").value.trim());
+  el("potrero-caja").hidden = true;
   mostrarPantalla("pantalla-lotes");
   await refrescarResumenCola();
 }
 
 async function onFinMuestreo() {
   if (!confirm("¿Seguro que quieres terminar la visita?")) return;
-  await cerrarLoteActual();
   const items = await DB.listarItems();
   const puntosVisita = items.filter(
     (it) => it.tipo === "punto" && it.datos.cliente === visita.cliente && it.datos.finca === visita.finca && it.datos.fecha === visita.fecha
@@ -499,7 +494,7 @@ async function poblarSelectInformeFecha() {
   const cliente = el("informe-cliente").value;
   const finca = el("informe-finca").value;
   el("informe-fecha").innerHTML = `<option>Cargando fechas...</option>`;
-  el("informe-resultado").hidden = true;
+  ocultarDatosInforme();
   try {
     const fechas = await Informes.fechasDisponibles(cliente, finca);
     el("informe-fecha").innerHTML = fechas.length
@@ -507,8 +502,50 @@ async function poblarSelectInformeFecha() {
       : `<option value="">Sin visitas registradas</option>`;
   } catch (e) {
     el("informe-fecha").innerHTML = `<option value="">Error al cargar fechas</option>`;
-    el("informe-estado").textContent = "No se pudieron leer las fechas: " + e.message;
+    el("datos-estado").textContent = "No se pudieron leer las fechas: " + e.message;
   }
+}
+
+function ocultarDatosInforme() {
+  el("informe-datos").hidden = true;
+  el("informe-resultado").hidden = true;
+}
+
+async function onVerDatos() {
+  const cliente = el("informe-cliente").value;
+  const finca = el("informe-finca").value;
+  const fecha = el("informe-fecha").value;
+  if (!cliente || !finca || !fecha) { alert("Elige cliente, finca y fecha."); return; }
+
+  el("btn-ver-datos").disabled = true;
+  el("datos-estado").textContent = "Cargando datos...";
+  ocultarDatosInforme();
+  try {
+    const datos = await Informes.calcularDatos(cliente, finca, fecha);
+    const html = Informes.generarHtml(datos, "");
+    el("informe-preview").srcdoc = html;
+    el("datos-estado").textContent = "";
+    el("informe-datos").hidden = false;
+  } catch (e) {
+    el("datos-estado").textContent = "No se pudieron cargar los datos: " + e.message;
+  } finally {
+    el("btn-ver-datos").disabled = false;
+  }
+}
+
+function construirTextoRecomendaciones() {
+  const productos = leerProductosFormulario("lista-productos-informe");
+  const lineasProductos = productos.map((p) => {
+    const detalle = [p.tipo, p.formulacion].filter(Boolean).join(" - ");
+    const dosis = p.dosis ? `${p.dosis}${p.unidad ? " " + p.unidad : ""}` : "";
+    return `- ${p.nombre}${detalle ? " (" + detalle + ")" : ""}${dosis ? ": " + dosis : ""}`;
+  });
+
+  const notas = el("informe-recomendaciones").value.trim();
+  const partes = [];
+  if (lineasProductos.length > 0) partes.push("Productos recomendados:\n" + lineasProductos.join("\n"));
+  if (notas) partes.push(notas);
+  return partes.join("\n\n");
 }
 
 async function onGenerarInforme() {
@@ -524,7 +561,7 @@ async function onGenerarInforme() {
   el("informe-estado").textContent = "Generando informe...";
   el("informe-resultado").hidden = true;
   try {
-    const recomendaciones = el("informe-recomendaciones").value.trim();
+    const recomendaciones = construirTextoRecomendaciones();
     const html = await Informes.generar(cliente, finca, fecha, recomendaciones);
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
@@ -550,6 +587,7 @@ async function sincronizar() {
   if (sincronizando || !navigator.onLine) return;
   sincronizando = true;
   const errores = [];
+  let subidos = 0;
   try {
     const items = await DB.listarItems();
     for (const it of items.filter((i) => i.estado === "pendiente")) {
@@ -569,6 +607,7 @@ async function sincronizar() {
           ]);
         }
         await DB.marcarSincronizado(it.id);
+        subidos += 1;
       } catch (e) {
         await DB.marcarError(it.id, e.message);
         errores.push(e.message);
@@ -578,7 +617,12 @@ async function sincronizar() {
     sincronizando = false;
     refrescarResumenCola();
     if (errores.length > 0) {
-      alert("No se pudieron subir " + errores.length + " dato(s) a Excel.\n\nDetalle: " + errores[0]);
+      alert(
+        (subidos > 0 ? `${subidos} dato(s) subido(s) correctamente.\n\n` : "") +
+        "No se pudieron subir " + errores.length + " dato(s) a Excel.\n\nDetalle: " + errores[0]
+      );
+    } else if (subidos > 0) {
+      alert(`${subidos} dato(s) subido(s) correctamente a tu Excel.`);
     }
   }
 }
@@ -600,10 +644,13 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-iniciar-monitoreo").addEventListener("click", onIniciarMonitoreo);
 
   el("btn-nuevo-lote").addEventListener("click", onAgregarLoteNuevo);
-  el("btn-agregar-producto").addEventListener("click", () => agregarBloqueProducto());
+  el("btn-agregar-producto").addEventListener("click", () => agregarBloqueProducto("lista-productos"));
   el("btn-iniciar-monitoreo-lote").addEventListener("click", onIniciarMonitoreoLote);
   el("btn-fin-muestreo-lotes").addEventListener("click", onFinMuestreo);
   el("btn-terminar-lote").addEventListener("click", onTerminarLote);
+  el("btn-finalizar-lote").addEventListener("click", onFinalizarLote);
+
+  el("btn-agregar-producto-informe").addEventListener("click", () => agregarBloqueProducto("lista-productos-informe"));
 
   el("form-punto").addEventListener("submit", onGuardarPunto);
 
@@ -628,6 +675,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("informe-cliente").addEventListener("change", poblarSelectInformeFinca);
   el("informe-finca").addEventListener("change", poblarSelectInformeFecha);
+  el("informe-fecha").addEventListener("change", ocultarDatosInforme);
+  el("btn-ver-datos").addEventListener("click", onVerDatos);
   el("btn-generar-informe").addEventListener("click", onGenerarInforme);
 
   document.querySelectorAll(".tab-boton").forEach((btn) => {
@@ -638,6 +687,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (btn.dataset.tab === "informes") {
           Informes.invalidarCache();
           poblarSelectInformeCliente();
+          if (el("lista-productos-informe").children.length === 0) {
+            agregarBloqueProducto("lista-productos-informe");
+          }
           mostrarPantalla("pantalla-informes");
         } else {
           mostrarPantalla("pantalla-visita");
