@@ -5,6 +5,8 @@ let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
 let visita = null; // {cliente, finca, fecha, numeroLotes}
 let loteActual = null;
 let puntoActual = 1;
+let puntoMostrado = 1; // numero de punto que se ve en el formulario ahora (puede ser uno anterior si se esta corrigiendo)
+let editandoPuntoId = null; // id del item en DB.listarItems() que se esta corrigiendo, o null si es un punto nuevo
 let capturandoLote = false; // mientras es true, no se sincroniza (para poder fijar el Potrero antes de subir los puntos)
 let manejoActual = {}; // manejo agronomico del lote que se esta capturando ahora mismo
 let catalogoProductos = []; // [{nombre, tipo, formulacion, unidad}] cargado de la hoja Productos
@@ -354,16 +356,19 @@ async function onIniciarMonitoreoLote() {
   }
 
   capturandoLote = true;
+  editandoPuntoId = null;
   await calcularSiguientePunto();
+  await precargarPotreroLote();
   el("lote-actual-num").textContent = loteActual;
   el("form-punto").reset();
+  el("btn-punto-anterior").disabled = puntoMostrado <= 1;
   mostrarPantalla("pantalla-punto");
   await refrescarResumenCola();
 }
 
-async function calcularSiguientePunto() {
+async function puntosDelLoteActual() {
   const items = await DB.listarItems();
-  const delMismoLote = items.filter(
+  return items.filter(
     (it) =>
       it.tipo === "punto" &&
       it.datos.cliente === visita.cliente &&
@@ -371,8 +376,20 @@ async function calcularSiguientePunto() {
       it.datos.fecha === visita.fecha &&
       it.datos.lote === loteActual
   );
+}
+
+async function calcularSiguientePunto() {
+  const delMismoLote = await puntosDelLoteActual();
   puntoActual = delMismoLote.length + 1;
+  puntoMostrado = puntoActual;
   el("punto-actual-num").textContent = puntoActual;
+}
+
+// Si se retoma un lote que ya tenia puntos guardados, se recupera el nombre de potrero ya usado.
+async function precargarPotreroLote() {
+  const delLote = await puntosDelLoteActual();
+  const existente = delLote.map((it) => it.datos.fila[18]).find((v) => v);
+  el("potrero-nombre-punto").value = existente || "";
 }
 
 // ---------- Paso 3: capturar punto ----------
@@ -381,26 +398,34 @@ function pct(idCampo) {
   return Number(el(idCampo).value || 0) / 100;
 }
 
-async function guardarPuntoActual() {
+function leerCamposComunes() {
   const incidColl = pct("incid-coll");
   const sevColl = pct("sev-coll");
   const incidHongos = pct("incid-hongos");
   const sevHongos = pct("sev-hongos");
   const hojasMoluscos = Number(el("hojas-moluscos").value || 0);
+  return {
+    adultos: Number(el("adultos").value || 0), ninfas: Number(el("ninfas").value || 0),
+    incidColl, sevColl, danoCollTotal: incidColl * sevColl,
+    loritos: Number(el("loritos").value || 0), lepidopteros: Number(el("lepidopteros").value || 0),
+    hojasMoluscos,
+    incidMoluscos: hojasMoluscos / parametros.hojasEvaluadas,
+    danoMoluscos: (hojasMoluscos / parametros.hojasEvaluadas) * parametros.severidadMoluscos,
+    incidHongos, sevHongos, danoHongos: incidHongos * sevHongos,
+    potrero: el("potrero-nombre-punto").value.trim(),
+    observaciones: el("observaciones").value || "",
+  };
+}
 
-  const danoCollTotal = incidColl * sevColl;
-  const incidMoluscos = hojasMoluscos / parametros.hojasEvaluadas;
-  const danoMoluscos = incidMoluscos * parametros.severidadMoluscos;
-  const danoHongos = incidHongos * sevHongos;
-
+async function guardarPuntoActual() {
+  const c = leerCamposComunes();
   const fila = [
     visita.cliente, visita.finca, visita.fecha, loteActual, puntoActual,
-    Number(el("adultos").value || 0), Number(el("ninfas").value || 0),
-    incidColl, sevColl, danoCollTotal,
-    Number(el("loritos").value || 0), Number(el("lepidopteros").value || 0),
-    hojasMoluscos, incidMoluscos, danoMoluscos,
-    incidHongos, sevHongos, danoHongos,
-    "", el("observaciones").value || "", // Potrero se completa al terminar el lote
+    c.adultos, c.ninfas, c.incidColl, c.sevColl, c.danoCollTotal,
+    c.loritos, c.lepidopteros,
+    c.hojasMoluscos, c.incidMoluscos, c.danoMoluscos,
+    c.incidHongos, c.sevHongos, c.danoHongos,
+    c.potrero, c.observaciones,
     manejoActual.tipoFumigacion || "", manejoActual.litrosMezclaHa || "",
     manejoActual.ordenMezclaCorrecto || "", manejoActual.phFinalMezcla || "",
   ];
@@ -410,47 +435,84 @@ async function guardarPuntoActual() {
   });
 }
 
+// Actualiza (en vez de crear) el punto que se esta corrigiendo con "Punto anterior".
+async function actualizarPuntoEditado() {
+  const items = await DB.listarItems();
+  const item = items.find((it) => it.id === editandoPuntoId);
+  if (!item) return;
+  const c = leerCamposComunes();
+  const fila = [...item.datos.fila];
+  fila[5] = c.adultos; fila[6] = c.ninfas;
+  fila[7] = c.incidColl; fila[8] = c.sevColl; fila[9] = c.danoCollTotal;
+  fila[10] = c.loritos; fila[11] = c.lepidopteros;
+  fila[12] = c.hojasMoluscos; fila[13] = c.incidMoluscos; fila[14] = c.danoMoluscos;
+  fila[15] = c.incidHongos; fila[16] = c.sevHongos; fila[17] = c.danoHongos;
+  fila[18] = c.potrero; fila[19] = c.observaciones;
+  await DB.actualizarDatosItem(editandoPuntoId, { fila });
+}
+
+function cargarPuntoEnFormulario(fila) {
+  el("adultos").value = fila[5];
+  el("ninfas").value = fila[6];
+  el("incid-coll").value = Math.round(fila[7] * 10000) / 100;
+  el("sev-coll").value = Math.round(fila[8] * 10000) / 100;
+  el("loritos").value = fila[10];
+  el("lepidopteros").value = fila[11];
+  el("hojas-moluscos").value = fila[12];
+  el("incid-hongos").value = Math.round(fila[15] * 10000) / 100;
+  el("sev-hongos").value = Math.round(fila[16] * 10000) / 100;
+  el("observaciones").value = fila[19] || "";
+}
+
 async function onGuardarPunto(ev) {
   ev.preventDefault();
-  await guardarPuntoActual();
+  if (editandoPuntoId) {
+    await actualizarPuntoEditado();
+    editandoPuntoId = null;
+    puntoMostrado = puntoActual;
+  } else {
+    await guardarPuntoActual();
+    puntoActual += 1;
+    puntoMostrado = puntoActual;
+  }
   el("form-punto").reset();
-  puntoActual += 1;
-  el("punto-actual-num").textContent = puntoActual;
+  el("punto-actual-num").textContent = puntoMostrado;
+  el("btn-punto-anterior").disabled = puntoMostrado <= 1;
   await refrescarResumenCola();
 }
 
-async function aplicarPotreroLote(potrero) {
-  if (potrero) {
-    const items = await DB.listarItems();
-    const delLote = items.filter(
-      (it) =>
-        it.tipo === "punto" &&
-        it.datos.cliente === visita.cliente &&
-        it.datos.finca === visita.finca &&
-        it.datos.fecha === visita.fecha &&
-        it.datos.lote === loteActual
-    );
-    for (const it of delLote) {
-      const fila = [...it.datos.fila];
-      fila[18] = potrero;
-      await DB.actualizarDatosItem(it.id, { fila });
-    }
+// Retrocede un punto a la vez dentro del mismo lote para poder corregirlo. Solo se puede
+// editar un punto que aun no se haya sincronizado (uno ya subido no se puede corregir desde aqui).
+async function onPuntoAnterior() {
+  const objetivo = puntoMostrado - 1;
+  if (objetivo < 1) { alert("No hay un punto anterior en este lote."); return; }
+  const delLote = await puntosDelLoteActual();
+  const item = delLote.find((it) => it.datos.fila[4] === objetivo);
+  if (!item) { alert("No se encontró ese punto."); return; }
+  if (item.estado !== "pendiente") {
+    alert("Ese punto ya se sincronizó con tu Excel y no se puede corregir desde aquí.");
+    return;
   }
-  capturandoLote = false;
+  editandoPuntoId = item.id;
+  puntoMostrado = objetivo;
+  cargarPuntoEnFormulario(item.datos.fila);
+  el("punto-actual-num").textContent = puntoMostrado;
+  el("btn-punto-anterior").disabled = puntoMostrado <= 1;
 }
 
 async function onTerminarLote() {
-  if (capturandoLote && el("form-punto").checkValidity()) {
-    await guardarPuntoActual();
-    el("form-punto").reset();
+  if (!el("potrero-nombre-punto").value.trim()) {
+    alert("Indica el nombre del potrero antes de terminar el lote.");
+    el("potrero-nombre-punto").focus();
+    return;
   }
-  el("potrero-nombre").value = "";
-  el("potrero-caja").hidden = false;
-}
-
-async function onFinalizarLote() {
-  await aplicarPotreroLote(el("potrero-nombre").value.trim());
-  el("potrero-caja").hidden = true;
+  if (editandoPuntoId) {
+    await actualizarPuntoEditado();
+    editandoPuntoId = null;
+  } else if (capturandoLote && el("form-punto").checkValidity()) {
+    await guardarPuntoActual();
+  }
+  capturandoLote = false;
   mostrarPantalla("pantalla-lotes");
   await refrescarResumenCola();
 }
@@ -674,7 +736,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-iniciar-monitoreo-lote").addEventListener("click", onIniciarMonitoreoLote);
   el("btn-fin-muestreo-lotes").addEventListener("click", onFinMuestreo);
   el("btn-terminar-lote").addEventListener("click", onTerminarLote);
-  el("btn-finalizar-lote").addEventListener("click", onFinalizarLote);
+  el("btn-punto-anterior").addEventListener("click", onPuntoAnterior);
 
   el("btn-agregar-producto-informe").addEventListener("click", () => agregarBloqueProducto("lista-productos-informe"));
 

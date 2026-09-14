@@ -84,6 +84,10 @@ label { display: block; margin-bottom: 12px; font-size: 13px; color: var(--gris)
 .hint { font-size: 12px; color: var(--gris); margin: -4px 0 10px; }
 #datos-estado { margin-top: 10px; }
 
+.botones-punto { display: flex; gap: 10px; margin-top: 14px; }
+.botones-punto button { flex: 1; }
+#btn-punto-anterior:disabled { opacity: 0.4; }
+
 .caja-nueva { background: var(--fondo-suave); border-radius: 10px; padding: 10px 12px; margin: -6px 0 12px; border: 1px solid var(--borde); }
 
 .producto-bloque { background: #f7f9fb; border: 1px solid var(--borde); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }

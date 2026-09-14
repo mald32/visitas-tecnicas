@@ -107,6 +107,8 @@
 <section id="pantalla-punto" hidden>
   <h2>Lote <span id="lote-actual-num"></span> · punto <span id="punto-actual-num"></span></h2>
 
+  <label>Potrero del lote <input type="text" id="potrero-nombre-punto" placeholder="Ej: Potrero 3"></label>
+
   <form id="form-punto">
     <h3>Collaria scenica</h3>
     <div class="fila">
@@ -141,11 +143,9 @@
     <button type="submit">Siguiente punto</button>
   </form>
 
-  <button id="btn-terminar-lote" class="secundario">Terminar lote</button>
-
-  <div id="potrero-caja" class="caja-nueva fila" hidden>
-    <label>Nombre del potrero <input type="text" id="potrero-nombre" placeholder="Ej: Potrero 3"></label>
-    <button type="button" id="btn-finalizar-lote">Finalizar</button>
+  <div class="botones-punto">
+    <button type="button" id="btn-punto-anterior" class="secundario">Punto anterior</button>
+    <button type="button" id="btn-terminar-lote" class="secundario">Terminar lote</button>
   </div>
 
   <p id="resumen-cola" class="hint"></p>
