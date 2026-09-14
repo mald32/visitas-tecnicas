@@ -29,10 +29,17 @@ function actualizarOpcionesCatalogo() {
   el("datalist-productos").innerHTML = catalogoProductos.map((p) => `<option value="${p.nombre}">`).join("");
 }
 
+// Segun el tipo de fumigacion elegido en Recomendaciones, cambia la etiqueta (y unidad) de la dosis.
+const ETIQUETAS_DOSIS_RECOMENDACION = {
+  "Aerea (Dron)": "Dosis/Hectárea",
+  "Terrestre (Estacionaria)": "Dosis/Caneca 200L",
+  "Terrestre (Bomba de espalda)": "Dosis/Bomba 20L",
+};
+
 // Agrega un bloque de "producto" (Manejo agronomico o Recomendaciones). valores permite prellenar (cache/edicion).
-// En Recomendaciones se piden 3 dosis (una por tipo de fumigacion), porque el informe se entrega
-// antes de saber con que equipo va a aplicar el cliente. En Manejo agronomico es una sola dosis
-// (lo que realmente se aplico en este lote durante la visita).
+// En Manejo agronomico es lo que realmente se aplico en este lote durante la visita (una sola dosis).
+// En Recomendaciones se elige el tipo de fumigacion y solo aparece la dosis correspondiente a ese tipo,
+// mas una dosis de agua/ha recomendada (el equipo real con el que fumigaran se sabe hasta la visita).
 function agregarBloqueProducto(containerId, valores = {}) {
   const esRecomendacion = containerId === "lista-productos-informe";
   contadorProductos += 1;
@@ -40,9 +47,18 @@ function agregarBloqueProducto(containerId, valores = {}) {
   div.className = "producto-bloque";
   const filaDosis = esRecomendacion
     ? `<div class="fila">
-        <label>Dosis Dron (por Hectárea) <input type="text" class="p-dosis-dron" placeholder="Ej: 200" value="${valores.dosisDron || ""}"></label>
-        <label>Dosis Estacionaria (por Caneca) <input type="text" class="p-dosis-est" placeholder="Ej: 200" value="${valores.dosisEstacionaria || ""}"></label>
-        <label>Dosis Bomba de espalda (por Bomba) <input type="text" class="p-dosis-bomba" placeholder="Ej: 20" value="${valores.dosisBomba || ""}"></label>
+        <label>Tipo de fumigación
+          <select class="p-tipo-fumigacion">
+            <option value="">-</option>
+            <option value="Aerea (Dron)" ${valores.tipoFumigacion === "Aerea (Dron)" ? "selected" : ""}>Aérea (Dron)</option>
+            <option value="Terrestre (Estacionaria)" ${valores.tipoFumigacion === "Terrestre (Estacionaria)" ? "selected" : ""}>Terrestre (Estacionaria)</option>
+            <option value="Terrestre (Bomba de espalda)" ${valores.tipoFumigacion === "Terrestre (Bomba de espalda)" ? "selected" : ""}>Terrestre (Bomba de espalda)</option>
+          </select>
+        </label>
+        <label>Dosis de agua/ha a recomendar <input type="text" class="p-dosis-agua" placeholder="Ej: 200" value="${valores.dosisAgua || ""}"></label>
+      </div>
+      <div class="fila campo-dosis-reco" hidden>
+        <label><span class="p-dosis-label">Dosis</span> <input type="text" class="p-dosis-reco" placeholder="Ej: 200" value="${valores.dosis || ""}"></label>
       </div>`
     : `<label>Dosis <input type="text" class="p-dosis" value="${valores.dosis || ""}"></label>`;
   div.innerHTML = `
@@ -79,6 +95,19 @@ function agregarBloqueProducto(containerId, valores = {}) {
     }
   });
   div.querySelector(".btn-quitar-producto").addEventListener("click", () => div.remove());
+
+  if (esRecomendacion) {
+    const selectTipo = div.querySelector(".p-tipo-fumigacion");
+    const cajaDosis = div.querySelector(".campo-dosis-reco");
+    const etiquetaDosis = div.querySelector(".p-dosis-label");
+    const actualizarCajaDosis = () => {
+      const etiqueta = ETIQUETAS_DOSIS_RECOMENDACION[selectTipo.value];
+      cajaDosis.hidden = !etiqueta;
+      if (etiqueta) etiquetaDosis.textContent = etiqueta;
+    };
+    selectTipo.addEventListener("change", actualizarCajaDosis);
+    actualizarCajaDosis();
+  }
 }
 
 function leerProductosFormulario(containerId) {
@@ -90,10 +119,9 @@ function leerProductosFormulario(containerId) {
         nombre: valor(".p-nombre"),
         formulacion: valor(".p-formulacion"),
         unidad: valor(".p-unidad"),
-        dosis: valor(".p-dosis"),
-        dosisDron: valor(".p-dosis-dron"),
-        dosisEstacionaria: valor(".p-dosis-est"),
-        dosisBomba: valor(".p-dosis-bomba"),
+        dosis: valor(".p-dosis") || valor(".p-dosis-reco"),
+        tipoFumigacion: valor(".p-tipo-fumigacion"),
+        dosisAgua: valor(".p-dosis-agua"),
       };
     })
     .filter((p) => p.nombre);
@@ -640,6 +668,13 @@ async function onGenerarInforme() {
   const finca = el("informe-finca").value;
   const fecha = el("informe-fecha").value;
   if (!cliente || !finca || !fecha) { alert("Elige cliente, finca y fecha."); return; }
+
+  const productosSinDosis = productosRecomendadosOrdenados().find((p) => !p.dosis);
+  if (productosSinDosis) {
+    alert(`Falta la dosis de "${productosSinDosis.nombre}". Elige el tipo de fumigación y completa su dosis antes de generar el informe.`);
+    return;
+  }
+
   if (!navigator.onLine) {
     el("informe-estado").textContent = "Sin conexión: el informe se generará con la última copia guardada localmente (puede no incluir cambios recientes de otros dispositivos).";
   }

@@ -411,13 +411,33 @@ const Informes = {
         })
         .join("");
       if (filasM.length === 0 && !productosLi) return "";
-      return `<ul class="manejo-lista">${filasM.map(([k, v]) => `<li><strong>${k}:</strong> ${v}</li>`).join("")}${productosLi}</ul>`;
+      const columnas = filasM.length
+        ? `<div class="manejo-columnas">${filasM.map(([k, v]) => `<div><span class="manejo-etiqueta">${k}</span>${v}</div>`).join("")}</div>`
+        : "";
+      const listaProductos = productosLi ? `<ul class="manejo-lista">${productosLi}</ul>` : "";
+      return columnas + listaProductos;
     }
 
-    const manejoTodosHtml = D.tabla_lotes.map((t) => {
-      const manejo = manejoHtml(t.manejo, t.productos);
+    // Si dos o mas lotes tuvieron exactamente el mismo manejo (mismos productos y datos), se
+    // reporta una sola vez con un subtitulo indicando a que lotes aplica, en vez de repetirlo.
+    const gruposManejo = [];
+    const indicePorFirma = new Map();
+    for (const t of D.tabla_lotes) {
+      const firma = JSON.stringify({ m: t.manejo, p: (t.productos || []).map((p) => [p.tipo, p.nombre, p.formulacion, p.unidad, p.dosis]) });
+      if (!indicePorFirma.has(firma)) {
+        indicePorFirma.set(firma, gruposManejo.length);
+        gruposManejo.push({ lotes: [t.lote], manejo: t.manejo, productos: t.productos });
+      } else {
+        gruposManejo[indicePorFirma.get(firma)].lotes.push(t.lote);
+      }
+    }
+    const manejoTodosHtml = gruposManejo.map((g) => {
+      const manejo = manejoHtml(g.manejo, g.productos);
       if (!manejo) return "";
-      return `<div class="manejo-box"><strong>Lote ${t.lote}${t.potrero ? ` — Potrero ${t.potrero}` : ""}</strong>${manejo}</div>`;
+      const subtitulo = gruposManejo.length > 1
+        ? `<strong>${g.lotes.length > 1 ? "Lotes " : "Lote "}${g.lotes.join(", ")}</strong>`
+        : "";
+      return `<div class="manejo-box">${subtitulo}${manejo}</div>`;
     }).join("");
 
     const porLoteHtml = D.tabla_lotes.map((t, i) => {
@@ -465,16 +485,19 @@ const Informes = {
       ? D.alertas.map((a) => `• ${a}`).join("<br>")
       : "Ningún indicador superó su umbral en esta visita.";
 
-    // Cada producto puede llevar hasta 3 dosis (una por tipo de fumigacion), porque el informe se
-    // entrega antes de saber con que equipo va a aplicar el cliente en esa visita puntual.
+    const UNIDAD_APLICACION_POR_TIPO = {
+      "Aerea (Dron)": "/Hectárea (Dron)",
+      "Terrestre (Estacionaria)": "/Caneca 200L (Estacionaria)",
+      "Terrestre (Bomba de espalda)": "/Bomba 20L (Bomba de espalda)",
+    };
     function formatearDosis(p) {
       const partes = [];
-      if (p.dosisDron) partes.push(`${p.dosisDron}${p.unidad || ""}/Hectárea (Dron)`);
-      if (p.dosisEstacionaria) partes.push(`${p.dosisEstacionaria}${p.unidad || ""}/Caneca (Estacionaria)`);
-      if (p.dosisBomba) partes.push(`${p.dosisBomba}${p.unidad || ""}/Bomba (Bomba de espalda)`);
-      if (partes.length === 0) return "";
-      if (partes.length === 1) return partes[0];
-      return partes.slice(0, -1).join(", ") + " o " + partes[partes.length - 1];
+      if (p.dosis) {
+        const sufijo = UNIDAD_APLICACION_POR_TIPO[p.tipoFumigacion] || "";
+        partes.push(`${p.dosis}${p.unidad || ""}${sufijo}`);
+      }
+      if (p.dosisAgua) partes.push(`Agua: ${p.dosisAgua}L/ha`);
+      return partes.join(" · ");
     }
 
     const productosRecomendadosHtml = (productosRecomendados || []).length
@@ -547,6 +570,8 @@ td.alerta{background:#fbe4e1;color:var(--rojo);font-weight:700;}
 .manejo-box strong{color:var(--texto);display:block;margin-bottom:6px;font-size:14.5px;}
 .manejo-lista{list-style:none;padding:0;margin:0;}
 .manejo-lista li{margin:4px 0;}
+.manejo-columnas{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;margin-bottom:8px;}
+.manejo-etiqueta{display:block;font-size:11px;color:var(--principal);text-transform:uppercase;letter-spacing:.4px;margin-bottom:1px;}
 .leg-swatch{width:10px;height:10px;display:inline-block;}
 .reco-lista{list-style:none;counter-reset:reco;padding:0;margin:0 0 24px;}
 .reco-lista li{counter-increment:reco;position:relative;padding:12px 0 12px 32px;border-bottom:1px solid var(--borde);}
@@ -574,6 +599,7 @@ footer{margin-top:36px;font-size:12.5px;color:#a89c8c;text-align:center;}
   .chart-barras{min-width:0;flex-basis:100%;}
   .torta-box{flex-basis:100%;}
   .manejo-box{flex-basis:100%;}
+  .manejo-columnas{grid-template-columns:1fr;}
 }
 </style></head>
 <body>
@@ -599,6 +625,9 @@ footer{margin-top:36px;font-size:12.5px;color:#a89c8c;text-align:center;}
   <div><span class="icono">📋</span><div><span class="etiqueta">Lotes revisados</span>${D.lotes_reales.map((l) => "Lote " + l).join(", ")}</div></div>
 </div>
 
+<h2 class="banner-azul">Manejo agronómico aplicado</h2>
+${manejoTodosHtml || '<p class="hint">Sin manejo agronómico registrado en esta visita.</p>'}
+
 <h2>Tabla de resultados por lote</h2>
 <div class="tabla-scroll">
 <table><thead><tr>
@@ -608,19 +637,16 @@ footer{margin-top:36px;font-size:12.5px;color:#a89c8c;text-align:center;}
 </tr></thead><tbody>${filasTabla}</tbody></table>
 </div>
 
-<h2 class="banner-azul">Plagas y estado por lote (vs. umbral)</h2>
+<h2 class="banner-amarillo">Plagas y estado por lote (vs. umbral)</h2>
 ${porLoteHtml}
 
-<h2 class="banner-amarillo">Historial de la variable (evolucion por visita)</h2>
+<h2 class="banner-naranja">Historial de la variable (evolucion por visita)</h2>
 <div style="margin:10px 0;"><label style="font-size:13px;color:var(--gris);">Variable: </label>
 <select id="varSelect">${opcionesVariable}</select></div>
 ${historialCanvasHtml}
 
-<h2 class="banner-naranja">Observaciones</h2>
+<h2 class="banner-azul">Observaciones</h2>
 <textarea>${observacionesTexto}</textarea>
-
-<h2 class="banner-azul">Manejo agronómico aplicado</h2>
-${manejoTodosHtml || '<p class="hint">Sin manejo agronómico registrado en esta visita.</p>'}
 
 <h2>Resultados</h2>
 <div class="caja-fija">${resultadosHtml}</div>
