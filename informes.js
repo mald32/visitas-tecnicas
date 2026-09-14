@@ -514,7 +514,7 @@ header{background:var(--principal);color:#fff;border-radius:8px;border-bottom:5p
 header h1{margin:0 0 4px;font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:25px;font-weight:800;letter-spacing:.2px;color:#fff;}
 .subtitulo{color:#cfe0f2;font-size:15px;margin:0;}
 .asesor-nombre{font-weight:700;font-size:16px;color:#fff;white-space:nowrap;}
-.asesor-detalle{margin-top:10px;font-size:12.5px;color:#cfe0f2;text-align:right;}
+.asesor-detalle{margin-top:10px;font-size:12.5px;color:#cfe0f2;text-align:right;line-height:1.6;}
 .datos-grid{display:flex;gap:14px;margin-bottom:28px;font-size:16px;flex-wrap:wrap;}
 .datos-grid div{background:var(--fondo-suave);border-radius:10px;padding:12px 18px;flex:1;min-width:180px;display:flex;align-items:center;gap:12px;}
 .datos-grid div .icono{width:34px;height:34px;min-width:34px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;}
@@ -588,7 +588,9 @@ footer{margin-top:36px;font-size:12.5px;color:#a89c8c;text-align:center;}
     ${asesor.nombre ? `<div class="asesor-nombre">${asesor.nombre}</div>` : ""}
   </div>
   ${(asesor.profesion || asesor.cargo || asesor.telefono) ? `<div class="asesor-detalle">
-    ${[asesor.profesion, asesor.cargo, asesor.telefono ? `Tel: ${asesor.telefono}` : ""].filter(Boolean).join(" · ")}
+    ${asesor.profesion ? `${asesor.profesion}<br>` : ""}
+    ${asesor.cargo ? `${asesor.cargo}<br>` : ""}
+    ${asesor.telefono ? `Tel: ${asesor.telefono}` : ""}
   </div>` : ""}
 </header>
 
