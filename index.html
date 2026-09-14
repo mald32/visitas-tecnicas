@@ -42,15 +42,15 @@
     <select id="cliente"></select>
   </label>
   <div id="nuevo-cliente-caja" class="caja-nueva" hidden>
-    <label>Nombre del cliente nuevo <input id="nuevo-cliente" placeholder="Ej: Wilson"></label>
+    <label>Nombre del cliente nuevo <span class="asterisco">*</span> <input id="nuevo-cliente" placeholder="Ej: Wilson"></label>
   </div>
 
   <label>Finca
     <select id="finca"></select>
   </label>
   <div id="nueva-finca-caja" class="caja-nueva" hidden>
-    <label>Nombre de la finca nueva <input id="nueva-finca" placeholder="Ej: Soledad"></label>
-    <label>Número de lotes de esta finca
+    <label>Nombre de la finca nueva <span class="asterisco">*</span> <input id="nueva-finca" placeholder="Ej: Soledad"></label>
+    <label>Número de lotes de esta finca <span class="asterisco">*</span>
       <input type="number" id="nueva-finca-lotes" min="1" max="20" value="2">
     </label>
     <p class="hint">Usualmente 1 o 2 lotes, pueden ser hasta 5 o más.</p>
@@ -107,7 +107,7 @@
 <section id="pantalla-punto" hidden>
   <h2>Lote <span id="lote-actual-num"></span> · punto <span id="punto-actual-num"></span></h2>
 
-  <label>Potrero del lote <input type="text" id="potrero-nombre-punto" placeholder="Ej: Potrero 3"></label>
+  <label>Potrero del lote <span class="asterisco">*</span> <input type="text" id="potrero-nombre-punto" placeholder="Ej: Potrero 3"></label>
 
   <form id="form-punto">
     <h3>Collaria scenica</h3>
@@ -162,9 +162,9 @@
 <section id="pantalla-informes" hidden>
   <h2>Generar informe</h2>
 
-  <label>Cliente <select id="informe-cliente"></select></label>
-  <label>Finca <select id="informe-finca"></select></label>
-  <label>Fecha de la visita <select id="informe-fecha"></select></label>
+  <label>Cliente <span class="asterisco">*</span> <select id="informe-cliente"></select></label>
+  <label>Finca <span class="asterisco">*</span> <select id="informe-finca"></select></label>
+  <label>Fecha de la visita <span class="asterisco">*</span> <select id="informe-fecha"></select></label>
 
   <button type="button" id="btn-ver-datos">Ver datos</button>
   <p id="datos-estado" class="hint"></p>
@@ -173,6 +173,20 @@
     <iframe id="informe-preview"></iframe>
 
     <h2>Recomendaciones</h2>
+    <h3>Tipo de fumigación</h3>
+    <p class="hint">Con qué equipo se recomienda aplicar estos productos.</p>
+    <div class="fila">
+      <label>Tipo de fumigación
+        <select id="informe-tipo-fumigacion">
+          <option value="">-</option>
+          <option value="Aerea (Dron)">Aérea (Dron)</option>
+          <option value="Terrestre (Estacionaria)">Terrestre (Estacionaria)</option>
+          <option value="Terrestre (Bomba de espalda)">Terrestre (Bomba de espalda)</option>
+        </select>
+      </label>
+      <label>Volumen de mezcla/hectárea <input type="text" id="informe-volumen-mezcla" placeholder="Ej: 200"></label>
+    </div>
+
     <h3>Productos recomendados</h3>
     <p class="hint">Agrega uno por uno los productos que recomiendas para el manejo de este cultivo.</p>
     <div id="lista-productos-informe"></div>

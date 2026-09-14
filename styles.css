@@ -81,6 +81,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); bo
 
 label { display: block; margin-bottom: 12px; font-size: 13px; color: var(--gris); }
 
+.asterisco { color: var(--rojo); font-weight: 700; }
+label.campo-invalido { color: var(--rojo); }
+input.campo-invalido, select.campo-invalido, textarea.campo-invalido { border-color: var(--rojo); background: #fbeae7; }
+
 .hint { font-size: 12px; color: var(--gris); margin: -4px 0 10px; }
 #datos-estado { margin-top: 10px; }
 

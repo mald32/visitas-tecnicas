@@ -23,43 +23,60 @@ const CAMPOS_MANEJO = [
 let tiposProducto = [];
 let formulacionesProducto = [];
 
+// Marca un campo como invalido (borde rojo + su label en rojo) en vez de un alert() flotante.
+// Se limpia solo apenas el usuario edite el campo. Le pone foco y hace scroll hasta el.
+function marcarCampoInvalido(input) {
+  if (!input) return;
+  const label = input.closest("label") || input.parentElement.querySelector("label");
+  input.classList.add("campo-invalido");
+  if (label) label.classList.add("campo-invalido");
+  input.scrollIntoView({ behavior: "smooth", block: "center" });
+  input.focus();
+  const limpiar = () => {
+    input.classList.remove("campo-invalido");
+    if (label) label.classList.remove("campo-invalido");
+    input.removeEventListener("input", limpiar);
+    input.removeEventListener("change", limpiar);
+  };
+  input.addEventListener("input", limpiar);
+  input.addEventListener("change", limpiar);
+}
+
 function actualizarOpcionesCatalogo() {
   tiposProducto = [...new Set(catalogoProductos.map((p) => p.tipo).filter(Boolean))].sort();
   formulacionesProducto = [...new Set(catalogoProductos.map((p) => p.formulacion).filter(Boolean))].sort();
   el("datalist-productos").innerHTML = catalogoProductos.map((p) => `<option value="${p.nombre}">`).join("");
 }
 
-// Segun el tipo de fumigacion elegido en Recomendaciones, cambia la etiqueta (y unidad) de la dosis.
+// El tipo de fumigacion aplica a toda la recomendacion (se elige una sola vez, arriba de la lista de
+// productos), pero cada producto sigue necesitando su propia dosis, con la etiqueta que corresponda
+// al equipo elegido.
 const ETIQUETAS_DOSIS_RECOMENDACION = {
-  "Aerea (Dron)": "Dosis/Hectárea",
-  "Terrestre (Estacionaria)": "Dosis/Caneca 200L",
-  "Terrestre (Bomba de espalda)": "Dosis/Bomba 20L",
+  "Aerea (Dron)": "Dosis del producto/Hectárea",
+  "Terrestre (Estacionaria)": "Dosis del producto/Caneca 200L",
+  "Terrestre (Bomba de espalda)": "Dosis del producto/Bomba 20L",
 };
+
+function etiquetaDosisRecomendacionActual() {
+  const tipo = el("informe-tipo-fumigacion") ? el("informe-tipo-fumigacion").value : "";
+  return ETIQUETAS_DOSIS_RECOMENDACION[tipo] || "Dosis del producto";
+}
+
+// Al cambiar el tipo de fumigacion global, se actualiza la etiqueta de dosis de todos los productos ya agregados.
+function actualizarEtiquetasDosisRecomendacion() {
+  const etiqueta = etiquetaDosisRecomendacionActual();
+  el("lista-productos-informe").querySelectorAll(".p-dosis-label").forEach((span) => { span.textContent = etiqueta; });
+}
 
 // Agrega un bloque de "producto" (Manejo agronomico o Recomendaciones). valores permite prellenar (cache/edicion).
 // En Manejo agronomico es lo que realmente se aplico en este lote durante la visita (una sola dosis).
-// En Recomendaciones se elige el tipo de fumigacion y solo aparece la dosis correspondiente a ese tipo,
-// mas una dosis de agua/ha recomendada (el equipo real con el que fumigaran se sabe hasta la visita).
 function agregarBloqueProducto(containerId, valores = {}) {
   const esRecomendacion = containerId === "lista-productos-informe";
   contadorProductos += 1;
   const div = document.createElement("div");
   div.className = "producto-bloque";
   const filaDosis = esRecomendacion
-    ? `<div class="fila">
-        <label>Tipo de fumigación
-          <select class="p-tipo-fumigacion">
-            <option value="">-</option>
-            <option value="Aerea (Dron)" ${valores.tipoFumigacion === "Aerea (Dron)" ? "selected" : ""}>Aérea (Dron)</option>
-            <option value="Terrestre (Estacionaria)" ${valores.tipoFumigacion === "Terrestre (Estacionaria)" ? "selected" : ""}>Terrestre (Estacionaria)</option>
-            <option value="Terrestre (Bomba de espalda)" ${valores.tipoFumigacion === "Terrestre (Bomba de espalda)" ? "selected" : ""}>Terrestre (Bomba de espalda)</option>
-          </select>
-        </label>
-        <label>Dosis de agua/ha a recomendar <input type="text" class="p-dosis-agua" placeholder="Ej: 200" value="${valores.dosisAgua || ""}"></label>
-      </div>
-      <div class="fila campo-dosis-reco" hidden>
-        <label><span class="p-dosis-label">Dosis</span> <input type="text" class="p-dosis-reco" placeholder="Ej: 200" value="${valores.dosis || ""}"></label>
-      </div>`
+    ? `<label><span class="p-dosis-label">${etiquetaDosisRecomendacionActual()}</span> <span class="asterisco">*</span> <input type="text" class="p-dosis-reco" placeholder="Ej: 200" value="${valores.dosis || ""}"></label>`
     : `<label>Dosis <input type="text" class="p-dosis" value="${valores.dosis || ""}"></label>`;
   div.innerHTML = `
     <div class="fila">
@@ -95,19 +112,6 @@ function agregarBloqueProducto(containerId, valores = {}) {
     }
   });
   div.querySelector(".btn-quitar-producto").addEventListener("click", () => div.remove());
-
-  if (esRecomendacion) {
-    const selectTipo = div.querySelector(".p-tipo-fumigacion");
-    const cajaDosis = div.querySelector(".campo-dosis-reco");
-    const etiquetaDosis = div.querySelector(".p-dosis-label");
-    const actualizarCajaDosis = () => {
-      const etiqueta = ETIQUETAS_DOSIS_RECOMENDACION[selectTipo.value];
-      cajaDosis.hidden = !etiqueta;
-      if (etiqueta) etiquetaDosis.textContent = etiqueta;
-    };
-    selectTipo.addEventListener("change", actualizarCajaDosis);
-    actualizarCajaDosis();
-  }
 }
 
 function leerProductosFormulario(containerId) {
@@ -120,8 +124,6 @@ function leerProductosFormulario(containerId) {
         formulacion: valor(".p-formulacion"),
         unidad: valor(".p-unidad"),
         dosis: valor(".p-dosis") || valor(".p-dosis-reco"),
-        tipoFumigacion: valor(".p-tipo-fumigacion"),
-        dosisAgua: valor(".p-dosis-agua"),
       };
     })
     .filter((p) => p.nombre);
@@ -296,14 +298,14 @@ async function onIniciarMonitoreo() {
 
   if (cliente === OPCION_NUEVO_CLIENTE) {
     cliente = el("nuevo-cliente").value.trim();
-    if (!cliente) { alert("Escribe el nombre del cliente nuevo."); return; }
+    if (!cliente) { marcarCampoInvalido(el("nuevo-cliente")); return; }
   }
 
   if (finca === OPCION_NUEVA_FINCA) {
     finca = el("nueva-finca").value.trim();
     numeroLotes = Number(el("nueva-finca-lotes").value);
-    if (!finca) { alert("Escribe el nombre de la finca nueva."); return; }
-    if (!numeroLotes || numeroLotes < 1) { alert("Indica cuántos lotes tiene la finca."); return; }
+    if (!finca) { marcarCampoInvalido(el("nueva-finca")); return; }
+    if (!numeroLotes || numeroLotes < 1) { marcarCampoInvalido(el("nueva-finca-lotes")); return; }
 
     clientesFincas.push({ cliente, finca, numeroLotes });
     await DB.guardarCache("clientesFincas", clientesFincas);
@@ -530,8 +532,7 @@ async function onPuntoAnterior() {
 
 async function onTerminarLote() {
   if (!el("potrero-nombre-punto").value.trim()) {
-    alert("Indica el nombre del potrero antes de terminar el lote.");
-    el("potrero-nombre-punto").focus();
+    marcarCampoInvalido(el("potrero-nombre-punto"));
     return;
   }
   if (editandoPuntoId) {
@@ -623,7 +624,9 @@ async function onVerDatos() {
   const cliente = el("informe-cliente").value;
   const finca = el("informe-finca").value;
   const fecha = el("informe-fecha").value;
-  if (!cliente || !finca || !fecha) { alert("Elige cliente, finca y fecha."); return; }
+  if (!cliente) { marcarCampoInvalido(el("informe-cliente")); return; }
+  if (!finca) { marcarCampoInvalido(el("informe-finca")); return; }
+  if (!fecha) { marcarCampoInvalido(el("informe-fecha")); return; }
 
   el("btn-ver-datos").disabled = true;
   el("datos-estado").textContent = "Cargando datos...";
@@ -667,11 +670,14 @@ async function onGenerarInforme() {
   const cliente = el("informe-cliente").value;
   const finca = el("informe-finca").value;
   const fecha = el("informe-fecha").value;
-  if (!cliente || !finca || !fecha) { alert("Elige cliente, finca y fecha."); return; }
+  if (!cliente) { marcarCampoInvalido(el("informe-cliente")); return; }
+  if (!finca) { marcarCampoInvalido(el("informe-finca")); return; }
+  if (!fecha) { marcarCampoInvalido(el("informe-fecha")); return; }
 
-  const productosSinDosis = productosRecomendadosOrdenados().find((p) => !p.dosis);
-  if (productosSinDosis) {
-    alert(`Falta la dosis de "${productosSinDosis.nombre}". Elige el tipo de fumigación y completa su dosis antes de generar el informe.`);
+  const bloqueSinDosis = [...el("lista-productos-informe").querySelectorAll(".producto-bloque")]
+    .find((div) => div.querySelector(".p-nombre").value.trim() && !div.querySelector(".p-dosis-reco").value.trim());
+  if (bloqueSinDosis) {
+    marcarCampoInvalido(bloqueSinDosis.querySelector(".p-dosis-reco"));
     return;
   }
 
@@ -683,9 +689,11 @@ async function onGenerarInforme() {
   el("informe-estado").textContent = "Generando informe...";
   el("informe-resultado").hidden = true;
   try {
-    const productos = productosRecomendadosOrdenados();
+    const tipoFumigacion = el("informe-tipo-fumigacion").value;
+    const volumenMezcla = el("informe-volumen-mezcla").value.trim();
+    const productos = productosRecomendadosOrdenados().map((p) => ({ ...p, tipoFumigacion }));
     const notas = el("informe-recomendaciones").value.trim();
-    const html = await Informes.generar(cliente, finca, fecha, productos, notas);
+    const html = await Informes.generar(cliente, finca, fecha, productos, notas, { tipo: tipoFumigacion, volumenMezcla });
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
 
@@ -774,6 +782,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-punto-anterior").addEventListener("click", onPuntoAnterior);
 
   el("btn-agregar-producto-informe").addEventListener("click", () => agregarBloqueProducto("lista-productos-informe"));
+  el("informe-tipo-fumigacion").addEventListener("change", actualizarEtiquetasDosisRecomendacion);
 
   el("form-punto").addEventListener("submit", onGuardarPunto);
 

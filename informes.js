@@ -360,7 +360,7 @@ const Informes = {
     };
   },
 
-  generarHtml(D, productosRecomendados, notasAdicionales) {
+  generarHtml(D, productosRecomendados, notasAdicionales, manejoFumigacion = {}) {
     const claseAlerta = (valor, umbral, esMinimo) => {
       if (valor == null || umbral == null) return "";
       const excede = esMinimo ? valor < umbral : valor > umbral;
@@ -383,7 +383,7 @@ const Informes = {
       <td${claseAlerta(t.dano_coll, um("dano_coll"))}>${fmt(t.dano_coll, true)}</td>
       <td${claseAlerta(t.dano_hongos, um("dano_hongos"))}>${fmt(t.dano_hongos, true)}</td>
       <td${claseAlerta(t.pasto_sano, um("pasto_sano"), true)}>${fmt(t.pasto_sano, true)}</td>
-    </tr>`).join("") + `<tr class="fila-promedio">
+    </tr>`).join("") + (D.tabla_lotes.length > 1 ? `<tr class="fila-promedio">
       <td>Promedio general</td>
       <td${claseAlerta(D.promedio_finca.incid_coll, um("incid_coll"))}>${fmt(D.promedio_finca.incid_coll, true)}</td>
       <td${claseAlerta(D.promedio_finca.sev_coll, um("sev_coll"))}>${fmt(D.promedio_finca.sev_coll, true)}</td>
@@ -397,7 +397,13 @@ const Informes = {
       <td${claseAlerta(D.promedio_finca.dano_coll, um("dano_coll"))}>${fmt(D.promedio_finca.dano_coll, true)}</td>
       <td${claseAlerta(D.promedio_finca.dano_hongos, um("dano_hongos"))}>${fmt(D.promedio_finca.dano_hongos, true)}</td>
       <td${claseAlerta(D.promedio_finca.pasto_sano, um("pasto_sano"), true)}>${fmt(D.promedio_finca.pasto_sano, true)}</td>
-    </tr>`;
+    </tr>` : "");
+
+    // Solo las siglas de la formulacion (ej: "SC" de "SC (Suspension Concentrada)"), sin el nombre completo.
+    function siglasFormulacion(formulacion) {
+      if (!formulacion) return "";
+      return String(formulacion).split(" (")[0].trim();
+    }
 
     function manejoHtml(m, productos) {
       const filasM = [
@@ -406,15 +412,17 @@ const Informes = {
       ].filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "");
       const productosLi = (productos || [])
         .map((p) => {
-          const detalle = [p.formulacion, [p.dosis, p.unidad].filter(Boolean).join(" ")].filter(Boolean).join(" · ");
-          return `<li><strong>${p.tipo || "Producto"}:</strong> ${p.nombre}${detalle ? ` (${detalle})` : ""}</li>`;
+          const siglas = siglasFormulacion(p.formulacion);
+          return `<li><span class="manejo-etiqueta">${p.tipo || "Producto"}</span>${p.nombre}${siglas ? ` ${siglas}.` : "."}</li>`;
         })
         .join("");
       if (filasM.length === 0 && !productosLi) return "";
       const columnas = filasM.length
         ? `<div class="manejo-columnas">${filasM.map(([k, v]) => `<div><span class="manejo-etiqueta">${k}</span>${v}</div>`).join("")}</div>`
         : "";
-      const listaProductos = productosLi ? `<ul class="manejo-lista">${productosLi}</ul>` : "";
+      const listaProductos = productosLi
+        ? `<span class="manejo-subtitulo">Productos a aplicar</span><ul class="manejo-lista">${productosLi}</ul>`
+        : "";
       return columnas + listaProductos;
     }
 
@@ -454,7 +462,7 @@ const Informes = {
           </div>
         </div>
       </div>`;
-    }).join("") + (() => {
+    }).join("") + (D.tabla_lotes.length <= 1 ? "" : (() => {
       const leyendaProm = D.promedio_torta.map((v, vi) =>
         `<li><span class="leg-swatch" style="background:${COLORES_TORTA[vi]}"></span>${ETIQUETAS_TORTA[vi]}: ${fmt(v, true)}</li>`
       ).join("");
@@ -468,7 +476,7 @@ const Informes = {
           </div>
         </div>
       </div>`;
-    })();
+    })());
 
     const opcionesVariable = Object.keys(D.historial).map((v) => `<option value="${v}">${v}</option>`).join("");
 
@@ -485,28 +493,36 @@ const Informes = {
       ? D.alertas.map((a) => `• ${a}`).join("<br>")
       : "Ningún indicador superó su umbral en esta visita.";
 
+    const TIPOS_FUMIGACION_TEXTO = {
+      "Aerea (Dron)": "Aérea (Dron)",
+      "Terrestre (Estacionaria)": "Terrestre (Estacionaria)",
+      "Terrestre (Bomba de espalda)": "Terrestre (Bomba de espalda)",
+    };
     const UNIDAD_APLICACION_POR_TIPO = {
       "Aerea (Dron)": "/Hectárea (Dron)",
       "Terrestre (Estacionaria)": "/Caneca 200L (Estacionaria)",
       "Terrestre (Bomba de espalda)": "/Bomba 20L (Bomba de espalda)",
     };
     function formatearDosis(p) {
-      const partes = [];
-      if (p.dosis) {
-        const sufijo = UNIDAD_APLICACION_POR_TIPO[p.tipoFumigacion] || "";
-        partes.push(`${p.dosis}${p.unidad || ""}${sufijo}`);
-      }
-      if (p.dosisAgua) partes.push(`Agua: ${p.dosisAgua}L/ha`);
-      return partes.join(" · ");
+      if (!p.dosis) return "";
+      const sufijo = UNIDAD_APLICACION_POR_TIPO[p.tipoFumigacion] || "";
+      return `${p.dosis}${p.unidad || ""}${sufijo}`;
     }
 
+    const tipoFumigacionTexto = TIPOS_FUMIGACION_TEXTO[manejoFumigacion.tipo] || "";
+    const tipoFumigacionHtml = (tipoFumigacionTexto || manejoFumigacion.volumenMezcla)
+      ? `<div class="manejo-columnas">
+          ${tipoFumigacionTexto ? `<div><span class="manejo-etiqueta">Tipo de fumigación</span>${tipoFumigacionTexto}</div>` : ""}
+          ${manejoFumigacion.volumenMezcla ? `<div><span class="manejo-etiqueta">Volumen de mezcla/hectárea</span>${manejoFumigacion.volumenMezcla}L</div>` : ""}
+        </div>`
+      : "";
+
     const productosRecomendadosHtml = (productosRecomendados || []).length
-      ? `<ol class="reco-lista">${productosRecomendados.map((p) => {
-          const detalle = [p.tipo, p.formulacion].filter(Boolean).join(" · ");
+      ? tipoFumigacionHtml + `<ol class="reco-lista">${productosRecomendados.map((p) => {
           const dosis = formatearDosis(p);
           return `<li>
             <div class="reco-texto">
-              <strong>${p.nombre}</strong>${detalle ? `<span class="reco-detalle"> — ${detalle}</span>` : ""}
+              <strong>${p.nombre}</strong>${p.tipo ? `<span class="reco-detalle"> — ${p.tipo}</span>` : ""}
               ${dosis ? `<div class="reco-dosis">${dosis}</div>` : ""}
             </div>
           </li>`;
@@ -568,8 +584,9 @@ td.alerta{background:#fbe4e1;color:var(--rojo);font-weight:700;}
 .torta-legend li{display:flex;align-items:center;gap:6px;margin:3px 0;}
 .manejo-box{min-width:220px;background:var(--fondo-suave);border:1px solid var(--borde);padding:12px 14px;font-size:14px;color:var(--gris);margin-bottom:12px;}
 .manejo-box strong{color:var(--texto);display:block;margin-bottom:6px;font-size:14.5px;}
+.manejo-subtitulo{display:block;font-size:12.5px;font-weight:700;color:var(--principal);text-transform:uppercase;letter-spacing:.4px;margin:10px 0 4px;}
 .manejo-lista{list-style:none;padding:0;margin:0;}
-.manejo-lista li{margin:4px 0;}
+.manejo-lista li{margin:6px 0;}
 .manejo-columnas{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;margin-bottom:8px;}
 .manejo-etiqueta{display:block;font-size:11px;color:var(--principal);text-transform:uppercase;letter-spacing:.4px;margin-bottom:1px;}
 .leg-swatch{width:10px;height:10px;display:inline-block;}
@@ -806,11 +823,13 @@ lotesFinca.forEach((lote, i) => {
   }
 });
 tortas.forEach((t,i) => drawPie("torta"+i, t.valores));
-drawGroupedBars("barrasPromedio", barrasEstatica.categorias,
-  { "Promedio": promedioBarras.valores }, ["Promedio"], barrasEstatica.umbrales,
-  { "Promedio": promedioBarras.errores }, lotesFinca.length,
-  { tituloX: "Plaga o indicador evaluado", tituloY: "Cantidad promedio de individuos" });
-drawPie("tortaPromedio", promedioTorta);
+if (lotesFinca.length > 1) {
+  drawGroupedBars("barrasPromedio", barrasEstatica.categorias,
+    { "Promedio": promedioBarras.valores }, ["Promedio"], barrasEstatica.umbrales,
+    { "Promedio": promedioBarras.errores }, lotesFinca.length,
+    { tituloX: "Plaga o indicador evaluado", tituloY: "Cantidad promedio de individuos" });
+  drawPie("tortaPromedio", promedioTorta);
+}
 
 const varSelect = document.getElementById("varSelect");
 function redrawHistorial() {
@@ -831,8 +850,8 @@ redrawHistorial();
 </body></html>`;
   },
 
-  async generar(cliente, finca, fecha, productosRecomendados, notasAdicionales) {
+  async generar(cliente, finca, fecha, productosRecomendados, notasAdicionales, manejoFumigacion = {}) {
     const D = await this.calcularDatos(cliente, finca, fecha);
-    return this.generarHtml(D, productosRecomendados, notasAdicionales);
+    return this.generarHtml(D, productosRecomendados, notasAdicionales, manejoFumigacion);
   },
 };
