@@ -507,13 +507,14 @@ const Informes = {
 *{box-sizing:border-box;}
 html,body{background:#fff;}
 body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:17px;max-width:860px;margin:0 auto;padding:36px 28px 50px;color:var(--texto);}
-header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;background:var(--principal);color:#fff;border-radius:8px;border-bottom:5px solid var(--naranja);padding:22px 26px;margin-bottom:22px;}
+header{background:var(--principal);color:#fff;border-radius:8px;border-bottom:5px solid var(--naranja);padding:20px 26px;margin-bottom:22px;}
+.header-top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;}
 .titulo-box{display:flex;align-items:center;gap:16px;}
 .logo{height:48px;width:auto;background:#fff;border-radius:6px;padding:4px;}
 header h1{margin:0 0 4px;font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:25px;font-weight:800;letter-spacing:.2px;color:#fff;}
 .subtitulo{color:#cfe0f2;font-size:15px;margin:0;}
-.asesor-box{text-align:right;font-size:13.5px;color:#cfe0f2;line-height:1.6;white-space:nowrap;}
-.asesor-box strong{color:#fff;font-size:14.5px;}
+.asesor-nombre{font-weight:700;font-size:16px;color:#fff;white-space:nowrap;}
+.asesor-detalle{margin-top:10px;font-size:12.5px;color:#cfe0f2;text-align:right;}
 .datos-grid{display:flex;gap:14px;margin-bottom:28px;font-size:16px;flex-wrap:wrap;}
 .datos-grid div{background:var(--fondo-suave);border-radius:10px;padding:12px 18px;flex:1;min-width:180px;display:flex;align-items:center;gap:12px;}
 .datos-grid div .icono{width:34px;height:34px;min-width:34px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;}
@@ -563,8 +564,12 @@ footer{margin-top:36px;font-size:12.5px;color:#a89c8c;text-align:center;}
 .tabla-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 @media (max-width:640px){
   body{padding:20px 16px 32px;}
-  header{flex-direction:column;align-items:flex-start;}
-  .asesor-box{text-align:left;white-space:normal;}
+  header{padding:16px 18px;}
+  header h1{font-size:19px;}
+  .subtitulo{font-size:13px;}
+  .logo{height:36px;}
+  .asesor-nombre{font-size:14px;}
+  .asesor-detalle{text-align:left;font-size:11.5px;}
   .datos-grid{flex-direction:column;}
   .chart-barras{min-width:0;flex-basis:100%;}
   .torta-box{flex-basis:100%;}
@@ -574,17 +579,17 @@ footer{margin-top:36px;font-size:12.5px;color:#a89c8c;text-align:center;}
 <body>
 
 <header>
-  <div class="titulo-box">
-    <img src="${LOGO_DATA_URI}" alt="Logo" class="logo">
-    <div><h1>Informe de Visita Técnica</h1>
-    <p class="subtitulo">${D.cliente} - Finca ${D.finca} · Visita No. ${D.visita_numero}</p></div>
+  <div class="header-top">
+    <div class="titulo-box">
+      <img src="${LOGO_DATA_URI}" alt="Logo" class="logo">
+      <div><h1>Informe de Visita Técnica</h1>
+      <p class="subtitulo">${D.cliente} - Finca ${D.finca} · Visita No. ${D.visita_numero}</p></div>
+    </div>
+    ${asesor.nombre ? `<div class="asesor-nombre">${asesor.nombre}</div>` : ""}
   </div>
-  <div class="asesor-box">
-    ${asesor.nombre ? `<strong>${asesor.nombre}</strong><br>` : ""}
-    ${asesor.profesion ? `${asesor.profesion}<br>` : ""}
-    ${asesor.cargo ? `${asesor.cargo}<br>` : ""}
-    ${asesor.telefono ? `Tel: ${asesor.telefono}` : ""}
-  </div>
+  ${(asesor.profesion || asesor.cargo || asesor.telefono) ? `<div class="asesor-detalle">
+    ${[asesor.profesion, asesor.cargo, asesor.telefono ? `Tel: ${asesor.telefono}` : ""].filter(Boolean).join(" · ")}
+  </div>` : ""}
 </header>
 
 <div class="datos-grid">
