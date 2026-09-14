@@ -98,7 +98,7 @@ h3 { font-family: inherit; font-weight: 700; font-size: 13.5px; color: var(--pri
 
 #form-punto button[type="submit"],
 #pantalla-visita button,
-#pantalla-lotes button.secundario,
+#pantalla-lotes button,
 #pantalla-fin button { width: 100%; margin-top: 10px; }
 
 button.secundario {

@@ -414,11 +414,16 @@ const Informes = {
       return `<ul class="manejo-lista">${filasM.map(([k, v]) => `<li><strong>${k}:</strong> ${v}</li>`).join("")}${productosLi}</ul>`;
     }
 
+    const manejoTodosHtml = D.tabla_lotes.map((t) => {
+      const manejo = manejoHtml(t.manejo, t.productos);
+      if (!manejo) return "";
+      return `<div class="manejo-box"><strong>Lote ${t.lote}${t.potrero ? ` — Potrero ${t.potrero}` : ""}</strong>${manejo}</div>`;
+    }).join("");
+
     const porLoteHtml = D.tabla_lotes.map((t, i) => {
       const leyenda = D.tortas[i].valores.map((v, vi) =>
         `<li><span class="leg-swatch" style="background:${COLORES_TORTA[vi]}"></span>${ETIQUETAS_TORTA[vi]}: ${fmt(v, true)}</li>`
       ).join("");
-      const manejo = manejoHtml(t.manejo, t.productos);
       return `<div class="lote-bloque">
         <h3>Lote ${t.lote}${t.potrero ? ` — Potrero ${t.potrero}` : ""}</h3>
         <div class="lote-fila">
@@ -428,7 +433,6 @@ const Informes = {
             <ul class="torta-legend">${leyenda}</ul>
           </div>
         </div>
-        ${manejo ? `<div class="manejo-box"><strong>Manejo agronómico aplicado</strong>${manejo}</div>` : ""}
       </div>`;
     }).join("") + (() => {
       const leyendaProm = D.promedio_torta.map((v, vi) =>
@@ -503,13 +507,13 @@ const Informes = {
 *{box-sizing:border-box;}
 html,body{background:#fff;}
 body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:17px;max-width:860px;margin:0 auto;padding:36px 28px 50px;color:var(--texto);}
-header{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap;border-bottom:4px solid var(--principal);padding-bottom:16px;margin-bottom:22px;}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;background:var(--principal);color:#fff;border-radius:8px;border-bottom:5px solid var(--naranja);padding:22px 26px;margin-bottom:22px;}
 .titulo-box{display:flex;align-items:center;gap:16px;}
-.logo{height:48px;width:auto;}
-header h1{margin:0 0 4px;font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:25px;font-weight:800;letter-spacing:.2px;color:var(--principal);}
-.subtitulo{color:var(--gris);font-size:15px;margin:0;}
-.asesor-box{text-align:right;font-size:13.5px;color:var(--gris);line-height:1.6;white-space:nowrap;}
-.asesor-box strong{color:var(--texto);font-size:14.5px;}
+.logo{height:48px;width:auto;background:#fff;border-radius:6px;padding:4px;}
+header h1{margin:0 0 4px;font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:25px;font-weight:800;letter-spacing:.2px;color:#fff;}
+.subtitulo{color:#cfe0f2;font-size:15px;margin:0;}
+.asesor-box{text-align:right;font-size:13.5px;color:#cfe0f2;line-height:1.6;white-space:nowrap;}
+.asesor-box strong{color:#fff;font-size:14.5px;}
 .datos-grid{display:flex;gap:14px;margin-bottom:28px;font-size:16px;flex-wrap:wrap;}
 .datos-grid div{background:var(--fondo-suave);border-radius:10px;padding:12px 18px;flex:1;min-width:180px;display:flex;align-items:center;gap:12px;}
 .datos-grid div .icono{width:34px;height:34px;min-width:34px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;}
@@ -538,7 +542,7 @@ td.alerta{background:#fbe4e1;color:var(--rojo);font-weight:700;}
 .historial-item{flex:1;min-width:300px;margin-top:14px;}
 .torta-legend{list-style:none;padding:0;margin:8px 0 0;font-size:13px;color:var(--gris);text-align:left;display:inline-block;}
 .torta-legend li{display:flex;align-items:center;gap:6px;margin:3px 0;}
-.manejo-box{flex:1;min-width:220px;background:var(--fondo-suave);border:1px solid var(--borde);padding:12px 14px;font-size:14px;color:var(--gris);}
+.manejo-box{min-width:220px;background:var(--fondo-suave);border:1px solid var(--borde);padding:12px 14px;font-size:14px;color:var(--gris);margin-bottom:12px;}
 .manejo-box strong{color:var(--texto);display:block;margin-bottom:6px;font-size:14.5px;}
 .manejo-lista{list-style:none;padding:0;margin:0;}
 .manejo-lista li{margin:4px 0;}
@@ -607,6 +611,9 @@ ${historialCanvasHtml}
 
 <h2 class="banner-naranja">Observaciones</h2>
 <textarea>${observacionesTexto}</textarea>
+
+<h2 class="banner-azul">Manejo agronómico aplicado</h2>
+${manejoTodosHtml || '<p class="hint">Sin manejo agronómico registrado en esta visita.</p>'}
 
 <h2>Resultados</h2>
 <div class="caja-fija">${resultadosHtml}</div>
