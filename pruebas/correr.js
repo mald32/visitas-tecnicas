@@ -186,7 +186,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
     const html = Informes.generarHtml(D, [], "");
     noContiene(html, "Promedio general", "no debería haber fila de promedio con un solo lote");
-    noContiene(html, 'id="barrasPromedio"', "no debería haber gráfica de promedio con un solo lote");
+    noContiene(html, "Estado general de la finca", "no debería haber bloque de promedio con un solo lote");
   });
 
   await pruebaAsync("con dos lotes SÍ incluye el promedio general", async () => {
@@ -194,7 +194,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
     const html = Informes.generarHtml(D, [], "");
     contiene(html, "Promedio general");
-    contiene(html, 'id="barrasPromedio"');
+    contiene(html, 'Estado general de la finca');
   });
 
   await pruebaAsync("la dosis recomendada lleva el sufijo del equipo elegido", async () => {

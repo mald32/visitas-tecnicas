@@ -383,6 +383,7 @@ const Informes = {
         }));
       return {
         lote, potrero: potreros.join(", "), observaciones, productos: productosLote,
+        n_puntos: sub.length, // cuántos puntos se promediaron (con 1 no hay dispersión posible)
         incid_coll: promedio(sub.map((s) => s[COL.incidColl])),
         sev_coll: promedio(sub.map((s) => s[COL.sevColl])),
         incid_hongos: promedio(sub.map((s) => s[COL.incidHongos])),
@@ -648,35 +649,99 @@ const Informes = {
         </tr>`).join("")}</tbody></table></div>`
       : `<p class="hint">Sin datos de productividad registrados en esta visita.</p>`;
 
+    // --- Barras horizontales contra umbral ("bullet chart") ---
+    // Las cuatro plagas tienen magnitudes muy distintas (200 ninfas frente a 1 lepidóptero): en un
+    // eje común la barra chica desaparece. Aquí cada fila tiene su propia escala anclada en SU
+    // umbral, así se compara lo que de verdad importa: qué tan lejos está cada plaga de su límite.
+    function bulletHtml(valores, errores) {
+      const cats = D.barras_estatica.categorias;
+      const umbrales = D.barras_estatica.umbrales;
+      return `<ul class="bullet-lista">${cats.map((cat, i) => {
+        const valor = valores[i] ?? 0;
+        const umbral = umbrales[i] ?? 0;
+        const sd = (errores || [])[i] || 0;
+        // El eje llega a 1.25x del mayor entre el dato y el umbral: ambos siempre caben y se ven.
+        const tope = Math.max(valor + sd / 2, umbral, 0.001) * 1.25;
+        const pct = (v) => Math.max(0, Math.min(100, (v / tope) * 100));
+        const sobre = umbral > 0 && valor > umbral;
+        const dispersion = sd > 0
+          ? `<span class="bullet-dispersion" style="left:${pct(Math.max(valor - sd / 2, 0))}%;width:${Math.max(pct(valor + sd / 2) - pct(Math.max(valor - sd / 2, 0)), 1)}%"></span>`
+          : "";
+        return `<li class="bullet-fila">
+          <div class="bullet-cab">
+            <span class="bullet-nombre">${esc(cat)}</span>
+            <span class="bullet-valor${sobre ? " sobre" : ""}">${fmt(valor)}</span>
+          </div>
+          <div class="bullet-pista">
+            <span class="bullet-relleno${sobre ? " sobre" : ""}" style="width:${pct(valor)}%"></span>
+            ${dispersion}
+            ${umbral > 0 ? `<span class="bullet-umbral" style="left:${pct(umbral)}%"></span>` : ""}
+          </div>
+          <div class="bullet-pie"><span>umbral ${fmt(umbral)}</span><span>${sobre ? "sobre el umbral" : "dentro del umbral"}</span></div>
+        </li>`;
+      }).join("")}</ul>`;
+    }
+
+    // --- Anillo de composición de la pastura (SVG: nítido en cualquier pantalla) ---
+    // Es un reparto de 100%: el anillo lo dice de un vistazo y el dato que de verdad importa
+    // (cuánto pasto sano queda) va en el centro, grande.
+    function anilloHtml(valores) {
+      const total = valores.reduce((a, b) => a + (b || 0), 0) || 1;
+      const C = 2 * Math.PI * 42;
+      let acumulado = 0;
+      const segmentos = valores.map((v, i) => {
+        const frac = (v || 0) / total;
+        const seg = `<circle cx="60" cy="60" r="42" fill="none" stroke="${COLORES_TORTA[i]}" stroke-width="16"
+          stroke-dasharray="${(frac * C).toFixed(2)} ${(C - frac * C).toFixed(2)}"
+          stroke-dashoffset="${(-acumulado * C).toFixed(2)}" transform="rotate(-90 60 60)"></circle>`;
+        acumulado += frac;
+        return seg;
+      }).join("");
+      const sano = valores[3] || 0;
+      return `<svg class="anillo" viewBox="0 0 120 120" role="img">
+        ${segmentos}
+        <text class="anillo-num" x="60" y="58" text-anchor="middle">${fmt(sano / total, true)}</text>
+        <text class="anillo-lbl" x="60" y="70" text-anchor="middle">pasto sano</text>
+      </svg>`;
+    }
+
+    function leyendaHtml(valores) {
+      return `<ul class="torta-legend">${valores.map((v, vi) =>
+        `<li><span><span class="leg-swatch" style="background:${COLORES_TORTA[vi]}"></span>${ETIQUETAS_TORTA[vi]}</span><span>${fmt(v, true)}</span></li>`
+      ).join("")}</ul>`;
+    }
+
+    function panelesHtml(valores, errores, torta) {
+      return `<div class="lote-fila">
+          <div class="panel-barras">
+            <span class="rotulo">Plagas frente a su umbral</span>
+            ${bulletHtml(valores, errores)}
+          </div>
+          <div class="panel-anillo">
+            <span class="rotulo">Estado de la pastura</span>
+            ${anilloHtml(torta)}
+            ${leyendaHtml(torta)}
+          </div>
+        </div>`;
+    }
+
     const porLoteHtml = D.tabla_lotes.map((t, i) => {
-      const leyenda = D.tortas[i].valores.map((v, vi) =>
-        `<li><span class="leg-swatch" style="background:${COLORES_TORTA[vi]}"></span>${ETIQUETAS_TORTA[vi]}: ${fmt(v, true)}</li>`
-      ).join("");
+      const clave = String(t.lote);
+      const valores = D.barras_estatica.lotes[clave] || [];
+      const errores = (D.barras_estatica.errores || {})[clave] || [];
+      const nota = t.n_puntos === 1
+        ? "1 punto de muestreo: con un solo punto no hay dispersión que mostrar."
+        : `Promedio de ${t.n_puntos} puntos de muestreo. La línea sobre la barra es la dispersión entre puntos.`;
       return `<div class="lote-bloque">
         <h3>Lote ${esc(t.lote)}${t.potrero ? ` — Potrero ${esc(t.potrero)}` : ""}</h3>
-        <div class="lote-fila">
-          <div class="chart-box chart-barras"><canvas id="barrasLote${t.lote}" width="480" height="220"></canvas></div>
-          <div class="torta-box">
-            <canvas id="torta${i}" width="200" height="200"></canvas>
-            <ul class="torta-legend">${leyenda}</ul>
-          </div>
-        </div>
+        ${panelesHtml(valores, errores, D.tortas[i].valores)}
+        <p class="nota-puntos">${nota}</p>
       </div>`;
-    }).join("") + (D.tabla_lotes.length <= 1 ? "" : (() => {
-      const leyendaProm = D.promedio_torta.map((v, vi) =>
-        `<li><span class="leg-swatch" style="background:${COLORES_TORTA[vi]}"></span>${ETIQUETAS_TORTA[vi]}: ${fmt(v, true)}</li>`
-      ).join("");
-      return `<div class="lote-bloque lote-bloque-promedio">
-        <h3>★ Estado general de la finca (promedio de todos los lotes)</h3>
-        <div class="lote-fila">
-          <div class="chart-box chart-barras"><canvas id="barrasPromedio" width="480" height="220"></canvas></div>
-          <div class="torta-box">
-            <canvas id="tortaPromedio" width="200" height="200"></canvas>
-            <ul class="torta-legend">${leyendaProm}</ul>
-          </div>
-        </div>
-      </div>`;
-    })());
+    }).join("") + (D.tabla_lotes.length <= 1 ? "" : `<div class="lote-bloque lote-bloque-promedio">
+        <h3>Estado general de la finca</h3>
+        ${panelesHtml(D.promedio_barras.valores, D.promedio_barras.errores, D.promedio_torta)}
+        <p class="nota-puntos">Promedio de los ${D.tabla_lotes.length} lotes muestreados en esta visita.</p>
+      </div>`);
 
     const opcionesVariable = Object.keys(D.historial).map((v) => `<option value="${v}">${v}</option>`).join("");
 
@@ -735,85 +800,165 @@ const Informes = {
     return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"><title>Informe de Visita - ${esc(D.cliente)}</title>
 <style>
+/* ===========================================================================
+   SISTEMA DE DISEÑO DEL INFORME
+   Cada color tiene un rol: si un color no tiene rol, no entra aquí.
+   Los tamaños salen de una escala (no se inventan valores sueltos como 14.5px)
+   y todos los espacios son múltiplos de 4. Eso es lo que da el "ritmo" que se
+   percibe como profesional. Para cambiar la identidad del informe se tocan
+   estas variables y nada más.
+   =========================================================================== */
 :root{
-  --principal:#123a63; --principal-oscuro:#0d2846; --acento:#2f8fd1; --acento-verde:#3fa845;
-  --amarillo:#f2c14e; --naranja:#e2861f;
-  --fondo-suave:#eef1f4; --gris:#5b6472; --borde:#dbe1e7; --rojo:#c0392b; --texto:#1c2430;
+  /* Marca: tomada del logo de Galagro */
+  --marca:#00783c;         /* verde del logo */
+  --marca-honda:#004f28;   /* verde profundo: encabezado y títulos */
+  --marca-tenue:#eef5f0;   /* tinte de fondo */
+
+  /* Neutros (el negro del logo es cálido, no azulado) */
+  --tinta:#1a1614;
+  --tinta-media:#5d5751;
+  --tinta-suave:#8b847d;
+  --linea:#e5e1db;
+  --papel:#ffffff;
+  --papel-suave:#faf8f5;
+
+  /* Semánticos: solo significan, nunca decoran */
+  --alerta:#a52a1f;
+  --alerta-fondo:#fbeeec;
+
+  /* Escala tipográfica */
+  --t-micro:11px; --t-peq:13px; --t-base:15px; --t-med:18px; --t-gde:24px; --t-xl:30px;
+
+  /* Escala de espaciado (múltiplos de 4) */
+  --e1:4px; --e2:8px; --e3:12px; --e4:16px; --e6:24px; --e8:32px; --e12:48px;
+
+  --radio:3px;
+  --serif:Georgia,"Times New Roman",serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
 }
 *{box-sizing:border-box;}
-html,body{background:#fff;}
-body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:17px;max-width:860px;margin:0 auto;padding:36px 28px 50px;color:var(--texto);}
-header{background:var(--principal);color:#fff;border-radius:8px;border-bottom:5px solid var(--naranja);padding:20px 26px;margin-bottom:22px;}
-.header-top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;}
-.titulo-box{display:flex;align-items:center;gap:16px;}
-.logo{height:48px;width:auto;background:#fff;border-radius:6px;padding:4px;}
-header h1{margin:0 0 4px;font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:25px;font-weight:800;letter-spacing:.2px;color:#fff;}
-.subtitulo{color:#cfe0f2;font-size:15px;margin:0;}
-.asesor-nombre{font-weight:700;font-size:16px;color:#fff;white-space:nowrap;}
-.asesor-detalle{margin-top:10px;font-size:12.5px;color:#cfe0f2;text-align:right;line-height:1.6;}
-.datos-grid{display:flex;gap:14px;margin-bottom:28px;font-size:16px;flex-wrap:wrap;}
-.datos-grid div{background:var(--fondo-suave);border-radius:10px;padding:12px 18px;flex:1;min-width:180px;display:flex;align-items:center;gap:12px;}
-.datos-grid div .icono{width:34px;height:34px;min-width:34px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;color:var(--principal);}
-.datos-grid div .icono svg{width:18px;height:18px;display:block;}
-.datos-grid div .etiqueta{color:var(--gris);display:block;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px;}
-h2{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:19px;font-weight:800;letter-spacing:.4px;color:#fff;margin:34px 0 16px;padding:14px 20px;border-radius:4px;background:var(--principal-oscuro);}
-h2.banner-azul, h2.banner-amarillo, h2.banner-naranja{background:var(--principal-oscuro);color:#fff;}
-h3{font-size:15.5px;color:var(--texto);margin:16px 0 8px;font-weight:700;}
-table{width:100%;border-collapse:collapse;font-size:14.5px;margin-top:8px;}
-th,td{text-align:center;padding:9px 7px;border-bottom:1px solid var(--borde);}
-th{background:var(--principal-oscuro);color:#fdf9f4;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.3px;}
-td:first-child,th:first-child{text-align:left;padding-left:12px;}
-td.alerta{background:#fbe4e1;color:var(--rojo);font-weight:700;}
-.fila-promedio td{font-weight:700;border-top:2px solid var(--principal);}
-.chart-box{margin-top:14px;border:1px solid var(--borde);padding:14px;background:#fff;}
-.chart-box canvas{max-width:100%;height:auto;}
-.lote-bloque{margin-top:22px;padding-top:18px;border-top:1px solid var(--borde);}
+html,body{background:var(--papel);}
+body{font-family:var(--sans);font-size:var(--t-base);line-height:1.55;max-width:900px;margin:0 auto;padding:var(--e8) var(--e6) var(--e12);color:var(--tinta);}
+
+/* --- Encabezado: banda de marca --- */
+header{background:var(--marca-honda);color:var(--papel);padding:var(--e6);margin-bottom:var(--e8);}
+.header-top{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--e4);flex-wrap:wrap;}
+.titulo-box{display:flex;align-items:center;gap:var(--e4);}
+.logo{height:52px;width:auto;background:var(--papel);padding:var(--e2);}
+header h1{margin:0 0 var(--e1);font-family:var(--serif);font-size:var(--t-gde);font-weight:400;letter-spacing:.3px;color:var(--papel);}
+.subtitulo{color:#b9d6c5;font-size:var(--t-peq);margin:0;letter-spacing:.2px;}
+.asesor-nombre{font-family:var(--serif);font-size:var(--t-med);color:var(--papel);white-space:nowrap;}
+.asesor-detalle{margin-top:var(--e2);font-size:var(--t-micro);color:#b9d6c5;text-align:right;line-height:1.7;letter-spacing:.2px;}
+
+/* --- Datos de la visita --- */
+.datos-grid{display:flex;gap:var(--e6);margin-bottom:var(--e8);flex-wrap:wrap;
+  border-top:1px solid var(--linea);border-bottom:1px solid var(--linea);padding:var(--e3) 0;}
+.datos-grid>div{flex:1;min-width:200px;display:flex;align-items:center;gap:var(--e3);}
+.datos-grid .icono{width:32px;height:32px;min-width:32px;display:flex;align-items:center;justify-content:center;color:var(--marca);}
+.datos-grid .icono svg{width:20px;height:20px;display:block;}
+.datos-grid .etiqueta{color:var(--tinta-suave);display:block;font-size:var(--t-micro);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;}
+
+/* --- Títulos de sección: serif + regla de marca (lenguaje de documento, no de plantilla) --- */
+h2{font-family:var(--serif);font-size:var(--t-gde);font-weight:400;color:var(--marca-honda);
+  margin:var(--e12) 0 var(--e4);padding-bottom:var(--e2);border-bottom:2px solid var(--marca);}
+h2:first-of-type{margin-top:var(--e6);}
+h3{font-family:var(--serif);font-size:var(--t-med);font-weight:400;color:var(--tinta);margin:var(--e6) 0 var(--e2);}
+.rotulo{display:block;font-size:var(--t-micro);text-transform:uppercase;letter-spacing:1.2px;color:var(--marca);margin-bottom:var(--e2);}
+
+/* --- Tablas: sin cuadrícula pesada, solo líneas horizontales --- */
+table{width:100%;border-collapse:collapse;font-size:var(--t-peq);margin-top:var(--e2);}
+th,td{text-align:right;padding:var(--e2) var(--e2);border-bottom:1px solid var(--linea);}
+th{color:var(--tinta-suave);font-weight:600;font-size:var(--t-micro);text-transform:uppercase;letter-spacing:.6px;
+  border-bottom:1px solid var(--tinta);text-align:right;}
+td:first-child,th:first-child{text-align:left;padding-left:0;}
+td:last-child,th:last-child{padding-right:0;}
+tbody tr:nth-child(even) td{background:var(--papel-suave);}
+td.alerta{color:var(--alerta);font-weight:700;}
+.fila-promedio td{font-weight:700;border-top:2px solid var(--marca);background:var(--marca-tenue) !important;}
+
+/* --- Bloque por lote: barras y anillo lado a lado --- */
+.lote-bloque{margin-top:var(--e6);padding-top:var(--e4);border-top:1px solid var(--linea);}
 .lote-bloque:first-child{border-top:none;padding-top:0;}
-.lote-bloque h3{color:var(--principal);font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:17px;font-weight:800;}
-.lote-bloque-promedio{margin-top:28px;padding:18px;border:2px solid var(--acento);border-radius:8px;background:var(--fondo-suave);}
-.lote-bloque-promedio h3{color:var(--acento);}
-.lote-fila{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-top:12px;}
-.chart-barras{flex:2;min-width:320px;}
-.torta-box{text-align:center;}
-.torta-box canvas{max-width:100%;height:auto;}
-.historial-fila{display:flex;gap:16px;flex-wrap:wrap;}
-.historial-item{flex:1;min-width:300px;margin-top:14px;}
-.torta-legend{list-style:none;padding:0;margin:8px 0 0;font-size:13px;color:var(--gris);text-align:left;display:inline-block;}
-.torta-legend li{display:flex;align-items:center;gap:6px;margin:3px 0;}
-.manejo-box{min-width:220px;background:var(--fondo-suave);border:1px solid var(--borde);padding:12px 14px;font-size:14px;color:var(--gris);margin-bottom:12px;}
-.manejo-box strong{color:var(--texto);display:block;margin-bottom:6px;font-size:14.5px;}
-.manejo-subtitulo{display:block;font-size:12.5px;font-weight:700;color:var(--principal);text-transform:uppercase;letter-spacing:.4px;margin:10px 0 4px;}
+.lote-bloque h3{margin-top:0;}
+.lote-fila{display:flex;gap:var(--e6);align-items:flex-start;margin-top:var(--e3);}
+.panel-barras{flex:1 1 55%;min-width:0;}
+.panel-anillo{flex:0 0 auto;width:168px;text-align:center;}
+.lote-bloque-promedio{margin-top:var(--e8);padding:var(--e4);background:var(--marca-tenue);border-left:3px solid var(--marca);}
+.nota-puntos{font-size:var(--t-micro);color:var(--tinta-suave);margin:var(--e2) 0 0;}
+
+/* --- Barras horizontales contra umbral (bullet chart) --- */
+.bullet-lista{list-style:none;padding:0;margin:0;}
+.bullet-fila{margin-bottom:var(--e3);}
+.bullet-cab{display:flex;justify-content:space-between;align-items:baseline;gap:var(--e2);margin-bottom:var(--e1);}
+.bullet-nombre{font-size:var(--t-peq);color:var(--tinta-media);}
+.bullet-valor{font-size:var(--t-peq);font-weight:700;color:var(--tinta);font-variant-numeric:tabular-nums;}
+.bullet-valor.sobre{color:var(--alerta);}
+.bullet-pista{position:relative;height:10px;background:var(--papel-suave);border:1px solid var(--linea);}
+.bullet-relleno{position:absolute;top:0;bottom:0;left:0;background:var(--marca);}
+.bullet-relleno.sobre{background:var(--alerta);}
+.bullet-dispersion{position:absolute;top:50%;height:1px;background:var(--tinta);opacity:.55;}
+.bullet-dispersion::before,.bullet-dispersion::after{content:"";position:absolute;top:-3px;width:1px;height:7px;background:var(--tinta);}
+.bullet-dispersion::before{left:0;} .bullet-dispersion::after{right:0;}
+.bullet-umbral{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--tinta);}
+.bullet-pie{display:flex;justify-content:space-between;font-size:var(--t-micro);color:var(--tinta-suave);margin-top:2px;}
+
+/* --- Anillo de composición --- */
+.anillo{width:100%;max-width:150px;height:auto;display:block;margin:0 auto;}
+.anillo-num{font-family:var(--serif);font-size:19px;fill:var(--marca-honda);}
+.anillo-lbl{font-size:6.5px;fill:var(--tinta-suave);text-transform:uppercase;letter-spacing:.6px;}
+.torta-legend{list-style:none;padding:0;margin:var(--e2) 0 0;font-size:var(--t-micro);color:var(--tinta-media);text-align:left;}
+.torta-legend li{display:flex;align-items:center;gap:var(--e1);margin:3px 0;justify-content:space-between;}
+.torta-legend li span:first-child{display:flex;align-items:center;gap:var(--e1);}
+.leg-swatch{width:8px;height:8px;display:inline-block;flex:0 0 auto;}
+
+/* --- Historial --- */
+.historial-fila{display:flex;gap:var(--e4);flex-wrap:wrap;}
+.historial-item{flex:1;min-width:280px;margin-top:var(--e3);}
+.chart-box{margin-top:var(--e2);}
+.chart-box canvas{max-width:100%;height:auto;}
+
+/* --- Manejo agronómico --- */
+.manejo-box{background:var(--papel-suave);border-left:3px solid var(--marca);padding:var(--e3) var(--e4);
+  font-size:var(--t-peq);color:var(--tinta-media);margin-bottom:var(--e3);}
+.manejo-box strong{color:var(--tinta);display:block;margin-bottom:var(--e2);font-size:var(--t-peq);}
+.manejo-subtitulo{display:block;font-size:var(--t-micro);font-weight:700;color:var(--marca);text-transform:uppercase;letter-spacing:1px;margin:var(--e3) 0 var(--e1);}
 .manejo-lista{list-style:none;padding:0;margin:0;}
-.manejo-lista li{margin:6px 0;}
-.manejo-columnas{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;margin-bottom:8px;}
-.manejo-etiqueta{display:block;font-size:11px;color:var(--principal);text-transform:uppercase;letter-spacing:.4px;margin-bottom:1px;}
-.leg-swatch{width:10px;height:10px;display:inline-block;}
-.reco-lista{list-style:none;counter-reset:reco;padding:0;margin:0 0 24px;}
-.reco-lista li{counter-increment:reco;position:relative;padding:12px 0 12px 32px;border-bottom:1px solid var(--borde);}
-.reco-lista li:first-child{border-top:1px solid var(--borde);}
-.reco-lista li::before{content:counter(reco) ".";position:absolute;left:0;top:12px;font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-weight:800;color:var(--acento);font-size:17px;}
-.reco-texto strong{font-size:16px;color:var(--texto);}
-.reco-detalle{color:var(--gris);font-size:14px;}
-.reco-dosis{margin-top:5px;font-size:14.5px;font-style:italic;color:var(--principal-oscuro);}
-select{padding:6px 10px;border-radius:4px;border:1px solid var(--borde);font-size:15px;}
-textarea{width:100%;min-height:70px;border:1px solid var(--borde);border-radius:4px;padding:10px;font-family:inherit;font-size:15px;box-sizing:border-box;}
-.caja-fija{white-space:pre-wrap;border:1px solid var(--borde);padding:12px 14px;font-size:15px;background:var(--fondo-suave);min-height:40px;color:var(--gris);}
-.firma{margin-top:38px;font-size:14px;color:var(--gris);border-top:1px solid var(--borde);padding-top:14px;}
-.hint{font-size:14px;color:var(--gris);}
-footer{margin-top:36px;font-size:12.5px;color:#a89c8c;text-align:center;}
+.manejo-lista li{margin:var(--e1) 0;color:var(--tinta);}
+.manejo-columnas{display:grid;grid-template-columns:1fr 1fr;gap:var(--e2) var(--e6);margin-bottom:var(--e2);color:var(--tinta);}
+.manejo-etiqueta{display:block;font-size:var(--t-micro);color:var(--tinta-suave);text-transform:uppercase;letter-spacing:1px;}
+
+/* --- Recomendaciones --- */
+.reco-lista{list-style:none;counter-reset:reco;padding:0;margin:0 0 var(--e6);}
+.reco-lista li{counter-increment:reco;position:relative;padding:var(--e3) 0 var(--e3) var(--e8);border-bottom:1px solid var(--linea);}
+.reco-lista li:first-child{border-top:1px solid var(--linea);}
+.reco-lista li::before{content:counter(reco);position:absolute;left:0;top:var(--e3);
+  font-family:var(--serif);color:var(--marca);font-size:var(--t-med);}
+.reco-texto strong{font-size:var(--t-base);color:var(--tinta);}
+.reco-detalle{color:var(--tinta-suave);font-size:var(--t-peq);}
+.reco-dosis{margin-top:var(--e1);font-size:var(--t-peq);color:var(--marca-honda);}
+
+/* --- Bloques de texto --- */
+select{padding:var(--e1) var(--e2);border-radius:var(--radio);border:1px solid var(--linea);font-size:var(--t-peq);font-family:var(--sans);}
+textarea{width:100%;min-height:72px;border:1px solid var(--linea);border-radius:var(--radio);padding:var(--e3);
+  font-family:var(--sans);font-size:var(--t-peq);color:var(--tinta);background:var(--papel-suave);}
+.caja-fija{white-space:pre-wrap;border-left:3px solid var(--linea);padding:var(--e2) var(--e4);font-size:var(--t-peq);
+  min-height:32px;color:var(--tinta-media);}
+.firma{margin-top:var(--e12);font-size:var(--t-peq);color:var(--tinta-media);border-top:1px solid var(--linea);padding-top:var(--e3);}
+.hint{font-size:var(--t-peq);color:var(--tinta-suave);}
+footer{margin-top:var(--e8);font-size:var(--t-micro);color:var(--tinta-suave);text-align:center;letter-spacing:.3px;}
 .tabla-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+
 @media (max-width:640px){
-  body{padding:20px 16px 32px;}
-  header{padding:16px 18px;}
-  header h1{font-size:19px;}
-  .subtitulo{font-size:13px;}
-  .logo{height:36px;}
-  .asesor-nombre{font-size:14px;}
-  .asesor-detalle{text-align:left;font-size:11.5px;}
-  .datos-grid{flex-direction:column;}
-  .chart-barras{min-width:0;flex-basis:100%;}
-  .torta-box{flex-basis:100%;}
-  .manejo-box{flex-basis:100%;}
+  body{padding:var(--e4) var(--e4) var(--e8);}
+  header{padding:var(--e4);}
+  header h1{font-size:var(--t-med);}
+  .logo{height:40px;}
+  .asesor-nombre{font-size:var(--t-base);}
+  .asesor-detalle{text-align:left;}
+  h2{font-size:var(--t-med);margin-top:var(--e8);}
+  .datos-grid{flex-direction:column;gap:var(--e3);}
+  .lote-fila{gap:var(--e4);}
+  .panel-anillo{width:118px;}
   .manejo-columnas{grid-template-columns:1fr;}
 }
 </style></head>
@@ -885,46 +1030,19 @@ ${productosRecomendadosHtml}
 <footer>Informe generado automáticamente a partir del registro de visitas técnicas.</footer>
 
 <script>
+// Único dibujo en canvas que queda: el historial, que sí es una serie de tiempo.
+// Las barras por lote y el anillo ahora son HTML y SVG: nítidos en cualquier pantalla,
+// sin depender de la resolución del dispositivo.
 const COLORES = ${JSON.stringify(COLORES_LOTE)};
-const barrasEstatica = ${JSON.stringify(D.barras_estatica)};
 const historial = ${JSON.stringify(D.historial)};
 const umbralesHistorial = ${JSON.stringify(D.umbrales_historial)};
-const tortas = ${JSON.stringify(D.tortas)};
 const lotesFinca = ${JSON.stringify(D.lotes_finca.map(String))};
-const promedioBarras = ${JSON.stringify(D.promedio_barras)};
-const promedioTorta = ${JSON.stringify(D.promedio_torta)};
 
-// Calcula un maximo y un paso "bonitos" para el eje Y, ajustados al tamano real de los datos
-// (en vez de un eje siempre fijo hasta el 100%). En porcentaje usa multiplos de 5 y nunca pasa de 100.
-function calcularEscalaEjeY(maxCrudo, esPorcentaje) {
-  if (!(maxCrudo > 0)) maxCrudo = esPorcentaje ? 0.05 : 1;
-  const acolchado = maxCrudo * 1.3;
-
-  if (esPorcentaje) {
-    const listaPct = [5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100];
-    const objetivoPct = Math.min(acolchado * 100, 100);
-    const maxPct = listaPct.find((v) => v >= objetivoPct) ?? 100;
-    return { max: maxPct / 100, paso: maxPct / 5 / 100, numTicks: 5 };
-  }
-
-  const escalado = acolchado / 5;
-  const exp = Math.floor(Math.log10(escalado));
-  const base = Math.pow(10, exp);
-  const frac = escalado / base;
-  const pasoFrac = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
-  const paso = pasoFrac * base;
-  const max = Math.ceil(acolchado / paso) * paso;
-  return { max, paso, numTicks: Math.round(max / paso) };
-}
-
-// Tipografia y colores de las graficas, tomados de la misma paleta del informe para que no se
-// vean como un pedazo pegado de otra aplicacion.
 const FUENTE_GRAFICA = 'system-ui, -apple-system, "Segoe UI", Arial, sans-serif';
-const TINTA = { ejes: "#c9d2db", grilla: "#edf1f5", texto: "#5b6472", titulo: "#123a63", umbral: "#c0392b", error: "#1c2430" };
+const TINTA = { ejes:"#d8d3cc", grilla:"#f1ede7", texto:"#8b847d", titulo:"#004f28", umbral:"#a52a1f" };
 
-// Ajusta el canvas a la densidad real de la pantalla (un celular suele ser 2x o 3x). Sin esto el
-// navegador estira un dibujo de baja resolucion y las graficas se ven borrosas al lado del texto.
-// Es idempotente: se puede llamar muchas veces sobre el mismo canvas (el historial se redibuja).
+// Ajusta el canvas a la densidad real de la pantalla (un celular suele ser 2x o 3x): sin esto el
+// navegador estira un dibujo de baja resolución y se ve borroso al lado del texto.
 function prepararCanvas(canvas) {
   if (!canvas.dataset.anchoLogico) {
     canvas.dataset.anchoLogico = canvas.width;
@@ -943,140 +1061,82 @@ function prepararCanvas(canvas) {
   return { ctx, w, h };
 }
 
-function barraRedondeada(ctx, x, y, ancho, alto, radio) {
-  const r = Math.max(0, Math.min(radio, ancho / 2, alto));
-  if (typeof ctx.roundRect === "function") {
-    ctx.beginPath(); ctx.roundRect(x, y, ancho, alto, [r, r, 0, 0]); ctx.fill();
-  } else {
-    ctx.fillRect(x, y, ancho, alto);
+// Eje Y con números redondos, ajustado al tamaño real de los datos (no fijo hasta 100%).
+function calcularEscalaEjeY(maxCrudo, esPorcentaje) {
+  if (!(maxCrudo > 0)) maxCrudo = esPorcentaje ? 0.05 : 1;
+  const acolchado = maxCrudo * 1.3;
+  if (esPorcentaje) {
+    const listaPct = [5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100];
+    const objetivoPct = Math.min(acolchado * 100, 100);
+    const maxPct = listaPct.find((v) => v >= objetivoPct) || 100;
+    return { max: maxPct / 100, paso: maxPct / 5 / 100, numTicks: 5 };
   }
+  const escalado = acolchado / 5;
+  const exp = Math.floor(Math.log10(escalado));
+  const base = Math.pow(10, exp);
+  const frac = escalado / base;
+  const pasoFrac = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  const paso = pasoFrac * base;
+  const max = Math.ceil(acolchado / paso) * paso;
+  return { max, paso, numTicks: Math.round(max / paso) };
 }
 
-function drawGroupedBars(canvasId, categorias, seriesByKey, keys, umbrales, errores, colorOffset, opciones) {
+// Línea de evolución por visita. Una serie de tiempo se lee como línea: muestra la tendencia
+// (subiendo o bajando), que es justo lo que se quiere saber entre una visita y la siguiente.
+function drawLineChart(canvasId, etiquetas, valores, umbral, opciones) {
   opciones = opciones || {};
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   const { ctx, w, h } = prepararCanvas(canvas);
-  const padL = 58, padR = 20, padT = 20, padB = 74;
+  const padL = 44, padR = 14, padT = 16, padB = 40;
+
   let maxVal = 0;
-  keys.forEach(k => (seriesByKey[k]||[]).forEach(v => { if (v!=null && v>maxVal) maxVal=v; }));
-  if (umbrales) umbrales.forEach(u => { if (u!=null && u>maxVal) maxVal=u; });
-  if (errores) keys.forEach(k => (seriesByKey[k]||[]).forEach((v,ci) => {
-    const e = (errores[k]||[])[ci];
-    if (v!=null && e!=null && v+e/2>maxVal) maxVal = v+e/2;
-  }));
+  valores.forEach((v) => { if (v != null && v > maxVal) maxVal = v; });
+  if (umbral != null && umbral > maxVal) maxVal = umbral;
   const escala = calcularEscalaEjeY(maxVal, !!opciones.pct);
   maxVal = escala.max;
-  const groupW = (w-padL-padR)/categorias.length;
-  const barW = Math.min(28, groupW/(keys.length+1));
-  const fmtTick = (val) => {
-    if (opciones.pct) return Math.round(val*100)+"%";
-    const redondeado = Math.round(val*10)/10;
-    return Number.isInteger(redondeado) ? String(redondeado) : redondeado.toFixed(1);
-  };
 
-  ctx.font="11px " + FUENTE_GRAFICA; ctx.textAlign="right";
-  for (let i=0;i<=escala.numTicks;i++) {
-    const val = escala.paso*i;
-    const y = h-padB-(val/maxVal)*(h-padT-padB);
-    ctx.strokeStyle=TINTA.grilla; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w-padR, y); ctx.stroke();
-    ctx.fillStyle=TINTA.texto; ctx.fillText(fmtTick(val), padL-8, y+4);
+  const x = (i) => padL + (valores.length <= 1 ? (w - padL - padR) / 2 : (i * (w - padL - padR)) / (valores.length - 1));
+  const y = (v) => h - padB - (v / maxVal) * (h - padT - padB);
+  const fmtTick = (val) => opciones.pct ? Math.round(val * 100) + "%"
+    : (Number.isInteger(Math.round(val * 10) / 10) ? String(Math.round(val * 10) / 10) : (Math.round(val * 10) / 10).toFixed(1));
+
+  ctx.font = "11px " + FUENTE_GRAFICA;
+  ctx.textAlign = "right";
+  for (let i = 0; i <= escala.numTicks; i++) {
+    const val = escala.paso * i;
+    ctx.strokeStyle = TINTA.grilla; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, y(val)); ctx.lineTo(w - padR, y(val)); ctx.stroke();
+    ctx.fillStyle = TINTA.texto; ctx.fillText(fmtTick(val), padL - 7, y(val) + 4);
   }
 
-  ctx.strokeStyle=TINTA.ejes; ctx.lineWidth=1.2; ctx.beginPath();
-  ctx.moveTo(padL,padT); ctx.lineTo(padL,h-padB); ctx.lineTo(w-padR,h-padB); ctx.stroke();
-  categorias.forEach((cat,ci) => {
-    const gx = padL + ci*groupW + groupW/2 - (keys.length*barW)/2;
-    keys.forEach((k,ki) => {
-      const val = (seriesByKey[k]||[])[ci];
-      if (val==null) return;
-      const bh = (val/maxVal)*(h-padT-padB);
-      const x = gx + ki*barW;
-      const topY = h-padB-bh;
-      ctx.fillStyle = COLORES[(ki+(colorOffset||0))%COLORES.length];
-      barraRedondeada(ctx, x, topY, barW-4, bh, 3);
+  ctx.strokeStyle = TINTA.ejes; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, h - padB); ctx.lineTo(w - padR, h - padB); ctx.stroke();
 
-      // Barra de error (+-1/2 desviacion estandar). Solo existe si el lote tuvo 2 o mas puntos
-      // de muestreo: con un solo punto no hay dispersion que dibujar.
-      const err = errores && (errores[k]||[])[ci];
-      if (err!=null && err>0) {
-        const halfPx = Math.max((err/2/maxVal)*(h-padT-padB), 3);
-        const cx = x + (barW-4)/2;
-        const trazo = () => {
-          ctx.beginPath();
-          ctx.moveTo(cx, topY-halfPx); ctx.lineTo(cx, topY+halfPx);
-          ctx.moveTo(cx-5, topY-halfPx); ctx.lineTo(cx+5, topY-halfPx);
-          ctx.moveTo(cx-5, topY+halfPx); ctx.lineTo(cx+5, topY+halfPx);
-          ctx.stroke();
-        };
-        ctx.strokeStyle="#fff"; ctx.lineWidth=3.4; trazo();   // halo, para que se vea sobre la barra
-        ctx.strokeStyle=TINTA.error; ctx.lineWidth=1.6; trazo();
-        ctx.lineWidth=1;
-      }
-    });
-    ctx.fillStyle=TINTA.texto; ctx.font="11.5px " + FUENTE_GRAFICA; ctx.textAlign="center";
-    ctx.save(); ctx.translate(padL+ci*groupW+groupW/2, h-padB+16);
-    const words = cat.split(' '); ctx.fillText(words.slice(0,3).join(' '), 0, 0);
-    if (words.length>3) ctx.fillText(words.slice(3).join(' '), 0, 13);
-    ctx.restore();
-    if (umbrales && umbrales[ci]!=null) {
-      const uy = h-padB-(umbrales[ci]/maxVal)*(h-padT-padB);
-      ctx.strokeStyle=TINTA.umbral; ctx.lineWidth=1.4; ctx.setLineDash([5,4]);
-      ctx.beginPath(); ctx.moveTo(padL+ci*groupW, uy); ctx.lineTo(padL+(ci+1)*groupW, uy); ctx.stroke();
-      ctx.setLineDash([]); ctx.lineWidth=1;
-    }
+  if (umbral != null) {
+    ctx.strokeStyle = TINTA.umbral; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(padL, y(umbral)); ctx.lineTo(w - padR, y(umbral)); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  const color = opciones.color || COLORES[0];
+  const puntos = valores.map((v, i) => (v == null ? null : { x: x(i), y: y(v) })).filter(Boolean);
+  if (puntos.length > 1) {
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = "round";
+    ctx.beginPath(); puntos.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke();
+  }
+  puntos.forEach((p) => {
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff"; ctx.fill();
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
   });
 
-  if (opciones.tituloY) {
-    ctx.save();
-    ctx.translate(13, (padT+(h-padB))/2);
-    ctx.rotate(-Math.PI/2);
-    ctx.textAlign="center"; ctx.fillStyle=TINTA.titulo; ctx.font="600 11px " + FUENTE_GRAFICA;
-    ctx.fillText(opciones.tituloY, 0, 0);
-    ctx.restore();
+  ctx.fillStyle = TINTA.texto; ctx.font = "10.5px " + FUENTE_GRAFICA; ctx.textAlign = "center";
+  etiquetas.forEach((et, i) => { ctx.fillText(et, x(i), h - padB + 15); });
+  if (opciones.titulo) {
+    ctx.fillStyle = TINTA.titulo; ctx.font = "600 10.5px " + FUENTE_GRAFICA;
+    ctx.fillText(opciones.titulo, padL + (w - padL - padR) / 2, h - 6);
   }
-  if (opciones.tituloX) {
-    ctx.textAlign="center"; ctx.fillStyle=TINTA.titulo; ctx.font="600 11px " + FUENTE_GRAFICA;
-    ctx.fillText(opciones.tituloX, padL+(w-padL-padR)/2, h-8);
-  }
-}
-
-function drawPie(canvasId, valores) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas) return;
-  const { ctx, w, h } = prepararCanvas(canvas);
-  const colors = ${JSON.stringify(COLORES_TORTA)};
-  const total = valores.reduce((a,b)=>a+b,0) || 1;
-  let start = -Math.PI/2;
-  const cx = w/2, cy = h/2 - 8, r = Math.min(w, h)/2 - 12;
-  valores.forEach((v,i) => {
-    const angle = (v/total)*Math.PI*2;
-    ctx.beginPath(); ctx.moveTo(cx,cy);
-    ctx.arc(cx,cy,r,start,start+angle);
-    ctx.closePath(); ctx.fillStyle=colors[i]; ctx.fill();
-    // Separacion fina entre porciones: se lee mejor que los colores pegados.
-    ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.stroke();
-    start += angle;
-  });
-  // Centro blanco: la vuelve un anillo, mas limpio y con menos "peso" visual que la torta llena.
-  ctx.beginPath(); ctx.arc(cx, cy, r*0.52, 0, Math.PI*2); ctx.fillStyle="#fff"; ctx.fill();
-}
-
-lotesFinca.forEach((lote, i) => {
-  if (barrasEstatica.lotes[lote]) {
-    drawGroupedBars("barrasLote"+lote, barrasEstatica.categorias,
-      { [lote]: barrasEstatica.lotes[lote] }, [lote], barrasEstatica.umbrales,
-      { [lote]: (barrasEstatica.errores||{})[lote] }, i,
-      { tituloX: "Plaga o indicador evaluado", tituloY: "Cantidad promedio de individuos" });
-  }
-});
-tortas.forEach((t,i) => drawPie("torta"+i, t.valores));
-if (lotesFinca.length > 1) {
-  drawGroupedBars("barrasPromedio", barrasEstatica.categorias,
-    { "Promedio": promedioBarras.valores }, ["Promedio"], barrasEstatica.umbrales,
-    { "Promedio": promedioBarras.errores }, lotesFinca.length,
-    { tituloX: "Plaga o indicador evaluado", tituloY: "Cantidad promedio de individuos" });
-  drawPie("tortaPromedio", promedioTorta);
 }
 
 const varSelect = document.getElementById("varSelect");
@@ -1084,12 +1144,11 @@ function redrawHistorial() {
   const v = varSelect.value;
   const h = historial[v];
   const umbralVal = umbralesHistorial[v];
-  const umbralesLinea = umbralVal != null ? h.fechas.map(() => umbralVal) : null;
-  const esPorcentaje = v.includes("(%)");
+  const esPorcentaje = v.indexOf("(%)") !== -1;
   lotesFinca.forEach((lote, i) => {
-    drawGroupedBars("historialLote"+lote, h.fechas, { [lote]: h.lotes[lote] }, [lote], umbralesLinea,
-      { [lote]: (h.errores||{})[lote] }, i,
-      { tituloX: "Fecha de la visita", tituloY: esPorcentaje ? "Porcentaje (%)" : "Cantidad promedio", pct: esPorcentaje });
+    drawLineChart("historialLote" + lote, h.fechas, h.lotes[lote], umbralVal, {
+      pct: esPorcentaje, color: COLORES[i % COLORES.length], titulo: "Fecha de la visita",
+    });
   });
 }
 varSelect.addEventListener("change", redrawHistorial);

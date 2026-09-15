@@ -1,22 +1,27 @@
+/* Mismo sistema de diseño del informe (ver informes.js): la app y el informe deben sentirse
+   un solo producto. Colores tomados del logo de Galagro. */
 :root {
-  --principal: #123a63;
-  --principal-oscuro: #0d2846;
-  --acento: #2f8fd1;
-  --acento-verde: #3fa845;
-  --fondo-suave: #eef1f4;
-  --gris: #5b6472;
-  --borde: #dbe1e7;
-  --rojo: #c0392b;
+  --principal: #00783c;        /* verde del logo */
+  --principal-oscuro: #004f28;
+  --acento: #00783c;
+  --acento-verde: #00783c;
+  --fondo-suave: #f2f7f4;
+  --gris: #5d5751;
+  --borde: #e5e1db;
+  --rojo: #a52a1f;
+
+  --serif: Georgia, "Times New Roman", serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
 
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  font-family: var(--sans);
   max-width: 520px;
   margin: 0 auto;
   padding: 16px 16px 60px;
-  color: #1c2430;
+  color: #1a1614;
   background: #fff;
 }
 
@@ -24,13 +29,13 @@ header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 3px solid var(--principal);
+  border-bottom: 2px solid var(--principal);
   padding-bottom: 12px;
   margin-bottom: 16px;
 }
 
-header h1 { font-family: inherit; font-weight: 800; font-size: 19px; color: var(--principal); margin: 0; }
-.version-tag { font-size: 11px; font-weight: 400; color: var(--gris); vertical-align: middle; }
+header h1 { font-family: var(--serif); font-weight: 400; font-size: 20px; color: var(--principal-oscuro); margin: 0; }
+.version-tag { font-family: var(--sans); font-size: 11px; font-weight: 400; color: var(--gris); vertical-align: middle; }
 .titulo-box { display: flex; align-items: center; gap: 10px; }
 .titulo-box .logo { height: 32px; width: auto; }
 
@@ -56,14 +61,13 @@ button {
 button:disabled { opacity: 0.6; }
 
 h2 {
-  font-family: inherit;
-  font-size: 15px;
-  font-weight: 800;
-  color: #fff;
-  background: var(--principal);
-  border-radius: 6px;
-  padding: 8px 12px;
-  margin-top: 22px;
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 400;
+  color: var(--principal-oscuro);
+  border-bottom: 2px solid var(--principal);
+  padding-bottom: 6px;
+  margin-top: 28px;
 }
 
 .fila { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
@@ -115,7 +119,7 @@ input.campo-invalido, select.campo-invalido, textarea.campo-invalido { border-co
 .producto-bloque .fila { margin-bottom: 6px; }
 .producto-bloque button.secundario { width: auto; padding: 6px 14px; font-size: 13px; margin-top: 2px; }
 
-h3 { font-family: inherit; font-weight: 700; font-size: 13.5px; color: var(--principal-oscuro); margin: 18px 0 8px; }
+h3 { font-family: var(--serif); font-weight: 400; font-size: 16px; color: var(--principal-oscuro); margin: 20px 0 8px; }
 
 #form-punto button[type="submit"],
 #pantalla-visita button,
