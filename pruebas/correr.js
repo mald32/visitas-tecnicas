@@ -360,6 +360,17 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     igual((await Informes.filasProductos()).length, 0, "sus productos aplicados tampoco deben verse");
   });
 
+  await pruebaAsync("un lote borrado en la app desaparece aunque siga en el Excel, sin tocar los otros lotes", async () => {
+    const { Informes } = cargarInformes({
+      filas: filasDosLotes,
+      productosAplicados: [productoExcel("ORTHENE", 200), ["CLIENTE", "FINCA", "2026-09-14", 2, "SILICROP", "ADYUVANTE", "SL", "cc", 40]],
+      cola: [{ tipo: "eliminar_lote", datos: { cliente: "CLIENTE", finca: "FINCA", fecha: "2026-09-14", lote: 1 } }],
+    });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
+    igual(D.tabla_lotes.map((t) => t.lote).join(","), "2");
+    igual((await Informes.filasProductos()).map((f) => f[4]).join(","), "SILICROP");
+  });
+
   // -------------------------------------------------------------------------
   // 4. Filas que se suben a Excel: las columnas con fórmula deben ir vacías
   // -------------------------------------------------------------------------

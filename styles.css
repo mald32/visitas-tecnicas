@@ -181,6 +181,23 @@ button.secundario {
 .historial-completa { display: block; font-size: 11px; color: var(--principal); margin-top: 2px; }
 .visita-encabezado { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .visita-encabezado #resumen-visita { margin: 0; }
+/* Secciones plegables del menú de la visita y bloques por lote */
+.seccion { margin-top: 18px; }
+#pantalla-lotes .seccion-titulo {
+  width: 100%; margin: 0; display: flex; justify-content: space-between; align-items: center; text-align: left;
+  background: #fff; color: var(--principal-oscuro); border: none; border-bottom: 2px solid var(--principal); border-radius: 0;
+  padding: 6px 2px; font-family: var(--serif); font-size: 19px;
+}
+.seccion-cuerpo { padding-top: 12px; }
+.flecha { display: inline-block; transition: transform .15s ease; font-size: 14px; line-height: 1; }
+.seccion-titulo[aria-expanded="true"] .flecha, .acordeon-titulo[aria-expanded="true"] .flecha { transform: rotate(90deg); }
+.acordeon-lote { margin-bottom: 10px; }
+#pantalla-lotes .acordeon-titulo { width: 100%; margin: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; }
+.acordeon-titulo small { font-size: 12px; color: var(--gris); }
+.acordeon-cuerpo { border: 1px solid var(--borde); border-radius: 0 0 10px 10px; padding: 12px; margin-top: -4px; }
+#pantalla-lotes .producto-bloque button.secundario { width: auto; }
+.visita-encabezado h2 { flex: 1; }
+#pantalla-punto .btn-papelera,
 #pantalla-lotes .btn-papelera {
   width: auto; margin: 0; padding: 8px; line-height: 0; flex-shrink: 0;
   background: #fff; color: var(--rojo); border: 1.5px solid var(--rojo); border-radius: 50%;

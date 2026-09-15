@@ -73,77 +73,72 @@
     </button>
   </div>
 
-  <h2>Productividad</h2>
-  <label>¿Cómo vas a consignar la productividad de esta visita? <span class="asterisco">*</span>
-    <select id="productividad-modo">
-      <option value="">-</option>
-      <option value="general">En general</option>
-      <option value="lotes">Por lotes</option>
-      <option value="sin_datos">Sin datos</option>
-    </select>
-  </label>
-  <div id="productividad-general" hidden>
-    <div class="fila">
-      <label>Área del lote (hectáreas) <input type="number" step="any" id="pv-g-area"></label>
-      <label>Animales en ordeño <input type="number" step="any" id="pv-g-animales"></label>
+  <div class="seccion">
+    <button type="button" class="seccion-titulo" aria-expanded="true"><span>Productividad</span><span class="flecha" aria-hidden="true">▸</span></button>
+    <div class="seccion-cuerpo">
+      <label>¿Cómo vas a consignar la productividad de esta visita? <span class="asterisco">*</span>
+        <select id="productividad-modo">
+          <option value="">-</option>
+          <option value="general">En general</option>
+          <option value="lotes">Por lotes</option>
+          <option value="sin_datos">Sin datos</option>
+        </select>
+      </label>
+      <div id="productividad-general" hidden>
+        <div class="fila">
+          <label>Área del lote (hectáreas) <input type="number" step="any" id="pv-g-area"></label>
+          <label>Animales en ordeño <input type="number" step="any" id="pv-g-animales"></label>
+        </div>
+        <div class="fila">
+          <label>Días de rotación <input type="number" step="any" id="pv-g-dias"></label>
+          <label>Producción diaria de leche (L/vaca·día) <input type="number" step="any" id="pv-g-produccion"></label>
+        </div>
+        <p class="hint">Los siguientes 3 valores los calcula solo el Excel, aquí es solo una vista previa:</p>
+        <div class="fila">
+          <label>Carga animal (animales/ha) <input type="text" id="pv-g-carga" disabled></label>
+          <label>Área diaria por animal (m²/vaca·día) <input type="text" id="pv-g-area-diaria" disabled></label>
+        </div>
+        <label>Productividad de la lechería (L leche/ha·día) <input type="text" id="pv-g-productividad" disabled></label>
+      </div>
+      <div id="productividad-lotes-lista" hidden></div>
     </div>
-    <div class="fila">
-      <label>Días de rotación <input type="number" step="any" id="pv-g-dias"></label>
-      <label>Producción diaria de leche (L/vaca·día) <input type="number" step="any" id="pv-g-produccion"></label>
-    </div>
-    <p class="hint">Los siguientes 3 valores los calcula solo el Excel, aquí es solo una vista previa:</p>
-    <div class="fila">
-      <label>Carga animal (animales/ha) <input type="text" id="pv-g-carga" disabled></label>
-      <label>Área diaria por animal (m²/vaca·día) <input type="text" id="pv-g-area-diaria" disabled></label>
-    </div>
-    <label>Productividad de la lechería (L leche/ha·día) <input type="text" id="pv-g-productividad" disabled></label>
   </div>
 
-  <div id="productividad-lotes-lista" hidden></div>
+  <div class="seccion">
+    <button type="button" class="seccion-titulo" aria-expanded="true"><span>Manejo agronómico</span><span class="flecha" aria-hidden="true">▸</span></button>
+    <div class="seccion-cuerpo">
+      <p class="hint">Todo es opcional. Se guarda en los puntos y productos de cada lote al muestrearlo.</p>
+      <label>¿Cómo vas a consignar el manejo agronómico de esta visita?
+        <select id="manejo-modo">
+          <option value="general">En general (igual para todos los lotes)</option>
+          <option value="lotes">Por lotes</option>
+        </select>
+      </label>
+      <div id="manejo-general"></div>
+      <div id="manejo-lotes-lista" hidden></div>
+      <datalist id="datalist-productos"></datalist>
+    </div>
+  </div>
 
-  <h2>¿Qué lote vas a muestrear?</h2>
-  <div id="botones-lotes" class="grid-lotes"></div>
-  <button id="btn-nuevo-lote" class="secundario">+ Nuevo lote</button>
+  <div class="seccion">
+    <button type="button" class="seccion-titulo" aria-expanded="true"><span>Lotes a muestrear</span><span class="flecha" aria-hidden="true">▸</span></button>
+    <div class="seccion-cuerpo">
+      <div id="botones-lotes"></div>
+      <button id="btn-nuevo-lote" class="secundario">+ Nuevo lote</button>
+    </div>
+  </div>
+
   <button id="btn-fin-muestreo-lotes">Fin del muestreo</button>
-</section>
-
-<!-- Paso 2.5: manejo agronomico aplicado a este lote (opcional, una vez por lote) -->
-<section id="pantalla-manejo" hidden>
-  <h2>Manejo agronómico — Lote <span id="manejo-lote-num"></span></h2>
-  <p class="hint">Todo es opcional. Se guarda igual para todos los puntos de este lote.</p>
-  <p id="manejo-copiado" class="aviso-suave" hidden></p>
-
-  <label>Tipo de fumigación
-    <select id="m-tipo-fumigacion">
-      <option value="">-</option>
-      <option value="Aerea (Dron)">Aérea (Dron)</option>
-      <option value="Terrestre (Estacionaria)">Terrestre (Estacionaria)</option>
-      <option value="Terrestre (Bomba de espalda)">Terrestre (Bomba de espalda)</option>
-    </select>
-  </label>
-  <label>Volumen de Mezcla/ha <input type="number" step="any" id="m-litros-mezcla"></label>
-
-  <h3>Productos aplicados</h3>
-  <p class="hint">Agrega uno por uno los productos usados (acondicionador, insecticida, fungicida, fertilizante foliar, coadyuvante, etc.).</p>
-  <div id="lista-productos"></div>
-  <button type="button" id="btn-agregar-producto" class="secundario">+ Agregar producto</button>
-  <datalist id="datalist-productos"></datalist>
-
-  <label>Orden de mezcla correcto
-    <select id="m-orden-mezcla">
-      <option value="">-</option>
-      <option value="Si">Sí</option>
-      <option value="No">No</option>
-    </select>
-  </label>
-  <label>pH final de la mezcla <input type="number" step="any" id="m-ph-final"></label>
-
-  <button id="btn-iniciar-monitoreo-lote">Iniciar monitoreo</button>
 </section>
 
 <!-- Paso 3: capturar puntos de muestreo del lote elegido -->
 <section id="pantalla-punto" hidden>
-  <h2>Lote <span id="lote-actual-num"></span> · punto <span id="punto-actual-num"></span></h2>
+  <div class="visita-encabezado">
+    <h2>Lote <span id="lote-actual-num"></span> · punto <span id="punto-actual-num"></span></h2>
+    <button type="button" id="btn-borrar-lote" class="btn-papelera" title="Borrar este lote" aria-label="Borrar este lote">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12H7L6 9zm4 2v8h2v-8h-2zm4 0v8h2v-8h-2z"/></svg>
+    </button>
+  </div>
 
   <label>Potrero del lote <span class="asterisco">*</span> <input type="text" id="potrero-nombre-punto" placeholder="Ej: Potrero 3"></label>
 

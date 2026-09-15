@@ -164,9 +164,15 @@ const Informes = {
   // no se borran allá (así desaparecen de informes e historial desde el primer momento).
   async _remota(nombreTabla, claveCache, columnas) {
     const crudas = this._normalizarFechas(await this._tablaRemota(nombreTabla, claveCache), columnas.fecha);
-    const borradas = new Set((await this._pendientes()).filter((it) => it.tipo === "eliminar_visita").map((it) => claveVisita(it.datos)));
-    if (borradas.size === 0) return crudas;
-    return crudas.filter((f) => !borradas.has(claveVisita({ cliente: f[columnas.cliente], finca: f[columnas.finca], fecha: f[columnas.fecha] })));
+    const pendientes = await this._pendientes();
+    const borradas = new Set(pendientes.filter((it) => it.tipo === "eliminar_visita").map((it) => claveVisita(it.datos)));
+    const lotesBorrados = new Set(pendientes.filter((it) => it.tipo === "eliminar_lote").map((it) => claveVisitaLote(it.datos)));
+    if (borradas.size === 0 && lotesBorrados.size === 0) return crudas;
+    return crudas.filter((f) => {
+      const visita = { cliente: f[columnas.cliente], finca: f[columnas.finca], fecha: f[columnas.fecha] };
+      if (borradas.has(claveVisita(visita))) return false;
+      return columnas.lote == null || !lotesBorrados.has(claveVisitaLote({ ...visita, lote: f[columnas.lote] }));
+    });
   },
 
   // Lo pendiente de subir se consulta en cada llamada (no se cachea), para que lo recién
@@ -988,10 +994,10 @@ td.alerta{color:var(--alerta);font-weight:700;}
 .kpi-base{font-size:var(--t-peq);color:var(--tinta-media);margin:var(--e2) 0 0;}
 
 /* Dos lotes por fila: cada bloque ocupa media página, así las barras no quedan estiradas. */
-.lotes-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--e4);}
-.lote-bloque{border:1px solid var(--linea);padding:var(--e3) var(--e4);min-width:0;}
+.lotes-grid{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--e4);}
+.lote-bloque{border:1px solid var(--linea);padding:var(--e3) var(--e4);min-width:0;box-sizing:border-box;flex:0 1 calc(50% - var(--e4) / 2);}
 .lote-bloque h3{margin:0 0 var(--e2);font-size:var(--t-base);}
-.lote-fila{display:grid;grid-template-columns:1fr 104px;gap:var(--e3);align-items:start;}
+.lote-fila{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:var(--e3);align-items:center;}
 .panel-barras,.panel-anillo{min-width:0;}
 .panel-anillo{text-align:center;}
 .lote-bloque-promedio{background:var(--marca-tenue);border-color:var(--marca);}
@@ -1014,7 +1020,7 @@ td.alerta{color:var(--alerta);font-weight:700;}
 .bullet-pie{font-size:10px;color:var(--tinta-suave);margin-top:1px;}
 
 /* --- Anillo de composición --- */
-.anillo{width:100%;max-width:104px;height:auto;display:block;margin:0 auto;}
+.anillo{width:100%;max-width:160px;height:auto;display:block;margin:0 auto;}
 .anillo-num{font-family:var(--serif);font-size:19px;fill:var(--marca-honda);}
 .anillo-lbl{font-size:6.5px;fill:var(--tinta-suave);text-transform:uppercase;letter-spacing:.6px;}
 .torta-legend{list-style:none;padding:0;margin:var(--e1) 0 0;font-size:10px;line-height:1.3;color:var(--tinta-media);text-align:left;}
@@ -1065,7 +1071,7 @@ footer{margin-top:var(--e8);font-size:var(--t-micro);color:var(--tinta-suave);te
   header h1{font-size:var(--t-med);}
   .logo{height:40px;}
   h2{font-size:var(--t-med);margin-top:var(--e8);}
-  .lotes-grid{grid-template-columns:1fr;}
+  .lote-bloque{flex-basis:100%;}
   header{grid-template-columns:1fr;}
   .enc-asesor{border-left:none;border-top:1px solid rgba(255,255,255,.25);padding-left:0;padding-top:var(--e4);}
   .datos-grid{grid-template-columns:1fr;}
