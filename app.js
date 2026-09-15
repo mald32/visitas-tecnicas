@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "32";
+const APP_VERSION = "33";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -960,10 +960,35 @@ async function onGenerarInforme() {
 
     el("informe-estado").textContent = "";
     el("informe-resultado").hidden = false;
+
+    if (navigator.onLine) {
+      el("informe-estado").textContent = "Sincronizando recomendaciones con tu Excel...";
+      await sincronizarProductosRecomendadosPendientes();
+      await refrescarResumenCola();
+      el("informe-estado").textContent = "";
+    }
   } catch (e) {
     el("informe-estado").textContent = "No se pudo generar el informe: " + e.message;
   } finally {
     el("btn-generar-informe").disabled = false;
+  }
+}
+
+// Sube a Productos_Recomendados lo que este pendiente (se llama justo despues de generar un
+// informe, para que quede sincronizado de una vez si hay conexion, sin esperar a "Sincronizar").
+async function sincronizarProductosRecomendadosPendientes() {
+  const items = await DB.listarItems();
+  const pendientes = items.filter((it) => it.tipo === "producto_recomendado" && it.estado === "pendiente");
+  for (const it of pendientes) {
+    try {
+      await Graph.agregarProductoRecomendado([
+        it.datos.cliente, it.datos.finca, it.datos.fecha, "",
+        it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
+      ]);
+      await DB.marcarSincronizado(it.id);
+    } catch (e) {
+      await DB.marcarError(it.id, e.message);
+    }
   }
 }
 
