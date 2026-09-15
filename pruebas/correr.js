@@ -143,8 +143,8 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   await pruebaAsync("genera alerta cuando un indicador supera su umbral", async () => {
     const { Informes } = cargarInformes({ filas: filasDosLotes });
     const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
-    cierto(D.alertas.some((a) => a.includes("Lote 1") && a.includes("adultos")), "debería alertar por adultos del lote 1");
-    cierto(!D.alertas.some((a) => a.includes("Lote 2") && a.includes("adultos")), "el lote 2 no debería alertar por adultos");
+    cierto(D.alertas.some((a) => a.includes("adultos")), "el promedio (9.5 adultos) supera el umbral de 5");
+    cierto(!D.alertas.some((a) => a.includes("Lote ")), "Resultados reporta el promedio, no lote por lote");
   });
 
   await pruebaAsync("solo toma los puntos de la visita pedida (cliente+finca+fecha)", async () => {
@@ -202,7 +202,8 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
     const productos = [{ nombre: "ORTHENE", tipo: "INSECTICIDA", unidad: "g", dosis: "200", tipoFumigacion: "Terrestre (Estacionaria)" }];
     const html = Informes.generarHtml(D, productos, "", { tipo: "Terrestre (Estacionaria)", volumenMezcla: "200" });
-    contiene(html, "200g/Caneca 200L (Estacionaria)", "debería mostrar la dosis por caneca");
+    contiene(html, "200g/Caneca 200L", "debería mostrar la dosis por caneca");
+    noContiene(html, "200L (Estacionaria)", "el método ya está arriba: no se repite en cada producto");
     contiene(html, "Volumen de mezcla/hectárea");
   });
 
@@ -236,7 +237,8 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
     const html = Informes.generarHtml(D, [], "");
     contiene(html, "ORTHENE PS", "debería mostrar nombre + siglas");
-    contiene(html, "200g/Hectárea (Dron)", "debería mostrar la dosis según el tipo de fumigación del lote");
+    contiene(html, "200g/Hectárea", "debería mostrar la dosis según el tipo de fumigación del lote");
+    noContiene(html, "Hectárea (Dron)", "el método ya está arriba: no se repite en cada producto");
     contiene(html, "Volumen de Mezcla/ha", "debería mostrar el volumen de mezcla");
   });
 

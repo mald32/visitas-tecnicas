@@ -490,17 +490,20 @@ const Informes = {
       Math.max(promedioFinca.pasto_sano || 0, 0),
     ];
 
-    // Alertas: cualquier indicador que supere (o, para pasto sano, no alcance) su umbral configurado.
+    // Alertas de la sección Resultados: se evalúa el estado general de la finca (el promedio de los
+    // lotes) o, si solo se muestreó un lote, ese lote. El detalle por lote ya está en la tabla y en
+    // las gráficas; aquí se resume una sola vez para no repetir lo mismo lote por lote.
+    const referencia = tablaLotes.length === 1 ? tablaLotes[0] : promedioFinca;
     const alertas = [];
-    for (const t of tablaLotes) {
+    if (tablaLotes.length > 0) {
       for (const def of DEFINICIONES_UMBRAL) {
-        const valor = t[def.campo];
+        const valor = referencia[def.campo];
         const umbral = umbrales[def.umbral];
         if (valor == null || umbral == null) continue;
         const excede = def.esMinimo ? valor < umbral : valor > umbral;
         if (excede) {
           alertas.push(
-            `Lote ${t.lote}: ${def.nombre} (${fmt(valor, def.pct)}) ${def.esMinimo ? "por debajo del mínimo" : "supera el umbral"} (${fmt(umbral, def.pct)}).`
+            `${def.nombre} (${fmt(valor, def.pct)}) ${def.esMinimo ? "por debajo del mínimo" : "supera el umbral"} (${fmt(umbral, def.pct)}).`
           );
         }
       }
@@ -569,9 +572,9 @@ const Informes = {
 
     // Sufijo que indica con que equipo se aplica una dosis (usado tanto en Manejo como en Recomendaciones).
     const UNIDAD_APLICACION_POR_TIPO = {
-      "Aerea (Dron)": "/Hectárea (Dron)",
-      "Terrestre (Estacionaria)": "/Caneca 200L (Estacionaria)",
-      "Terrestre (Bomba de espalda)": "/Bomba 20L (Bomba de espalda)",
+      "Aerea (Dron)": "/Hectárea",
+      "Terrestre (Estacionaria)": "/Caneca 200L",
+      "Terrestre (Bomba de espalda)": "/Bomba 20L",
     };
 
     function manejoHtml(m, productos) {
@@ -636,17 +639,19 @@ const Informes = {
       return `<div class="manejo-box">${subtitulo}${manejo}</div>`;
     }).join("");
 
-    const numero = (v) => (v == null ? "-" : Number(v).toFixed(2));
+    // Indicadores de productividad como tarjetas: los 3 valores calculados son lo que el productor
+    // quiere ver (van grandes y resaltados); los datos de entrada van debajo, en pequeño.
+    const numero = (v, dec = 1) => (v == null || Number.isNaN(Number(v)) ? "-" : Number(v).toFixed(dec));
     const productividadHtml = (D.productividad || []).length
-      ? `<div class="tabla-scroll"><table><thead><tr>
-          <th>Lote</th><th>Área (ha)</th><th>Animales en ordeño</th><th>Días rotación</th>
-          <th>Producción (L/vaca·día)</th><th>Carga animal</th><th>Área diaria/animal (m²)</th><th>Productividad (L/ha·día)</th>
-        </tr></thead><tbody>${D.productividad.map((p) => `<tr>
-          <td>${p.lote ? "Lote " + esc(p.lote) : "General"}</td>
-          <td>${numero(p.area)}</td><td>${numero(p.animales)}</td><td>${numero(p.dias)}</td>
-          <td>${numero(p.produccion)}</td><td>${numero(p.cargaAnimal)}</td>
-          <td>${numero(p.areaDiaria)}</td><td>${numero(p.productividadLecheria)}</td>
-        </tr>`).join("")}</tbody></table></div>`
+      ? D.productividad.map((p) => `<div class="kpi-bloque">
+          <span class="rotulo">${p.lote ? "Lote " + esc(p.lote) : "Finca en general"}</span>
+          <div class="kpi-grid">
+            <div class="kpi"><span class="kpi-num">${numero(p.productividadLecheria)}</span><span class="kpi-unidad">L leche/ha·día</span><span class="kpi-nombre">Productividad de la lechería</span></div>
+            <div class="kpi"><span class="kpi-num">${numero(p.cargaAnimal, 2)}</span><span class="kpi-unidad">animales/ha</span><span class="kpi-nombre">Carga animal</span></div>
+            <div class="kpi"><span class="kpi-num">${numero(p.areaDiaria)}</span><span class="kpi-unidad">m²/vaca·día</span><span class="kpi-nombre">Área diaria por animal</span></div>
+          </div>
+          <p class="kpi-base">${numero(p.area)} ha · ${numero(p.animales, 0)} animales en ordeño · ${numero(p.dias, 0)} días de rotación · ${numero(p.produccion)} L/vaca·día</p>
+        </div>`).join("")
       : `<p class="hint">Sin datos de productividad registrados en esta visita.</p>`;
 
     // --- Barras horizontales contra umbral ("bullet chart") ---
@@ -677,7 +682,7 @@ const Informes = {
             ${dispersion}
             ${umbral > 0 ? `<span class="bullet-umbral" style="left:${pct(umbral)}%"></span>` : ""}
           </div>
-          <div class="bullet-pie"><span>umbral ${fmt(umbral)}</span><span>${sobre ? "sobre el umbral" : "dentro del umbral"}</span></div>
+          <div class="bullet-pie"><span>umbral ${fmt(umbral)}</span></div>
         </li>`;
       }).join("")}</ul>`;
     }
@@ -730,8 +735,8 @@ const Informes = {
       const valores = D.barras_estatica.lotes[clave] || [];
       const errores = (D.barras_estatica.errores || {})[clave] || [];
       const nota = t.n_puntos === 1
-        ? "1 punto de muestreo: con un solo punto no hay dispersión que mostrar."
-        : `Promedio de ${t.n_puntos} puntos de muestreo. La línea sobre la barra es la dispersión entre puntos.`;
+        ? "1 punto de muestreo (sin dispersión)."
+        : `Promedio de ${t.n_puntos} puntos de muestreo.`;
       return `<div class="lote-bloque">
         <h3>Lote ${esc(t.lote)}${t.potrero ? ` — Potrero ${esc(t.potrero)}` : ""}</h3>
         ${panelesHtml(valores, errores, D.tortas[i].valores)}
@@ -740,7 +745,7 @@ const Informes = {
     }).join("") + (D.tabla_lotes.length <= 1 ? "" : `<div class="lote-bloque lote-bloque-promedio">
         <h3>Estado general de la finca</h3>
         ${panelesHtml(D.promedio_barras.valores, D.promedio_barras.errores, D.promedio_torta)}
-        <p class="nota-puntos">Promedio de los ${D.tabla_lotes.length} lotes muestreados en esta visita.</p>
+        <p class="nota-puntos">Promedio de los ${D.tabla_lotes.length} lotes.</p>
       </div>`);
 
     const opcionesVariable = Object.keys(D.historial).map((v) => `<option value="${v}">${v}</option>`).join("");
@@ -754,9 +759,12 @@ const Informes = {
       return `${etiqueta}: ${t.observaciones || "Sin observaciones."}`;
     }).join("\n\n"));
 
-    const resultadosHtml = D.alertas.length
-      ? D.alertas.map((a) => `• ${a}`).join("<br>")
-      : "Ningún indicador superó su umbral en esta visita.";
+    const baseResultados = D.tabla_lotes.length === 1
+      ? `Lote ${esc(D.tabla_lotes[0].lote)}`
+      : `Promedio de los ${D.tabla_lotes.length} lotes`;
+    const resultadosHtml = `<strong>${baseResultados}:</strong><br>` + (D.alertas.length
+      ? D.alertas.map((a) => `• ${esc(a)}`).join("<br>")
+      : "Ningún indicador superó su umbral en esta visita.");
 
     const TIPOS_FUMIGACION_TEXTO = {
       "Aerea (Dron)": "Aérea (Dron)",
@@ -841,26 +849,36 @@ html,body{background:var(--papel);}
 body{font-family:var(--sans);font-size:var(--t-base);line-height:1.55;max-width:900px;margin:0 auto;padding:var(--e8) var(--e6) var(--e12);color:var(--tinta);}
 
 /* --- Encabezado: banda de marca --- */
-header{background:var(--marca-honda);color:var(--papel);padding:var(--e6);margin-bottom:var(--e8);}
-.header-top{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--e4);flex-wrap:wrap;}
-.titulo-box{display:flex;align-items:center;gap:var(--e4);}
-.logo{height:52px;width:auto;background:var(--papel);padding:var(--e2);}
-header h1{margin:0 0 var(--e1);font-family:var(--serif);font-size:var(--t-gde);font-weight:400;letter-spacing:.3px;color:var(--papel);}
-.subtitulo{color:#b9d6c5;font-size:var(--t-peq);margin:0;letter-spacing:.2px;}
-.asesor-nombre{font-family:var(--serif);font-size:var(--t-med);color:var(--papel);white-space:nowrap;}
-.asesor-detalle{margin-top:var(--e2);font-size:var(--t-micro);color:#b9d6c5;text-align:right;line-height:1.7;letter-spacing:.2px;}
+/* Dos columnas independientes (la visita a la izquierda, el asesor a la derecha), cada una con
+   su propio contenido de arriba hacia abajo. Comparten el mismo fondo, así quedan al mismo nivel
+   sin tener que acomodar todo en una sola línea de texto. */
+header{background:var(--marca-honda);color:var(--papel);padding:var(--e6);margin-bottom:var(--e6);
+  display:grid;grid-template-columns:1fr auto;gap:var(--e6);align-items:start;}
+.enc-visita{min-width:0;}
+.enc-marca{display:flex;align-items:center;gap:var(--e4);margin-bottom:var(--e4);}
+.logo{height:48px;width:auto;background:var(--papel);padding:var(--e2);}
+header h1{margin:0;font-family:var(--serif);font-size:var(--t-gde);font-weight:400;letter-spacing:.3px;color:var(--papel);line-height:1.2;}
+.enc-datos{margin:0;display:grid;grid-template-columns:auto 1fr;gap:2px var(--e3);font-size:var(--t-base);}
+.enc-datos dt{color:#b9d6c5;font-size:var(--t-peq);}
+.enc-datos dd{margin:0;color:var(--papel);font-weight:600;}
+.enc-asesor{border-left:1px solid rgba(255,255,255,.25);padding-left:var(--e6);min-width:0;}
+.enc-rotulo{display:block;font-size:var(--t-micro);text-transform:uppercase;letter-spacing:1.2px;color:#b9d6c5;margin-bottom:var(--e2);}
+.asesor-nombre{font-family:var(--serif);font-size:var(--t-med);color:var(--papel);line-height:1.3;}
+.asesor-detalle{margin-top:var(--e1);font-size:var(--t-peq);color:#d6e8dd;line-height:1.6;}
 
-/* --- Datos de la visita --- */
-.datos-grid{display:flex;gap:var(--e6);margin-bottom:var(--e8);flex-wrap:wrap;
-  border-top:1px solid var(--linea);border-bottom:1px solid var(--linea);padding:var(--e3) 0;}
-.datos-grid>div{flex:1;min-width:200px;display:flex;align-items:center;gap:var(--e3);}
-.datos-grid .icono{width:32px;height:32px;min-width:32px;display:flex;align-items:center;justify-content:center;color:var(--marca);}
+/* --- Datos de la visita: celdas separadas al mismo nivel, sobre una misma franja --- */
+.datos-grid{display:grid;grid-template-columns:1fr 2fr;margin-bottom:var(--e6);
+  background:var(--papel-suave);border-bottom:1px solid var(--linea);}
+.datos-grid>div{display:grid;grid-template-columns:auto 1fr;gap:0 var(--e3);align-items:start;padding:var(--e3) var(--e4);}
+.datos-grid>div+div{border-left:1px solid var(--linea);}
+.datos-grid .icono{grid-row:span 2;width:24px;height:24px;color:var(--marca);padding-top:2px;}
 .datos-grid .icono svg{width:20px;height:20px;display:block;}
-.datos-grid .etiqueta{color:var(--tinta-suave);display:block;font-size:var(--t-micro);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;}
+.datos-grid .etiqueta{color:var(--tinta-suave);font-size:var(--t-micro);text-transform:uppercase;letter-spacing:1px;}
+.datos-grid .valor{color:var(--tinta);font-weight:600;}
 
 /* --- Títulos de sección: serif + regla de marca (lenguaje de documento, no de plantilla) --- */
 h2{font-family:var(--serif);font-size:var(--t-gde);font-weight:400;color:var(--marca-honda);
-  margin:var(--e12) 0 var(--e4);padding-bottom:var(--e2);border-bottom:2px solid var(--marca);}
+  margin:var(--e8) 0 var(--e3);padding-bottom:var(--e1);border-bottom:2px solid var(--marca);}
 h2:first-of-type{margin-top:var(--e6);}
 h3{font-family:var(--serif);font-size:var(--t-med);font-weight:400;color:var(--tinta);margin:var(--e6) 0 var(--e2);}
 .rotulo{display:block;font-size:var(--t-micro);text-transform:uppercase;letter-spacing:1.2px;color:var(--marca);margin-bottom:var(--e2);}
@@ -877,36 +895,47 @@ td.alerta{color:var(--alerta);font-weight:700;}
 .fila-promedio td{font-weight:700;border-top:2px solid var(--marca);background:var(--marca-tenue) !important;}
 
 /* --- Bloque por lote: barras y anillo lado a lado --- */
-.lote-bloque{margin-top:var(--e6);padding-top:var(--e4);border-top:1px solid var(--linea);}
-.lote-bloque:first-child{border-top:none;padding-top:0;}
-.lote-bloque h3{margin-top:0;}
-.lote-fila{display:flex;gap:var(--e6);align-items:flex-start;margin-top:var(--e3);}
-.panel-barras{flex:1 1 55%;min-width:0;}
-.panel-anillo{flex:0 0 auto;width:168px;text-align:center;}
-.lote-bloque-promedio{margin-top:var(--e8);padding:var(--e4);background:var(--marca-tenue);border-left:3px solid var(--marca);}
-.nota-puntos{font-size:var(--t-micro);color:var(--tinta-suave);margin:var(--e2) 0 0;}
+/* --- Indicadores de productividad: tarjetas destacadas --- */
+.kpi-bloque{margin-bottom:var(--e4);}
+.kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--e3);}
+.kpi{background:var(--marca-honda);color:var(--papel);padding:var(--e3) var(--e4);display:flex;flex-direction:column;}
+.kpi:first-child{background:var(--marca);}
+.kpi-num{font-family:var(--serif);font-size:var(--t-xl);line-height:1.1;}
+.kpi-unidad{font-size:var(--t-micro);color:#cfe6d8;letter-spacing:.3px;}
+.kpi-nombre{font-size:var(--t-peq);font-weight:600;margin-top:var(--e2);}
+.kpi-base{font-size:var(--t-peq);color:var(--tinta-media);margin:var(--e2) 0 0;}
+
+/* Dos lotes por fila: cada bloque ocupa media página, así las barras no quedan estiradas. */
+.lotes-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--e4);}
+.lote-bloque{border:1px solid var(--linea);padding:var(--e3) var(--e4);min-width:0;}
+.lote-bloque h3{margin:0 0 var(--e2);font-size:var(--t-base);}
+.lote-fila{display:grid;grid-template-columns:1fr 104px;gap:var(--e3);align-items:start;}
+.panel-barras,.panel-anillo{min-width:0;}
+.panel-anillo{text-align:center;}
+.lote-bloque-promedio{background:var(--marca-tenue);border-color:var(--marca);}
+.nota-puntos{font-size:var(--t-micro);color:var(--tinta-suave);margin:var(--e2) 0 0;line-height:1.4;}
 
 /* --- Barras horizontales contra umbral (bullet chart) --- */
 .bullet-lista{list-style:none;padding:0;margin:0;}
-.bullet-fila{margin-bottom:var(--e3);}
+.bullet-fila{margin-bottom:var(--e2);}
 .bullet-cab{display:flex;justify-content:space-between;align-items:baseline;gap:var(--e2);margin-bottom:var(--e1);}
-.bullet-nombre{font-size:var(--t-peq);color:var(--tinta-media);}
+.bullet-nombre{font-size:var(--t-micro);color:var(--tinta-media);}
 .bullet-valor{font-size:var(--t-peq);font-weight:700;color:var(--tinta);font-variant-numeric:tabular-nums;}
 .bullet-valor.sobre{color:var(--alerta);}
-.bullet-pista{position:relative;height:10px;background:var(--papel-suave);border:1px solid var(--linea);}
+.bullet-pista{position:relative;height:8px;background:var(--papel-suave);border:1px solid var(--linea);}
 .bullet-relleno{position:absolute;top:0;bottom:0;left:0;background:var(--marca);}
 .bullet-relleno.sobre{background:var(--alerta);}
 .bullet-dispersion{position:absolute;top:50%;height:1px;background:var(--tinta);opacity:.55;}
 .bullet-dispersion::before,.bullet-dispersion::after{content:"";position:absolute;top:-3px;width:1px;height:7px;background:var(--tinta);}
 .bullet-dispersion::before{left:0;} .bullet-dispersion::after{right:0;}
 .bullet-umbral{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--tinta);}
-.bullet-pie{display:flex;justify-content:space-between;font-size:var(--t-micro);color:var(--tinta-suave);margin-top:2px;}
+.bullet-pie{font-size:10px;color:var(--tinta-suave);margin-top:1px;}
 
 /* --- Anillo de composición --- */
-.anillo{width:100%;max-width:150px;height:auto;display:block;margin:0 auto;}
+.anillo{width:100%;max-width:104px;height:auto;display:block;margin:0 auto;}
 .anillo-num{font-family:var(--serif);font-size:19px;fill:var(--marca-honda);}
 .anillo-lbl{font-size:6.5px;fill:var(--tinta-suave);text-transform:uppercase;letter-spacing:.6px;}
-.torta-legend{list-style:none;padding:0;margin:var(--e2) 0 0;font-size:var(--t-micro);color:var(--tinta-media);text-align:left;}
+.torta-legend{list-style:none;padding:0;margin:var(--e1) 0 0;font-size:10px;line-height:1.3;color:var(--tinta-media);text-align:left;}
 .torta-legend li{display:flex;align-items:center;gap:var(--e1);margin:3px 0;justify-content:space-between;}
 .torta-legend li span:first-child{display:flex;align-items:center;gap:var(--e1);}
 .leg-swatch{width:8px;height:8px;display:inline-block;flex:0 0 auto;}
@@ -953,39 +982,47 @@ footer{margin-top:var(--e8);font-size:var(--t-micro);color:var(--tinta-suave);te
   header{padding:var(--e4);}
   header h1{font-size:var(--t-med);}
   .logo{height:40px;}
-  .asesor-nombre{font-size:var(--t-base);}
-  .asesor-detalle{text-align:left;}
   h2{font-size:var(--t-med);margin-top:var(--e8);}
-  .datos-grid{flex-direction:column;gap:var(--e3);}
-  .lote-fila{gap:var(--e4);}
-  .panel-anillo{width:118px;}
+  .lotes-grid{grid-template-columns:1fr;}
+  header{grid-template-columns:1fr;}
+  .enc-asesor{border-left:none;border-top:1px solid rgba(255,255,255,.25);padding-left:0;padding-top:var(--e4);}
+  .datos-grid{grid-template-columns:1fr;}
+  .datos-grid>div+div{border-left:none;border-top:1px solid var(--linea);}
+  .kpi-grid{grid-template-columns:1fr;}
   .manejo-columnas{grid-template-columns:1fr;}
 }
 </style></head>
 <body>
 
 <header>
-  <div class="header-top">
-    <div class="titulo-box">
-      <img src="${LOGO_DATA_URI}" alt="Logo" class="logo">
-      <div><h1>Informe de Visita Técnica</h1>
-      <p class="subtitulo">${esc(D.cliente)} - Finca ${esc(D.finca)} · Visita No. ${esc(D.visita_numero)}</p></div>
+  <div class="enc-visita">
+    <div class="enc-marca">
+      <img src="${LOGO_DATA_URI}" alt="Galagro" class="logo">
+      <h1>Informe de Visita Técnica</h1>
     </div>
-    ${asesor.nombre ? `<div class="asesor-nombre">${asesor.nombre}</div>` : ""}
+    <dl class="enc-datos">
+      <dt>Cliente:</dt><dd>${esc(D.cliente)}</dd>
+      <dt>Finca:</dt><dd>${esc(D.finca)}</dd>
+      <dt>Visita No:</dt><dd>${esc(D.visita_numero)}</dd>
+    </dl>
   </div>
-  ${(asesor.profesion || asesor.cargo || asesor.telefono) ? `<div class="asesor-detalle">
-    ${asesor.profesion ? `${asesor.profesion}<br>` : ""}
-    ${asesor.cargo ? `${asesor.cargo}<br>` : ""}
-    ${asesor.telefono ? `Tel: ${asesor.telefono}` : ""}
+  ${asesor.nombre ? `<div class="enc-asesor">
+    <span class="enc-rotulo">Asesor técnico</span>
+    <div class="asesor-nombre">${esc(asesor.nombre)}</div>
+    <div class="asesor-detalle">
+      ${asesor.profesion ? `${esc(asesor.profesion)}<br>` : ""}
+      ${asesor.cargo ? `${esc(asesor.cargo)}<br>` : ""}
+      ${asesor.telefono ? `Tel: ${esc(asesor.telefono)}` : ""}
+    </div>
   </div>` : ""}
 </header>
 
 <div class="datos-grid">
-  <div><span class="icono">${ICONO_CALENDARIO}</span><div><span class="etiqueta">Fecha de visita</span>${D.fecha}</div></div>
-  <div><span class="icono">${ICONO_LOTES}</span><div><span class="etiqueta">Lotes revisados</span>${D.lotes_reales.map((l) => {
+  <div><span class="icono">${ICONO_CALENDARIO}</span><span class="etiqueta">Fecha de visita</span><span class="valor">${esc(D.fecha)}</span></div>
+  <div><span class="icono">${ICONO_LOTES}</span><span class="etiqueta">Lotes revisados</span><span class="valor">${D.lotes_reales.map((l) => {
     const t = D.tabla_lotes.find((x) => x.lote === l);
     return t && t.potrero ? `Lote ${esc(l)} (Potrero ${esc(t.potrero)})` : `Lote ${esc(l)}`;
-  }).join(", ")}</div></div>
+  }).join(", ")}</span></div>
 </div>
 
 <h2 class="banner-naranja">Indicadores de productividad</h2>
@@ -1004,7 +1041,8 @@ ${manejoTodosHtml || '<p class="hint">Sin manejo agronómico registrado en esta 
 </div>
 
 <h2 class="banner-amarillo">Plagas y estado por lote (vs. umbral)</h2>
-${porLoteHtml}
+<p class="hint">La marca negra en cada barra es el umbral; en rojo, lo que lo supera. La línea fina muestra la dispersión entre puntos de muestreo.</p>
+<div class="lotes-grid">${porLoteHtml}</div>
 
 <h2 class="banner-naranja">Historial de la variable (evolucion por visita)</h2>
 <div style="margin:10px 0;"><label style="font-size:13px;color:var(--gris);">Variable: </label>
