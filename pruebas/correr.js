@@ -80,9 +80,12 @@ function filaPunto({ cliente = "CLIENTE", finca = "FINCA", fecha = "2026-09-14",
 }
 
 // Carga informes.js con Graph/DB simulados que devuelven las filas que le pasemos.
-function cargarInformes({ filas = [], productosAplicados = [], recomendados = [], productividad = [], catalogo = [] } = {}) {
+function cargarInformes({ filas = [], productosAplicados = [], recomendados = [], productividad = [], catalogo = [],
+  observacionesLotes = [], cola = [], cache = {}, leerTablaColgada = false } = {}) {
   const Graph = {
     async leerTabla(nombre) {
+      if (leerTablaColgada) return new Promise(() => {}); // red "en línea" pero sin internet real
+      if (nombre === "Observaciones_Lotes") return observacionesLotes;
       if (nombre === "TablaBaseDatos") return filas;
       if (nombre === "Productos_Aplicados") return productosAplicados;
       if (nombre === "Productos_Recomendados") return recomendados;
@@ -96,15 +99,16 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     },
   };
   const DB = {
-    async listarItems() { return []; },
+    async listarItems() { return cola.map((it, i) => ({ id: i + 1, estado: "pendiente", ...it })); },
     async guardarCache() {},
-    async leerCache() { return null; },
+    async leerCache(clave) { return cache[clave] ?? null; },
   };
   const CONFIG = {
     TABLE_NAME: "TablaBaseDatos", HOJA_CONFIG: "Configuracion", HOJA_PRODUCTOS: "Productos",
     TABLA_PRODUCTOS_APLICADOS: "Productos_Aplicados",
     TABLA_PRODUCTOS_RECOMENDADOS: "Productos_Recomendados",
     TABLA_PRODUCTIVIDAD: "Productividad_Fincas",
+    TABLA_OBSERVACIONES_LOTES: "Observaciones_Lotes",
     ASESOR: { nombre: "Miguel Leon", profesion: "Ingeniero Agrónomo" },
   };
   return cargarApp(["esquema.js", "informes.js"], { Graph, DB, CONFIG }, ["Informes"]);
@@ -254,6 +258,68 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     );
     cierto(html.indexOf("Manejo agronómico aplicado") < html.indexOf("Tabla de resultados por lote"),
       "manejo agronómico debe ir antes que la tabla de resultados");
+  });
+
+  // -------------------------------------------------------------------------
+  // 3b. Cambios hechos en el celular que aún no se suben (borrados, reemplazos)
+  // -------------------------------------------------------------------------
+  console.log("\nCambios pendientes en el celular");
+
+  const productoExcel = (nombre, dosis) => ["CLIENTE", "FINCA", "2026-09-14", 1, nombre, "INSECTICIDA", "SC", "cc", dosis];
+
+  await pruebaAsync("un producto quitado en la app deja de aparecer aunque siga en el Excel", async () => {
+    const { Informes } = cargarInformes({
+      filas: filasDosLotes,
+      productosAplicados: [productoExcel("ORTHENE", 200), productoExcel("SILICROP", 40)],
+      cola: [{ tipo: "eliminar_producto_aplicado", datos: { cliente: "CLIENTE", finca: "FINCA", fecha: "2026-09-14", lote: 1, producto: "orthene", formulacion: "SC", dosis: "200" } }],
+    });
+    const { productos } = await Informes.manejoYProductosDeLote("CLIENTE", "FINCA", "2026-09-14", 1);
+    igual(productos.map((p) => p.nombre).join(","), "SILICROP");
+  });
+
+  await pruebaAsync("un producto quitado y vuelto a agregar aparece una sola vez", async () => {
+    const { Informes } = cargarInformes({
+      filas: filasDosLotes,
+      productosAplicados: [productoExcel("ORTHENE", 200)],
+      cola: [
+        { tipo: "eliminar_producto_aplicado", datos: { cliente: "CLIENTE", finca: "FINCA", fecha: "2026-09-14", lote: 1, producto: "ORTHENE", formulacion: "SC", dosis: 200 } },
+        { tipo: "producto_aplicado", datos: { cliente: "CLIENTE", finca: "FINCA", fecha: "2026-09-14", lote: 1, producto: "ORTHENE", tipo: "INSECTICIDA", formulacion: "SC", unidad: "cc", dosis: "200" } },
+      ],
+    });
+    const { productos } = await Informes.manejoYProductosDeLote("CLIENTE", "FINCA", "2026-09-14", 1);
+    igual(productos.length, 1);
+  });
+
+  await pruebaAsync("la productividad guardada en el celular reemplaza la de esa visita en el Excel", async () => {
+    const { Informes } = cargarInformes({
+      filas: filasDosLotes,
+      productividad: [["CLIENTE", "FINCA", "2026-09-14", "", 10, 20, 30, 15, 2, 1, 30]],
+      cola: [{ tipo: "productividad_visita", datos: { cliente: "CLIENTE", finca: "FINCA", fecha: "2026-09-14", modo: "lotes",
+        filas: [{ lote: 1, area: "15", animales: "50", dias: "27", produccion: "25" }, { lote: 2, area: "5", animales: "10", dias: "", produccion: "" }] } }],
+    });
+    const p = await Informes.productividadDeVisita("CLIENTE", "FINCA", "2026-09-14");
+    igual(p.length, 2, "solo deben quedar las 2 filas nuevas (la general vieja se reemplaza)");
+    cerca(p[0].productividadLecheria, (25 * 50) / 15, 1e-9);
+  });
+
+  await pruebaAsync("la observación del lote sale en el informe, antes que las de los puntos", async () => {
+    const filas = [filaPunto({ lote: 1, observaciones: "Punto con charcos" })];
+    const { Informes } = cargarInformes({
+      filas,
+      observacionesLotes: [["CLIENTE", "FINCA", "2026-09-14", 1, "P1", "Vieja"]],
+      cola: [{ tipo: "observacion_lote", datos: { cliente: "CLIENTE", finca: "FINCA", fecha: "2026-09-14", lote: 1, potrero: "P1", observaciones: "Rebrote parejo" } }],
+    });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
+    const html = Informes.generarHtml(D, [], "");
+    contiene(html, "Rebrote parejo · Punto con charcos");
+    noContiene(html, "Vieja", "la observación pendiente reemplaza la del Excel");
+  });
+
+  await pruebaAsync("si la red dice 'en línea' pero no hay internet, usa la copia guardada en vez de colgarse", async () => {
+    const { Informes } = cargarInformes({ leerTablaColgada: true, cache: { filasBase: filasDosLotes } });
+    Informes.LIMITE_LECTURA_MS = 30;
+    const { manejo } = await Informes.manejoYProductosDeLote("CLIENTE", "FINCA", "2026-09-14", 1);
+    igual(manejo.tipoFumigacion, "Aerea (Dron)");
   });
 
   // -------------------------------------------------------------------------

@@ -6,6 +6,7 @@ const COL = ESQUEMA.BASE;
 const COL_PA = ESQUEMA.PRODUCTOS_APLICADOS;
 const COL_PR = ESQUEMA.PRODUCTOS_RECOMENDADOS;
 const COL_PF = ESQUEMA.PRODUCTIVIDAD;
+const COL_OL = ESQUEMA.OBSERVACIONES_LOTES;
 
 // El valor puede ser el indice de columna, o una funcion(fila) para variables calculadas (ej. Pasto Sano).
 const VARIABLES_HISTORIAL = {
@@ -118,97 +119,91 @@ function formatoFechaVisible(fechaISO) {
   return `${d}/${m}/${y}`;
 }
 
+// Una red Wi-Fi sin internet real hace que el celular diga "en línea" pero las llamadas a Excel se
+// queden colgadas para siempre (bug real: tocar un lote no hacía nada). Toda lectura remota se
+// corta a los pocos segundos y la app sigue con la copia guardada en el celular.
+function conLimiteDeTiempo(promesa, ms) {
+  let temporizador;
+  const limite = new Promise((_, rechazar) => {
+    temporizador = setTimeout(() => rechazar(new Error("Sin respuesta de internet")), ms);
+  });
+  return Promise.race([promesa, limite]).finally(() => clearTimeout(temporizador));
+}
+
+const claveVisita = (d) => `${d.cliente}|${d.finca}|${normalizarFecha(d.fecha)}`;
+const claveVisitaLote = (d) => `${claveVisita(d)}|${d.lote === "" || d.lote == null ? "" : String(d.lote)}`;
+const claveProducto = (nombre, formulacion, dosis) =>
+  [nombre, formulacion, dosis].map((v) => String(v == null ? "" : v).trim().toLowerCase()).join("|");
+
 const Informes = {
-  _filasCache: null,
+  _remoto: {},
   _umbralesCache: null,
-  _productosCache: null,
+  LIMITE_LECTURA_MS: 6000,
 
-  // Lee la tabla completa de Excel y la deja en caché local (IndexedDB) para poder generar
-  // informes sin internet. Si no hay red o Graph falla, usa la última copia guardada.
+  // Lee una tabla de Excel una sola vez por sesión (o hasta invalidarCache) y la guarda en el
+  // celular. Si no hay red, Graph falla o tarda demasiado, se usa la última copia guardada.
+  async _tablaRemota(nombreTabla, claveCache) {
+    if (!this._remoto[claveCache]) {
+      let crudas = null;
+      if (navigator.onLine) {
+        try {
+          crudas = await conLimiteDeTiempo(Graph.leerTabla(nombreTabla), this.LIMITE_LECTURA_MS);
+          await DB.guardarCache(claveCache, crudas);
+        } catch (e) {
+          console.warn(`No se pudo leer ${nombreTabla}, usando caché local:`, e.message);
+        }
+      }
+      if (!crudas) crudas = (await DB.leerCache(claveCache)) || [];
+      this._remoto[claveCache] = crudas;
+    }
+    return this._remoto[claveCache];
+  },
+
+  // Lo pendiente de subir se consulta en cada llamada (no se cachea), para que lo recién
+  // capturado o borrado se vea de inmediato al volver a entrar a un lote o a un informe.
+  async _pendientes() {
+    return (await DB.listarItems()).filter((it) => it.estado === "pendiente");
+  },
+
+  _normalizarFechas(filas, colFecha) {
+    return filas.map((f) => {
+      const copia = [...f];
+      copia[colFecha] = normalizarFecha(copia[colFecha]);
+      return copia;
+    });
+  },
+
+  // Tabla "Base de datos" + puntos capturados aún sin sincronizar.
   async filas() {
-    if (!this._filasCache) {
-      let crudas = null;
-      if (navigator.onLine) {
-        try {
-          crudas = await Graph.leerTabla(CONFIG.TABLE_NAME);
-          await DB.guardarCache("filasBase", crudas);
-        } catch (e) {
-          console.warn("No se pudo leer la base de datos de Excel, usando caché local:", e.message);
-        }
-      }
-      if (!crudas) crudas = (await DB.leerCache("filasBase")) || [];
-
-      // Se agregan los puntos guardados localmente que aun no se han sincronizado, para poder
-      // generar el informe de una visita recien capturada antes de subirla a Excel.
-      const pendientes = (await DB.listarItems()).filter((it) => it.tipo === "punto" && it.estado === "pendiente");
-      const filasPendientes = pendientes.map((it) => it.datos.fila);
-
-      this._filasCache = [...crudas, ...filasPendientes].map((f) => {
-        const copia = [...f];
-        copia[COL.fecha] = normalizarFecha(copia[COL.fecha]);
-        return copia;
-      });
-    }
-    return this._filasCache;
+    const crudas = await this._tablaRemota(CONFIG.TABLE_NAME, "filasBase");
+    const pendientes = (await this._pendientes()).filter((it) => it.tipo === "punto").map((it) => it.datos.fila);
+    return this._normalizarFechas([...crudas, ...pendientes], COL.fecha);
   },
 
-  // Igual que filas(), pero para la tabla Productos_Aplicados (uno o mas productos por lote/visita).
+  // Productos_Aplicados: lo del Excel, menos lo que se quitó en la app y aún no se borra allá,
+  // más lo agregado en la app y aún no se sube.
   async filasProductos() {
-    if (!this._productosCache) {
-      let crudas = null;
-      if (navigator.onLine) {
-        try {
-          crudas = await Graph.leerTabla(CONFIG.TABLA_PRODUCTOS_APLICADOS);
-          await DB.guardarCache("productosAplicadosBase", crudas);
-        } catch (e) {
-          console.warn("No se pudo leer Productos_Aplicados, usando caché local:", e.message);
-        }
-      }
-      if (!crudas) crudas = (await DB.leerCache("productosAplicadosBase")) || [];
-
-      const pendientes = (await DB.listarItems()).filter((it) => it.tipo === "producto_aplicado" && it.estado === "pendiente");
-      const filasPendientes = pendientes.map((it) => [
-        it.datos.cliente, it.datos.finca, it.datos.fecha, it.datos.lote,
-        it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
-      ]);
-
-      this._productosCache = [...crudas, ...filasPendientes].map((f) => {
-        const copia = [...f];
-        copia[COL_PA.fecha] = normalizarFecha(copia[COL_PA.fecha]);
-        return copia;
-      });
-    }
-    return this._productosCache;
+    const crudas = this._normalizarFechas(await this._tablaRemota(CONFIG.TABLA_PRODUCTOS_APLICADOS, "productosAplicadosBase"), COL_PA.fecha);
+    const pendientes = await this._pendientes();
+    const quitados = new Set(pendientes.filter((it) => it.tipo === "eliminar_producto_aplicado")
+      .map((it) => claveVisitaLote(it.datos) + "|" + claveProducto(it.datos.producto, it.datos.formulacion, it.datos.dosis)));
+    const clave = (f) => claveVisitaLote({ cliente: f[COL_PA.cliente], finca: f[COL_PA.finca], fecha: f[COL_PA.fecha], lote: f[COL_PA.lote] }) +
+      "|" + claveProducto(f[COL_PA.producto], f[COL_PA.formulacion], f[COL_PA.dosis]);
+    const agregados = pendientes.filter((it) => it.tipo === "producto_aplicado").map((it) => [
+      it.datos.cliente, it.datos.finca, it.datos.fecha, it.datos.lote,
+      it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
+    ]);
+    return [...crudas.filter((f) => !quitados.has(clave(f))), ...this._normalizarFechas(agregados, COL_PA.fecha)];
   },
 
-  // Igual que filasProductos(), pero para la tabla Productos_Recomendados (lo que se recomendo
-  // en el informe de una visita, para poder recuperarlo despues).
+  // Productos_Recomendados (lo que se recomendó en el informe de una visita).
   async filasRecomendados() {
-    if (!this._recomendadosCache) {
-      let crudas = null;
-      if (navigator.onLine) {
-        try {
-          crudas = await Graph.leerTabla(CONFIG.TABLA_PRODUCTOS_RECOMENDADOS);
-          await DB.guardarCache("productosRecomendadosBase", crudas);
-        } catch (e) {
-          console.warn("No se pudo leer Productos_Recomendados, usando caché local:", e.message);
-        }
-      }
-      if (!crudas) crudas = (await DB.leerCache("productosRecomendadosBase")) || [];
-
-      const pendientes = (await DB.listarItems()).filter((it) => it.tipo === "producto_recomendado" && it.estado === "pendiente");
-      const filasPendientes = pendientes.map((it) => [
-        it.datos.cliente, it.datos.finca, it.datos.fecha, "",
-        it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
-      ]);
-
-      this._recomendadosCache = [...crudas, ...filasPendientes].map((f) => {
-        const copia = [...f];
-        copia[COL_PR.fecha] = normalizarFecha(copia[COL_PR.fecha]);
-        return copia;
-      });
-    }
-    return this._recomendadosCache;
+    const crudas = await this._tablaRemota(CONFIG.TABLA_PRODUCTOS_RECOMENDADOS, "productosRecomendadosBase");
+    const pendientes = (await this._pendientes()).filter((it) => it.tipo === "producto_recomendado").map((it) => [
+      it.datos.cliente, it.datos.finca, it.datos.fecha, "",
+      it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
+    ]);
+    return this._normalizarFechas([...crudas, ...pendientes], COL_PR.fecha);
   },
 
   // Productos recomendados guardados para una visita exacta (mismo cliente+finca+fecha), para
@@ -229,7 +224,7 @@ const Informes = {
   async manejoYProductosDeLote(cliente, finca, fecha, lote) {
     const filas = await this.filas();
     const puntoDelLote = filas.find((f) =>
-      f[COL.cliente] === cliente && f[COL.finca] === finca && f[COL.fecha] === fecha && f[COL.lote] === lote
+      f[COL.cliente] === cliente && f[COL.finca] === finca && f[COL.fecha] === fecha && String(f[COL.lote]) === String(lote)
     );
     const manejo = puntoDelLote ? {
       tipoFumigacion: puntoDelLote[COL.tipoFumigacion] || "",
@@ -240,7 +235,7 @@ const Informes = {
 
     const productosFilas = await this.filasProductos();
     const productos = productosFilas
-      .filter((f) => f[COL_PA.cliente] === cliente && f[COL_PA.finca] === finca && f[COL_PA.fecha] === fecha && f[COL_PA.lote] === lote)
+      .filter((f) => f[COL_PA.cliente] === cliente && f[COL_PA.finca] === finca && f[COL_PA.fecha] === fecha && String(f[COL_PA.lote]) === String(lote))
       .map((f) => ({
         nombre: f[COL_PA.producto], tipo: f[COL_PA.tipo], formulacion: f[COL_PA.formulacion],
         unidad: f[COL_PA.unidad], dosis: f[COL_PA.dosis],
@@ -249,43 +244,34 @@ const Informes = {
     return { manejo, productos };
   },
 
-  // Igual que filasProductos(), pero para Productividad_Fincas. Las columnas calculadas (Carga
-  // Animal, Area Diaria por Animal, Productividad de la Lecheria) se recalculan aqui mismo para
-  // las filas aun no sincronizadas, con las mismas formulas que tiene la hoja de Excel.
+  // Productividad_Fincas. Un "productividad_visita" pendiente reemplaza TODAS las filas de esa
+  // visita (así un cambio de "en general" a "por lotes" no deja filas viejas). Las columnas
+  // calculadas se recalculan aquí para lo no sincronizado, con las mismas fórmulas del Excel.
   async filasProductividad() {
-    if (!this._productividadCache) {
-      let crudas = null;
-      if (navigator.onLine) {
-        try {
-          crudas = await Graph.leerTabla(CONFIG.TABLA_PRODUCTIVIDAD);
-          await DB.guardarCache("productividadBase", crudas);
-        } catch (e) {
-          console.warn("No se pudo leer Productividad_Fincas, usando caché local:", e.message);
-        }
-      }
-      if (!crudas) crudas = (await DB.leerCache("productividadBase")) || [];
+    const crudas = this._normalizarFechas(await this._tablaRemota(CONFIG.TABLA_PRODUCTIVIDAD, "productividadBase"), COL_PF.fecha);
+    const pendientes = await this._pendientes();
+    const reemplazos = pendientes.filter((it) => it.tipo === "productividad_visita");
+    const visitasReemplazadas = new Set(reemplazos.map((it) => claveVisita(it.datos)));
 
-      const pendientes = (await DB.listarItems()).filter((it) => it.tipo === "productividad" && it.estado === "pendiente");
-      const filasPendientes = pendientes.map((it) => {
-        const area = Number(it.datos.area) || 0, animales = Number(it.datos.animales) || 0;
-        const dias = Number(it.datos.dias) || 0, produccion = Number(it.datos.produccion) || 0;
-        const carga = area > 0 ? animales / area : null;
-        const areaDiaria = (animales > 0 && dias > 0) ? ((area * 10000) / animales) / dias : null;
-        const productividadLecheria = area > 0 ? (produccion * animales) / area : null;
-        return [
-          it.datos.cliente, it.datos.finca, it.datos.fecha, it.datos.lote,
-          area || null, animales || null, dias || null, produccion || null,
-          carga, areaDiaria, productividadLecheria,
-        ];
-      });
-
-      this._productividadCache = [...crudas, ...filasPendientes].map((f) => {
-        const copia = [...f];
-        copia[COL_PF.fecha] = normalizarFecha(copia[COL_PF.fecha]);
-        return copia;
-      });
-    }
-    return this._productividadCache;
+    const aFila = (base, d) => {
+      const area = Number(d.area) || 0, animales = Number(d.animales) || 0;
+      const dias = Number(d.dias) || 0, produccion = Number(d.produccion) || 0;
+      return [
+        base.cliente, base.finca, base.fecha, d.lote,
+        area || null, animales || null, dias || null, produccion || null,
+        area > 0 ? animales / area : null,
+        (animales > 0 && dias > 0) ? ((area * 10000) / animales) / dias : null,
+        area > 0 ? (produccion * animales) / area : null,
+      ];
+    };
+    const nuevas = [
+      ...reemplazos.flatMap((it) => (it.datos.filas || []).map((d) => aFila(it.datos, d))),
+      // Formato anterior (una fila por item), por si quedó algo en la cola de versiones viejas.
+      ...pendientes.filter((it) => it.tipo === "productividad").map((it) => aFila(it.datos, it.datos)),
+    ];
+    const conservadas = crudas.filter((f) =>
+      !visitasReemplazadas.has(claveVisita({ cliente: f[COL_PF.cliente], finca: f[COL_PF.finca], fecha: f[COL_PF.fecha] })));
+    return [...conservadas, ...this._normalizarFechas(nuevas, COL_PF.fecha)];
   },
 
   async productividadDeVisita(cliente, finca, fecha) {
@@ -299,6 +285,25 @@ const Informes = {
       }));
   },
 
+  // Observaciones_Lotes: una por lote de cada visita. Una pendiente reemplaza la del Excel.
+  async filasObservacionesLotes() {
+    const crudas = this._normalizarFechas(await this._tablaRemota(CONFIG.TABLA_OBSERVACIONES_LOTES, "observacionesLotesBase"), COL_OL.fecha);
+    const pendientes = (await this._pendientes()).filter((it) => it.tipo === "observacion_lote");
+    const reemplazadas = new Set(pendientes.map((it) => claveVisitaLote(it.datos)));
+    const conservadas = crudas.filter((f) => !reemplazadas.has(claveVisitaLote({
+      cliente: f[COL_OL.cliente], finca: f[COL_OL.finca], fecha: f[COL_OL.fecha], lote: f[COL_OL.lote],
+    })));
+    const nuevas = pendientes.map((it) => [it.datos.cliente, it.datos.finca, it.datos.fecha, it.datos.lote, it.datos.potrero, it.datos.observaciones]);
+    return [...conservadas, ...this._normalizarFechas(nuevas, COL_OL.fecha)];
+  },
+
+  async observacionDeLote(cliente, finca, fecha, lote) {
+    const filas = await this.filasObservacionesLotes();
+    const f = filas.find((x) => x[COL_OL.cliente] === cliente && x[COL_OL.finca] === finca &&
+      x[COL_OL.fecha] === fecha && String(x[COL_OL.lote]) === String(lote));
+    return f ? String(f[COL_OL.observaciones] || "") : "";
+  },
+
   // Catalogo de productos (hoja Productos) solo para saber el orden de mezcla de cada uno, y asi
   // poder ordenar los productos aplicados/recomendados igual que en la app.
   async filasCatalogoProductos() {
@@ -306,7 +311,7 @@ const Informes = {
       let crudas = null;
       if (navigator.onLine) {
         try {
-          crudas = await Graph.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:E500");
+          crudas = await conLimiteDeTiempo(Graph.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:E500"), this.LIMITE_LECTURA_MS);
           await DB.guardarCache("catalogoOrdenBase", crudas);
         } catch (e) {
           console.warn("No se pudo leer el catalogo de Productos, usando caché local:", e.message);
@@ -325,7 +330,7 @@ const Informes = {
       let valores = null;
       if (navigator.onLine) {
         try {
-          const filas = await Graph.leerRango(CONFIG.HOJA_CONFIG, "A8:B19");
+          const filas = await conLimiteDeTiempo(Graph.leerRango(CONFIG.HOJA_CONFIG, "A8:B19"), this.LIMITE_LECTURA_MS);
           valores = {};
           filas.forEach(([nombre, valor]) => { if (nombre) valores[nombre] = valor; });
           await DB.guardarCache("umbralesBase", valores);
@@ -339,11 +344,8 @@ const Informes = {
   },
 
   invalidarCache() {
-    this._filasCache = null;
+    this._remoto = {};
     this._umbralesCache = null;
-    this._productosCache = null;
-    this._recomendadosCache = null;
-    this._productividadCache = null;
     this._catalogoCache = null;
   },
 
@@ -361,6 +363,7 @@ const Informes = {
     const productosAplicados = await this.filasProductos();
     const productividad = await this.productividadDeVisita(cliente, finca, fecha);
     const catalogoProductos = await this.filasCatalogoProductos();
+    const observacionesLotes = await this.filasObservacionesLotes();
     const ordenProductos = {};
     catalogoProductos.forEach((f) => { if (f[0]) ordenProductos[String(f[0]).trim().toLowerCase()] = f[4]; });
 
@@ -375,6 +378,9 @@ const Informes = {
       const potreros = [...new Set(sub.map((s) => s[COL.potrero]).filter(Boolean))];
       const observaciones = sub.map((s) => s[COL.observaciones]).filter((o) => o && String(o).trim()).join(" · ");
       const primero = sub[0] || [];
+      const filaObsLote = observacionesLotes.find((o) => o[COL_OL.cliente] === cliente && o[COL_OL.finca] === finca &&
+        o[COL_OL.fecha] === fecha && String(o[COL_OL.lote]) === String(lote));
+      const observacionLote = filaObsLote ? String(filaObsLote[COL_OL.observaciones] || "").trim() : "";
       const productosLote = productosAplicados
         .filter((p) => p[COL_PA.cliente] === cliente && p[COL_PA.finca] === finca && p[COL_PA.fecha] === fecha && p[COL_PA.lote] === lote)
         .map((p) => ({
@@ -382,7 +388,7 @@ const Informes = {
           unidad: p[COL_PA.unidad], dosis: p[COL_PA.dosis],
         }));
       return {
-        lote, potrero: potreros.join(", "), observaciones, productos: productosLote,
+        lote, potrero: potreros.join(", "), observaciones, observacion_lote: observacionLote, productos: productosLote,
         n_puntos: sub.length, // cuántos puntos se promediaron (con 1 no hay dispersión posible)
         incid_coll: promedio(sub.map((s) => s[COL.incidColl])),
         sev_coll: promedio(sub.map((s) => s[COL.sevColl])),
@@ -756,7 +762,8 @@ const Informes = {
 
     const observacionesTexto = esc(D.tabla_lotes.map((t) => {
       const etiqueta = `Lote ${t.lote}` + (t.potrero ? ` (Potrero ${t.potrero})` : "");
-      return `${etiqueta}: ${t.observaciones || "Sin observaciones."}`;
+      const texto = [t.observacion_lote, t.observaciones].filter(Boolean).join(" · ");
+      return `${etiqueta}: ${texto || "Sin observaciones."}`;
     }).join("\n\n"));
 
     const baseResultados = D.tabla_lotes.length === 1

@@ -46,16 +46,28 @@ const Graph = {
     }
   },
 
+  // Con una red Wi-Fi sin internet real el celular dice "en línea", pero fetch se queda colgado
+  // sin responder nunca. Por eso toda llamada se corta a los 20 s y falla con un error claro.
   async llamar(path, opciones = {}) {
     const token = await this.token();
-    const resp = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
-      ...opciones,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        ...(opciones.headers || {}),
-      },
-    });
+    const control = new AbortController();
+    const temporizador = setTimeout(() => control.abort(), 20000);
+    let resp;
+    try {
+      resp = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+        ...opciones,
+        signal: control.signal,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          ...(opciones.headers || {}),
+        },
+      });
+    } catch (e) {
+      throw new Error(e.name === "AbortError" ? "Sin respuesta de internet (la red no tiene conexión real)" : e.message);
+    } finally {
+      clearTimeout(temporizador);
+    }
     if (!resp.ok) {
       const detalle = await resp.text().catch(() => "");
       throw new Error(`Graph ${resp.status}: ${detalle}`);
@@ -164,6 +176,26 @@ const Graph = {
   async agregarProductoRecomendado(valores) {
     return this.conReintento((id) => {
       const path = `/me/drive/items/${id}/workbook/tables('${CONFIG.TABLA_PRODUCTOS_RECOMENDADOS}')/rows/add`;
+      return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [valores] }) });
+    });
+  },
+
+  // Borra de una tabla todas las filas para las que coincide(valores) sea verdadero. Se borra de la
+  // última a la primera para que los índices de las filas que faltan no se corran.
+  async eliminarFilasDonde(nombreTabla, coincide) {
+    return this.conReintento(async (id) => {
+      const base = `/me/drive/items/${id}/workbook/tables('${nombreTabla}')/rows`;
+      const r = await this.llamar(base);
+      const indices = (r.value || []).filter((f) => coincide(f.values[0])).map((f) => f.index).sort((a, b) => b - a);
+      for (const i of indices) await this.llamar(`${base}/itemAt(index=${i})`, { method: "DELETE" });
+      return indices.length;
+    });
+  },
+
+  // Agrega una fila a cualquier tabla por su nombre.
+  async agregarFilaEnTabla(nombreTabla, valores) {
+    return this.conReintento((id) => {
+      const path = `/me/drive/items/${id}/workbook/tables('${nombreTabla}')/rows/add`;
       return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [valores] }) });
     });
   },

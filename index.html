@@ -36,18 +36,16 @@
 
 <!-- Paso 1: datos generales de la visita -->
 <section id="pantalla-visita" hidden>
-  <div id="resumen-hoy"></div>
-
   <h2>Nueva visita</h2>
 
-  <label>Cliente
+  <label>Cliente <span class="asterisco">*</span>
     <select id="cliente"></select>
   </label>
   <div id="nuevo-cliente-caja" class="caja-nueva" hidden>
     <label>Nombre del cliente nuevo <span class="asterisco">*</span> <input id="nuevo-cliente" placeholder="Ej: Wilson"></label>
   </div>
 
-  <label>Finca
+  <label>Finca <span class="asterisco">*</span>
     <select id="finca"></select>
   </label>
   <div id="nueva-finca-caja" class="caja-nueva" hidden>
@@ -61,6 +59,8 @@
   <label>Fecha de la visita <input type="date" id="fecha"></label>
 
   <button id="btn-iniciar-monitoreo">Iniciar monitoreo</button>
+
+  <div id="resumen-hoy"></div>
 </section>
 
 <!-- Paso 2: elegir lote a muestrear -->
@@ -104,7 +104,8 @@
 <!-- Paso 2.5: manejo agronomico aplicado a este lote (opcional, una vez por lote) -->
 <section id="pantalla-manejo" hidden>
   <h2>Manejo agronómico — Lote <span id="manejo-lote-num"></span></h2>
-  <p class="hint">Todo es opcional. Se guarda igual para todos los puntos de este lote. Se recuerdan los últimos valores que usaste.</p>
+  <p class="hint">Todo es opcional. Se guarda igual para todos los puntos de este lote.</p>
+  <p id="manejo-copiado" class="aviso-suave" hidden></p>
 
   <label>Tipo de fumigación
     <select id="m-tipo-fumigacion">
@@ -177,6 +178,12 @@
   <div class="botones-punto">
     <button type="button" id="btn-punto-anterior" class="secundario">Punto anterior</button>
     <button type="button" id="btn-terminar-lote">Terminar lote</button>
+  </div>
+
+  <div id="caja-observaciones-lote" class="caja-nueva" hidden>
+    <h3>Observaciones lote</h3>
+    <label>Lo que viste en general en este lote <textarea id="observaciones-lote" rows="4" placeholder="Ej: rebrote parejo, zonas encharcadas al fondo..."></textarea></label>
+    <button type="button" id="btn-finalizar-lote">Finalizar</button>
   </div>
 
   <p id="resumen-cola" class="hint"></p>

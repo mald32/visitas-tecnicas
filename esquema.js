@@ -30,6 +30,9 @@ const ESQUEMA = {
   },
   PRODUCTIVIDAD_CALCULADAS: ["cargaAnimal", "areaDiaria", "productividadLecheria"],
 
+  // Tabla Observaciones_Lotes: una fila por lote de cada visita (lo que se escribe al terminar el lote).
+  OBSERVACIONES_LOTES: { cliente: 0, finca: 1, fecha: 2, lote: 3, potrero: 4, observaciones: 5 },
+
   // Encabezados reales de la fila 1 de "Base de datos", tal como están hoy en el Excel.
   // Sirven para detectar si algún día se reordenan o renombran columnas.
   ENCABEZADOS_BASE: [

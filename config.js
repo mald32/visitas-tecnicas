@@ -10,6 +10,7 @@ const CONFIG = {
   TABLA_PRODUCTOS_APLICADOS: "Productos_Aplicados",
   TABLA_PRODUCTOS_RECOMENDADOS: "Productos_Recomendados",
   TABLA_PRODUCTIVIDAD: "Productividad_Fincas",
+  TABLA_OBSERVACIONES_LOTES: "Observaciones_Lotes",
   TABLA_PRODUCTOS: "Tabla2",
   HOJA_CONFIG: "Configuracion",
   HOJA_CLIENTES: "Clientes_Fincas",

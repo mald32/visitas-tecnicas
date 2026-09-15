@@ -67,6 +67,10 @@ const DB = {
     });
   },
 
+  async eliminarItem(id) {
+    await withStore(STORE_COLA, "readwrite", (store) => { store.delete(id); });
+  },
+
   async actualizarDatosItem(id, cambiosDatos) {
     await withStore(STORE_COLA, "readwrite", (store) => {
       const req = store.get(id);

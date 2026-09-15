@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "37";
+const APP_VERSION = "38";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -21,6 +21,14 @@ let contadorProductos = 0;
 let productividadModo = "";
 // Datos escritos por el usuario, por clave: "general" o el numero de lote (como texto), ej: {"general":{...}} o {"1":{...},"2":{...}}.
 let productividadDatos = {};
+// Copia (JSON) de la productividad tal como se cargó, para no volver a subirla si no cambió.
+let productividadCargada = "";
+
+// Manejo agronómico escrito en cada lote de esta visita ({"1": {campos, productos}}), para poder
+// copiarlo al siguiente lote aunque el primero todavía no tenga puntos.
+let manejoPorLote = {};
+// Pantalla del flujo de captura en la que va la visita (para volver ahí desde Informes o al recargar).
+let pantallaFlujo = null;
 
 const CAMPOS_MANEJO = [
   { id: "m-tipo-fumigacion", key: "tipoFumigacion" },
@@ -121,7 +129,7 @@ function agregarBloqueProducto(containerId, valores = {}) {
       div.querySelector(".p-unidad").value = encontrado.unidad || "";
     }
   });
-  div.querySelector(".btn-quitar-producto").addEventListener("click", () => div.remove());
+  div.querySelector(".btn-quitar-producto").addEventListener("click", () => { div.remove(); guardarBorrador(); });
 }
 
 function leerProductosFormulario(containerId) {
@@ -142,8 +150,87 @@ function leerProductosFormulario(containerId) {
 const el = (id) => document.getElementById(id);
 const PANTALLAS = ["pantalla-login", "pantalla-visita", "pantalla-lotes", "pantalla-manejo", "pantalla-punto", "pantalla-fin", "pantalla-informes"];
 
+const PANTALLAS_FLUJO = ["pantalla-lotes", "pantalla-manejo", "pantalla-punto"];
+
 function mostrarPantalla(id) {
   PANTALLAS.forEach((p) => (el(p).hidden = p !== id));
+  if (PANTALLAS_FLUJO.includes(id)) pantallaFlujo = id;
+}
+
+// ---------- Visita en curso: todo lo escrito se guarda en el celular al instante ----------
+
+// Guarda en el celular la visita que se está capturando, con lo que haya escrito en pantalla en
+// ese momento (manejo, productos, el punto a medio llenar, las observaciones del lote). Si se
+// recarga la página, se cierra la app o se apaga el celular, al volver se sigue donde iba.
+const CAMPOS_PUNTO = ["potrero-nombre-punto", "adultos", "ninfas", "incid-coll", "sev-coll", "loritos", "lepidopteros",
+  "hojas-moluscos", "incid-hongos", "sev-hongos", "observaciones"];
+
+function leerBloquesProductoCrudos(containerId) {
+  return [...el(containerId).querySelectorAll(".producto-bloque")].map((div) => {
+    const valor = (selector) => { const campo = div.querySelector(selector); return campo ? campo.value : ""; };
+    return { tipo: valor(".p-tipo"), nombre: valor(".p-nombre"), formulacion: valor(".p-formulacion"), unidad: valor(".p-unidad"), dosis: valor(".p-dosis") };
+  });
+}
+
+async function guardarBorrador() {
+  if (!visita) return;
+  const campos = {};
+  CAMPOS_MANEJO.forEach((c) => { campos[c.key] = el(c.id).value; });
+  const punto = {};
+  CAMPOS_PUNTO.forEach((id) => { punto[id] = el(id).value; });
+  await DB.guardarCache("visitaEnCurso", {
+    visita, pantalla: pantallaFlujo || "pantalla-lotes", loteActual, manejoActual, manejoPorLote,
+    capturandoLote, puntoMostrado, editandoPuntoId,
+    manejoFormulario: { campos, productos: leerBloquesProductoCrudos("lista-productos"), copiado: el("manejo-copiado").hidden ? "" : el("manejo-copiado").textContent },
+    punto, observacionesLoteAbierta: !el("caja-observaciones-lote").hidden, observacionesLote: el("observaciones-lote").value,
+  });
+}
+
+async function borrarBorrador() {
+  await DB.guardarCache("visitaEnCurso", null);
+}
+
+async function restaurarBorrador(b) {
+  visita = b.visita;
+  loteActual = b.loteActual;
+  manejoActual = b.manejoActual || {};
+  manejoPorLote = b.manejoPorLote || {};
+  capturandoLote = !!b.capturandoLote;
+  editandoPuntoId = b.editandoPuntoId || null;
+
+  el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
+  renderBotonesLotes();
+  await precargarProductividad();
+
+  if (b.pantalla === "pantalla-manejo" && loteActual) {
+    el("manejo-lote-num").textContent = loteActual;
+    const m = b.manejoFormulario || {};
+    CAMPOS_MANEJO.forEach((c) => { el(c.id).value = (m.campos && m.campos[c.key]) || ""; });
+    el("lista-productos").innerHTML = "";
+    (m.productos && m.productos.length ? m.productos : [{}]).forEach((p) => agregarBloqueProducto("lista-productos", p));
+    el("manejo-copiado").textContent = m.copiado || "";
+    el("manejo-copiado").hidden = !m.copiado;
+  } else if (b.pantalla === "pantalla-punto" && loteActual) {
+    el("lote-actual-num").textContent = loteActual;
+    el("form-punto").reset();
+    await calcularSiguientePunto();
+    if (editandoPuntoId) {
+      puntoMostrado = b.puntoMostrado;
+      el("punto-actual-num").textContent = puntoMostrado;
+    }
+    CAMPOS_PUNTO.forEach((id) => { if (b.punto && b.punto[id] != null) el(id).value = b.punto[id]; });
+    el("btn-punto-anterior").disabled = puntoMostrado <= 1;
+    mostrarCajaObservacionesLote(!!b.observacionesLoteAbierta);
+    el("observaciones-lote").value = b.observacionesLote || "";
+    await refrescarResumenCola();
+  }
+  mostrarPantalla(PANTALLAS_FLUJO.includes(b.pantalla) && (b.pantalla === "pantalla-lotes" || loteActual) ? b.pantalla : "pantalla-lotes");
+}
+
+function mostrarCajaObservacionesLote(mostrar) {
+  el("caja-observaciones-lote").hidden = !mostrar;
+  el("form-punto").hidden = mostrar;
+  document.querySelector(".botones-punto").hidden = mostrar;
 }
 
 // new Date().toISOString() da la fecha en UTC: en Colombia (UTC-5), pasadas las 7pm ya muestra
@@ -188,7 +275,12 @@ async function despuesDeLogin() {
   el("fecha").value = fechaLocalHoy();
   await renderResumenHoy();
   el("nav-tabs").hidden = false;
-  mostrarPantalla("pantalla-visita");
+  const borrador = await DB.leerCache("visitaEnCurso");
+  if (borrador && borrador.visita) {
+    await restaurarBorrador(borrador);
+  } else {
+    mostrarPantalla("pantalla-visita");
+  }
   if (navigator.onLine) verificarFormatoDelExcel(); // en segundo plano: no debe demorar la entrada
 }
 
@@ -245,11 +337,7 @@ async function onRetomarVisita(cliente, finca, fecha) {
     .map((it) => it.datos.lote);
   if (lotesUsados.length > 0) numeroLotes = Math.max(numeroLotes, ...lotesUsados);
 
-  visita = { cliente, finca, fecha, numeroLotes };
-  el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
-  mostrarPantalla("pantalla-lotes");
-  renderBotonesLotes();
-  await precargarProductividad();
+  await abrirVisita({ cliente, finca, fecha, numeroLotes });
 }
 
 // Compara los encabezados reales de "Base de datos" contra los que espera el código. Si alguien
@@ -274,8 +362,26 @@ async function verificarFormatoDelExcel() {
 }
 
 async function cargarConfigYClientes() {
-  {
+  if (navigator.onLine) {
     try {
+      await conLimiteDeTiempo(leerConfigYClientesDeExcel(), 12000);
+      return;
+    } catch (e) {
+      console.warn("No se pudo leer de Graph, usando caché local:", e.message);
+      const aviso = el("aviso-esquema");
+      aviso.textContent = "No se pudo conectar con tu Excel (" + e.message + "). Estás trabajando con la última lista de clientes guardada en el celular; todo lo que captures queda guardado.";
+      aviso.hidden = false;
+    }
+  }
+  parametros = (await DB.leerCache("parametros")) || parametros;
+  clientesFincas = (await DB.leerCache("clientesFincas")) || [];
+  catalogoProductos = (await DB.leerCache("catalogoProductos")) || [];
+  actualizarOpcionesCatalogo();
+}
+
+async function leerConfigYClientesDeExcel() {
+  {
+    {
       const filas = await Graph.leerRango(CONFIG.HOJA_CONFIG, "B3:B4");
       parametros = { hojasEvaluadas: Number(filas[0][0]), severidadMoluscos: Number(filas[1][0]) };
       await DB.guardarCache("parametros", parametros);
@@ -292,16 +398,8 @@ async function cargarConfigYClientes() {
         .map((f) => ({ nombre: f[0], tipo: f[1], formulacion: f[2], unidad: f[5], orden: Number(f[4]) }));
       await DB.guardarCache("catalogoProductos", catalogoProductos);
       actualizarOpcionesCatalogo();
-      return;
-    } catch (e) {
-      console.warn("No se pudo leer de Graph, usando caché local:", e.message);
-      alert("No se pudieron cargar los clientes/fincas desde tu Excel.\n\nDetalle: " + e.message);
     }
   }
-  parametros = (await DB.leerCache("parametros")) || parametros;
-  clientesFincas = (await DB.leerCache("clientesFincas")) || [];
-  catalogoProductos = (await DB.leerCache("catalogoProductos")) || [];
-  actualizarOpcionesCatalogo();
 }
 
 // ---------- Paso 1: Cliente / Finca ----------
@@ -309,11 +407,22 @@ async function cargarConfigYClientes() {
 const OPCION_NUEVO_CLIENTE = "__nuevo_cliente__";
 const OPCION_NUEVA_FINCA = "__nueva_finca__";
 
-function poblarSelectCliente() {
-  const clientes = [...new Set(clientesFincas.map((c) => c.cliente))];
+const porNombre = (a, b) => String(a).localeCompare(String(b), "es", { sensitivity: "base" });
+
+function clientesOrdenados() {
+  return [...new Set(clientesFincas.map((c) => c.cliente))].sort(porNombre);
+}
+
+// Al abrir no queda ningún cliente elegido: hay que escogerlo a propósito (antes quedaba el primero
+// de la lista y era fácil capturar una visita en el cliente equivocado).
+function poblarSelectCliente(conservarSeleccion = false) {
+  const anterior = el("cliente").value;
+  const clientes = clientesOrdenados();
   el("cliente").innerHTML =
+    `<option value="">Elija cliente</option>` +
     clientes.map((c) => `<option value="${c}">${c}</option>`).join("") +
     `<option value="${OPCION_NUEVO_CLIENTE}">+ Cliente nuevo</option>`;
+  el("cliente").value = conservarSeleccion && (clientes.includes(anterior) || anterior === OPCION_NUEVO_CLIENTE) ? anterior : "";
   poblarSelectFinca();
 }
 
@@ -321,10 +430,15 @@ function poblarSelectFinca() {
   const cliente = el("cliente").value;
   el("nuevo-cliente-caja").hidden = cliente !== OPCION_NUEVO_CLIENTE;
 
-  const fincas = clientesFincas.filter((c) => c.cliente === cliente);
-  el("finca").innerHTML =
-    fincas.map((f) => `<option value="${f.finca}">${f.finca}</option>`).join("") +
-    `<option value="${OPCION_NUEVA_FINCA}">+ Finca nueva</option>`;
+  if (!cliente) {
+    el("finca").innerHTML = `<option value="">Elija primero el cliente</option>`;
+  } else {
+    const fincas = clientesFincas.filter((c) => c.cliente === cliente).map((f) => f.finca).sort(porNombre);
+    el("finca").innerHTML =
+      (fincas.length === 1 ? "" : `<option value="">Elija finca</option>`) +
+      fincas.map((f) => `<option value="${f}">${f}</option>`).join("") +
+      `<option value="${OPCION_NUEVA_FINCA}">+ Finca nueva</option>`;
+  }
   onCambioFinca();
 }
 
@@ -337,6 +451,8 @@ async function onIniciarMonitoreo() {
   let finca = el("finca").value;
   let numeroLotes;
 
+  if (!cliente) { marcarCampoInvalido(el("cliente")); return; }
+  if (!finca) { marcarCampoInvalido(el("finca")); return; }
   if (cliente === OPCION_NUEVO_CLIENTE) {
     cliente = el("nuevo-cliente").value.trim();
     if (!cliente) { marcarCampoInvalido(el("nuevo-cliente")); return; }
@@ -355,11 +471,20 @@ async function onIniciarMonitoreo() {
     const f = clientesFincas.find((c) => c.cliente === cliente && c.finca === finca);
     numeroLotes = f.numeroLotes;
   }
+  if (!el("fecha").value) { marcarCampoInvalido(el("fecha")); return; }
 
-  visita = { cliente, finca, fecha: el("fecha").value, numeroLotes };
+  await abrirVisita({ cliente, finca, fecha: el("fecha").value, numeroLotes });
+}
+
+// Deja la visita guardada en el celular desde el primer momento, antes de capturar nada.
+async function abrirVisita(datos) {
+  visita = datos;
+  loteActual = null;
+  manejoPorLote = {};
   mostrarPantalla("pantalla-lotes");
   el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
   renderBotonesLotes();
+  await guardarBorrador();
   await precargarProductividad();
 }
 
@@ -472,6 +597,7 @@ function renderProductividadLotes() {
     input.addEventListener("input", () => {
       recalcularProductividadLote(input.dataset.lote);
       guardarCampoProductividadLote(input.dataset.lote);
+      guardarProductividadVisita();
     });
   });
 }
@@ -510,67 +636,135 @@ function actualizarVistaProductividad() {
 function onCambioModoProductividad() {
   productividadModo = el("productividad-modo").value;
   actualizarVistaProductividad();
+  guardarProductividadVisita();
 }
 
-// Si esta misma visita (cliente+finca+fecha exactos) ya tenia productividad guardada, se precarga
-// (en vez de empezar en blanco), igual que ya se hace con Recomendaciones.
+// Si esta misma visita (cliente+finca+fecha exactos) ya tenía productividad guardada (en el Excel o
+// todavía en el celular), se precarga en vez de empezar en blanco.
 async function precargarProductividad() {
-  const guardadas = await Informes.productividadDeVisita(visita.cliente, visita.finca, visita.fecha);
+  let guardadas = [];
+  try {
+    guardadas = await Informes.productividadDeVisita(visita.cliente, visita.finca, visita.fecha);
+  } catch (e) {
+    console.warn("No se pudo leer la productividad guardada:", e.message);
+  }
+  const ultimoGuardado = (await DB.listarItems())
+    .filter((it) => it.tipo === "productividad_visita" && it.datos.cliente === visita.cliente &&
+      it.datos.finca === visita.finca && it.datos.fecha === visita.fecha)
+    .pop();
+
   productividadDatos = {};
-  if (guardadas.length === 0) {
+  guardadas.forEach((g) => {
+    const clave = g.lote === "" || g.lote == null ? "general" : String(g.lote);
+    productividadDatos[clave] = { area: g.area ?? "", animales: g.animales ?? "", dias: g.dias ?? "", produccion: g.produccion ?? "" };
+  });
+  if (ultimoGuardado) {
+    productividadModo = ultimoGuardado.datos.modo || "";
+  } else if (guardadas.length === 0) {
     productividadModo = "";
-  } else if (guardadas.some((g) => !g.lote)) {
-    productividadModo = "general";
-    const g = guardadas.find((x) => !x.lote);
-    productividadDatos.general = { area: g.area ?? "", animales: g.animales ?? "", dias: g.dias ?? "", produccion: g.produccion ?? "" };
   } else {
-    productividadModo = "lotes";
-    guardadas.forEach((g) => {
-      productividadDatos[String(g.lote)] = { area: g.area ?? "", animales: g.animales ?? "", dias: g.dias ?? "", produccion: g.produccion ?? "" };
-    });
+    productividadModo = guardadas.some((g) => g.lote === "" || g.lote == null) ? "general" : "lotes";
   }
   el("productividad-modo").value = productividadModo;
   actualizarVistaProductividad();
+  productividadCargada = firmaProductividad();
 }
 
-// Guarda en la cola (para subir a Productividad_Fincas) lo que se haya consignado en esta visita.
-async function guardarProductividad() {
+const tieneDatosProductividad = (d) => d && [d.area, d.animales, d.dias, d.produccion].some((v) => v !== "" && v != null);
+const camposProductividad = (d) => ({ area: d.area, animales: d.animales, dias: d.dias, produccion: d.produccion });
+
+function filasProductividadActuales() {
   if (productividadModo === "general") {
-    const d = productividadDatos.general;
-    if (d && (d.area || d.animales || d.dias || d.produccion)) {
-      await DB.agregarItem("productividad", { cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: "", ...d });
-    }
-  } else if (productividadModo === "lotes") {
+    return tieneDatosProductividad(productividadDatos.general) ? [{ lote: "", ...camposProductividad(productividadDatos.general) }] : [];
+  }
+  if (productividadModo === "lotes") {
+    const filas = [];
     for (let i = 1; i <= visita.numeroLotes; i++) {
       const d = productividadDatos[String(i)];
-      if (d && (d.area || d.animales || d.dias || d.produccion)) {
-        await DB.agregarItem("productividad", { cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: i, ...d });
-      }
+      if (tieneDatosProductividad(d)) filas.push({ lote: i, ...camposProductividad(d) });
     }
+    return filas;
   }
+  return [];
+}
+
+function firmaProductividad() {
+  return JSON.stringify({ modo: productividadModo, filas: filasProductividadActuales() });
+}
+
+// Cada cambio en Productividad se guarda de una vez en el celular (antes vivía solo en memoria y
+// se perdía al recargar). Hay un solo pendiente por visita, que se va actualizando; al sincronizar
+// reemplaza en el Excel todas las filas de esa visita.
+let colaGuardadoProductividad = Promise.resolve();
+function guardarProductividadVisita() {
+  colaGuardadoProductividad = colaGuardadoProductividad.then(async () => {
+    if (!visita || !productividadModo) return;
+    const datos = { cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, modo: productividadModo, filas: filasProductividadActuales() };
+    const pendiente = (await DB.listarItems()).find((it) => it.tipo === "productividad_visita" && it.estado === "pendiente" &&
+      it.datos.cliente === visita.cliente && it.datos.finca === visita.finca && it.datos.fecha === visita.fecha);
+    if (pendiente) {
+      await DB.actualizarDatosItem(pendiente.id, datos);
+    } else if (firmaProductividad() !== productividadCargada) {
+      await DB.agregarItem("productividad_visita", datos);
+    }
+  }).catch((e) => console.warn("No se pudo guardar la productividad:", e.message));
+  return colaGuardadoProductividad;
 }
 
 // ---------- Paso 2: elegir lote ----------
 
-// Si este lote de esta misma visita (mismo cliente+finca+fecha) ya tenia manejo/productos
-// registrados (por ejemplo si se vuelve a entrar despues de sincronizar, o retomando la visita),
-// se precargan esos datos exactos, en vez de arrastrar lo ultimo usado en otra finca u otra visita.
-async function onElegirLote(lote) {
-  loteActual = lote;
-  el("manejo-lote-num").textContent = lote;
-
-  const { manejo, productos } = await Informes.manejoYProductosDeLote(visita.cliente, visita.finca, visita.fecha, lote);
-
-  CAMPOS_MANEJO.forEach((c) => { el(c.id).value = (manejo && manejo[c.key]) || ""; });
-
-  el("lista-productos").innerHTML = "";
-  if (productos.length > 0) {
-    productos.forEach((p) => agregarBloqueProducto("lista-productos", p));
-  } else {
-    agregarBloqueProducto("lista-productos");
+// Si este lote de esta misma visita ya tenía manejo/productos registrados, se precargan esos datos
+// exactos. Si el lote todavía no tiene nada, se copia el manejo de otro lote de la misma visita
+// (el Lote 1 primero): casi siempre se maneja igual toda la finca, y así no hay que reescribirlo.
+async function leerManejoDeLote(lote) {
+  let guardado = { manejo: null, productos: [] };
+  try {
+    guardado = await Informes.manejoYProductosDeLote(visita.cliente, visita.finca, visita.fecha, lote);
+  } catch (e) {
+    console.warn("No se pudo leer el manejo guardado del lote:", e.message);
   }
+  const escrito = manejoPorLote[String(lote)];
+  return {
+    campos: (escrito && escrito.campos) || guardado.manejo,
+    productos: guardado.productos.length ? guardado.productos : ((escrito && escrito.productos) || []),
+  };
+}
 
-  mostrarPantalla("pantalla-manejo");
+const manejoVacio = (m) => !m.productos.length && (!m.campos || CAMPOS_MANEJO.every((c) => !m.campos[c.key]));
+
+async function onElegirLote(lote) {
+  const boton = el("botones-lotes").querySelector(`.boton-lote[data-lote="${lote}"]`);
+  if (boton) { boton.disabled = true; boton.textContent = "Abriendo..."; }
+  try {
+    loteActual = lote;
+    el("manejo-lote-num").textContent = lote;
+
+    let manejo = await leerManejoDeLote(lote);
+    let copiadoDe = null;
+    if (manejoVacio(manejo)) {
+      for (let otro = 1; otro <= visita.numeroLotes; otro++) {
+        if (otro === lote) continue;
+        const candidato = await leerManejoDeLote(otro);
+        if (!manejoVacio(candidato)) { manejo = candidato; copiadoDe = otro; break; }
+      }
+    }
+
+    CAMPOS_MANEJO.forEach((c) => { el(c.id).value = (manejo.campos && manejo.campos[c.key]) || ""; });
+    el("lista-productos").innerHTML = "";
+    (manejo.productos.length ? manejo.productos : [{}]).forEach((p) => agregarBloqueProducto("lista-productos", p));
+
+    el("manejo-copiado").textContent = copiadoDe
+      ? `Se copió el manejo del Lote ${copiadoDe}. Si este lote se manejó distinto, cámbialo aquí.`
+      : "";
+    el("manejo-copiado").hidden = !copiadoDe;
+
+    mostrarPantalla("pantalla-manejo");
+    await guardarBorrador();
+  } catch (e) {
+    alert("No se pudo abrir el lote: " + e.message);
+  } finally {
+    renderBotonesLotes();
+  }
 }
 
 async function onIniciarMonitoreoLote() {
@@ -578,20 +772,42 @@ async function onIniciarMonitoreoLote() {
   CAMPOS_MANEJO.forEach((c) => { manejoActual[c.key] = el(c.id).value.trim(); });
 
   const productos = leerProductosFormulario("lista-productos");
+  manejoPorLote[String(loteActual)] = { campos: { ...manejoActual }, productos };
+  el("manejo-copiado").hidden = true;
+
+  // Lo que ya estaba registrado para ESTE lote (en el Excel o pendiente en el celular). Se compara
+  // contra lo que quedó en el formulario: lo que ya no está se borra, y lo nuevo se agrega.
+  let existentes = [];
+  try {
+    existentes = (await Informes.manejoYProductosDeLote(visita.cliente, visita.finca, visita.fecha, loteActual)).productos;
+  } catch (e) {
+    console.warn("No se pudieron leer los productos ya registrados:", e.message);
+  }
+  const clave = (p) => claveProducto(p.nombre, p.formulacion, p.dosis);
+  const enFormulario = new Set(productos.map(clave));
+  const yaRegistrados = new Set(existentes.map(clave));
+  const items = await DB.listarItems();
+  const delLote = (it) => it.datos.cliente === visita.cliente && it.datos.finca === visita.finca &&
+    it.datos.fecha === visita.fecha && String(it.datos.lote) === String(loteActual);
+
+  for (const p of existentes.filter((x) => !enFormulario.has(clave(x)))) {
+    const enCola = items.filter((it) => it.tipo === "producto_aplicado" && delLote(it) &&
+      claveProducto(it.datos.producto, it.datos.formulacion, it.datos.dosis) === clave(p));
+    for (const it of enCola) await DB.eliminarItem(it.id);
+    // Si solo existía en el celular (nunca se subió), basta con borrarlo de la cola. Si ya estaba en
+    // el Excel, queda pendiente borrarlo allá en la próxima sincronización.
+    const soloEnCelular = enCola.length > 0 && enCola.every((it) => it.estado === "pendiente");
+    if (!soloEnCelular) {
+      await DB.agregarItem("eliminar_producto_aplicado", {
+        cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: loteActual,
+        producto: p.nombre, formulacion: p.formulacion, dosis: p.dosis,
+      });
+    }
+  }
 
   const itemsPendientes = await DB.listarItems();
-  // Si ya se registro este mismo producto para este mismo lote/visita (p.ej. porque se volvio a
-  // entrar a la pantalla de manejo y se le dio "Iniciar monitoreo" otra vez), no se vuelve a encolar.
-  const yaRegistradoEnLote = (p) => itemsPendientes.some((it) =>
-    it.tipo === "producto_aplicado" &&
-    it.datos.cliente === visita.cliente && it.datos.finca === visita.finca &&
-    it.datos.fecha === visita.fecha && it.datos.lote === loteActual &&
-    it.datos.producto.toLowerCase() === p.nombre.toLowerCase() &&
-    (it.datos.formulacion || "").toLowerCase() === (p.formulacion || "").toLowerCase() &&
-    String(it.datos.dosis) === String(p.dosis)
-  );
   for (const p of productos) {
-    if (!yaRegistradoEnLote(p)) {
+    if (!yaRegistrados.has(clave(p))) {
       await DB.agregarItem("producto_aplicado", {
         cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: loteActual,
         producto: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad, dosis: p.dosis,
@@ -609,14 +825,28 @@ async function onIniciarMonitoreoLote() {
     }
   }
 
+  // Si se corrigió el manejo, los puntos de este lote que aún no se suben quedan con el manejo nuevo.
+  const B = ESQUEMA.BASE;
+  for (const it of await puntosDelLoteActual()) {
+    if (it.estado !== "pendiente") continue;
+    const fila = [...it.datos.fila];
+    fila[B.tipoFumigacion] = manejoActual.tipoFumigacion || "";
+    fila[B.litrosMezclaHa] = manejoActual.litrosMezclaHa || "";
+    fila[B.ordenMezclaCorrecto] = manejoActual.ordenMezclaCorrecto || "";
+    fila[B.phFinalMezcla] = manejoActual.phFinalMezcla || "";
+    await DB.actualizarDatosItem(it.id, { fila });
+  }
+
   capturandoLote = true;
   editandoPuntoId = null;
   await calcularSiguientePunto();
   await precargarPotreroLote();
   el("lote-actual-num").textContent = loteActual;
   el("form-punto").reset();
+  mostrarCajaObservacionesLote(false);
   el("btn-punto-anterior").disabled = puntoMostrado <= 1;
   mostrarPantalla("pantalla-punto");
+  await guardarBorrador();
   await refrescarResumenCola();
 }
 
@@ -731,9 +961,12 @@ async function onGuardarPunto(ev) {
     puntoActual += 1;
     puntoMostrado = puntoActual;
   }
+  const potrero = el("potrero-nombre-punto").value;
   el("form-punto").reset();
+  el("potrero-nombre-punto").value = potrero;
   el("punto-actual-num").textContent = puntoMostrado;
   el("btn-punto-anterior").disabled = puntoMostrado <= 1;
+  await guardarBorrador();
   await refrescarResumenCola();
 }
 
@@ -754,6 +987,7 @@ async function onPuntoAnterior() {
   cargarPuntoEnFormulario(item.datos.fila);
   el("punto-actual-num").textContent = puntoMostrado;
   el("btn-punto-anterior").disabled = puntoMostrado <= 1;
+  await guardarBorrador();
 }
 
 // Sin importar en que punto se haya escrito el nombre del potrero, al terminar el lote se le
@@ -783,7 +1017,40 @@ async function onTerminarLote() {
   }
   await aplicarPotreroATodosLosPuntos(potrero);
   capturandoLote = false;
+
+  // Antes de volver a la lista de lotes se piden las observaciones generales del lote.
+  let existente = "";
+  try {
+    existente = await Informes.observacionDeLote(visita.cliente, visita.finca, visita.fecha, loteActual);
+  } catch (e) {
+    console.warn("No se pudo leer la observación del lote:", e.message);
+  }
+  el("observaciones-lote").value = existente;
+  el("observaciones-lote").dataset.inicial = existente;
+  mostrarCajaObservacionesLote(true);
+  el("caja-observaciones-lote").scrollIntoView({ behavior: "smooth", block: "start" });
+  await guardarBorrador();
+  await refrescarResumenCola();
+}
+
+async function onFinalizarLote() {
+  const texto = el("observaciones-lote").value.trim();
+  const potrero = el("potrero-nombre-punto").value.trim();
+  const datos = { cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: loteActual, potrero, observaciones: texto };
+  const pendiente = (await DB.listarItems()).find((it) => it.tipo === "observacion_lote" && it.estado === "pendiente" &&
+    it.datos.cliente === visita.cliente && it.datos.finca === visita.finca && it.datos.fecha === visita.fecha &&
+    String(it.datos.lote) === String(loteActual));
+  if (pendiente) {
+    await DB.actualizarDatosItem(pendiente.id, datos);
+  } else if (texto !== (el("observaciones-lote").dataset.inicial || "").trim()) {
+    await DB.agregarItem("observacion_lote", datos);
+  }
+  if (potrero) await aplicarPotreroATodosLosPuntos(potrero);
+
+  mostrarCajaObservacionesLote(false);
+  el("observaciones-lote").value = "";
   mostrarPantalla("pantalla-lotes");
+  await guardarBorrador();
   await refrescarResumenCola();
 }
 
@@ -791,7 +1058,7 @@ async function onFinMuestreo() {
   if (!productividadModo) { marcarCampoInvalido(el("productividad-modo")); return; }
   if (productividadModo === "general") guardarCampoProductividadGeneral(); // guarda lo visible ahora mismo (los de "por lotes" ya se guardan solos al escribir)
   if (!confirm("¿Seguro que quieres terminar la visita?")) return;
-  await guardarProductividad();
+  await guardarProductividadVisita();
   const items = await DB.listarItems();
   const puntosVisita = items.filter(
     (it) => it.tipo === "punto" && it.datos.cliente === visita.cliente && it.datos.finca === visita.finca && it.datos.fecha === visita.fecha
@@ -817,6 +1084,9 @@ async function onFinMuestreo() {
   el("resumen-final").textContent = resumen;
   visita = null;
   loteActual = null;
+  pantallaFlujo = null;
+  manejoPorLote = {};
+  await borrarBorrador();
   mostrarPantalla("pantalla-fin");
 }
 
@@ -831,15 +1101,15 @@ async function refrescarResumenCola() {
 // ---------- Pestaña Informes ----------
 
 function poblarSelectInformeCliente() {
-  const clientes = [...new Set(clientesFincas.map((c) => c.cliente))];
+  const clientes = clientesOrdenados();
   el("informe-cliente").innerHTML = clientes.map((c) => `<option value="${c}">${c}</option>`).join("");
   poblarSelectInformeFinca();
 }
 
 function poblarSelectInformeFinca() {
   const cliente = el("informe-cliente").value;
-  const fincas = clientesFincas.filter((c) => c.cliente === cliente);
-  el("informe-finca").innerHTML = fincas.map((f) => `<option value="${f.finca}">${f.finca}</option>`).join("");
+  const fincas = clientesFincas.filter((c) => c.cliente === cliente).map((f) => f.finca).sort(porNombre);
+  el("informe-finca").innerHTML = fincas.map((f) => `<option value="${f}">${f}</option>`).join("");
   poblarSelectInformeFecha();
 }
 
@@ -1031,6 +1301,49 @@ async function sincronizarProductosRecomendadosPendientes() {
 // en blanco para que sea la formula de la hoja la que las calcule (y no un valor fijo nuestro).
 const COLUMNAS_CALCULADAS_EXCEL = ESQUEMA.INDICES_BASE_CALCULADAS;
 
+// Qué filas del Excel pertenecen a la misma visita (y lote) que un dato de la cola.
+function coincideVisitaExcel(fila, columnas, d, conLote) {
+  return fila[columnas.cliente] === d.cliente && fila[columnas.finca] === d.finca &&
+    normalizarFecha(fila[columnas.fecha]) === normalizarFecha(d.fecha) &&
+    (!conLote || String(fila[columnas.lote]) === String(d.lote));
+}
+
+// Datos que deben subirse en orden (ej. borrar un producto y volverlo a agregar). Si uno falla,
+// los siguientes del mismo grupo esperan a la próxima sincronización, para no desordenarlos.
+function grupoDeOrden(it) {
+  const d = it.datos || {};
+  if (it.tipo === "producto_aplicado" || it.tipo === "eliminar_producto_aplicado") return `pa|${d.cliente}|${d.finca}|${d.fecha}|${d.lote}`;
+  if (it.tipo === "productividad_visita") return `pf|${d.cliente}|${d.finca}|${d.fecha}`;
+  if (it.tipo === "observacion_lote") return `ol|${d.cliente}|${d.finca}|${d.fecha}|${d.lote}`;
+  return null;
+}
+
+async function subirItem(it) {
+  const d = it.datos;
+  if (it.tipo === "eliminar_producto_aplicado") {
+    const C = ESQUEMA.PRODUCTOS_APLICADOS;
+    await Graph.eliminarFilasDonde(CONFIG.TABLA_PRODUCTOS_APLICADOS, (f) => coincideVisitaExcel(f, C, d, true) &&
+      claveProducto(f[C.producto], f[C.formulacion], f[C.dosis]) === claveProducto(d.producto, d.formulacion, d.dosis));
+  } else if (it.tipo === "productividad_visita") {
+    await Graph.eliminarFilasDonde(CONFIG.TABLA_PRODUCTIVIDAD, (f) => coincideVisitaExcel(f, ESQUEMA.PRODUCTIVIDAD, d, false));
+    for (const p of d.filas || []) {
+      await Graph.agregarProductividad([
+        d.cliente, d.finca, d.fecha, p.lote,
+        Number(p.area) || null, Number(p.animales) || null, Number(p.dias) || null, Number(p.produccion) || null,
+        null, null, null,
+      ]);
+    }
+  } else if (it.tipo === "observacion_lote") {
+    await Graph.eliminarFilasDonde(CONFIG.TABLA_OBSERVACIONES_LOTES, (f) => coincideVisitaExcel(f, ESQUEMA.OBSERVACIONES_LOTES, d, true));
+    if (d.observaciones) {
+      await Graph.agregarFilaEnTabla(CONFIG.TABLA_OBSERVACIONES_LOTES, [d.cliente, d.finca, d.fecha, d.lote, d.potrero || "", d.observaciones]);
+    }
+  } else {
+    return false;
+  }
+  return true;
+}
+
 let sincronizando = false;
 async function sincronizar() {
   if (sincronizando || !navigator.onLine) return;
@@ -1039,9 +1352,14 @@ async function sincronizar() {
   let subidos = 0;
   try {
     const items = await DB.listarItems();
+    const gruposDetenidos = new Set();
     for (const it of items.filter((i) => i.estado === "pendiente")) {
+      const grupo = grupoDeOrden(it);
+      if (grupo && gruposDetenidos.has(grupo)) continue;
       try {
-        if (it.tipo === "punto") {
+        if (await subirItem(it)) {
+          // ya subido arriba
+        } else if (it.tipo === "punto") {
           const filaParaExcel = [...it.datos.fila];
           for (const idx of COLUMNAS_CALCULADAS_EXCEL) filaParaExcel[idx] = null;
           await Graph.agregarFila(filaParaExcel);
@@ -1074,10 +1392,12 @@ async function sincronizar() {
       } catch (e) {
         await DB.marcarError(it.id, e.message);
         errores.push(e.message);
+        if (grupo) gruposDetenidos.add(grupo);
       }
     }
   } finally {
     sincronizando = false;
+    Informes.invalidarCache(); // lo recién subido se vuelve a leer del Excel
     refrescarResumenCola();
     if (errores.length > 0) {
       alert(
@@ -1119,7 +1439,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("productividad-modo").addEventListener("change", onCambioModoProductividad);
   ["pv-g-area", "pv-g-animales", "pv-g-dias", "pv-g-produccion"].forEach((id) => {
-    el(id).addEventListener("input", () => { recalcularProductividadGeneral(); guardarCampoProductividadGeneral(); });
+    el(id).addEventListener("input", () => { recalcularProductividadGeneral(); guardarCampoProductividadGeneral(); guardarProductividadVisita(); });
   });
 
   el("btn-nuevo-lote").addEventListener("click", onAgregarLoteNuevo);
@@ -1128,6 +1448,14 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-fin-muestreo-lotes").addEventListener("click", onFinMuestreo);
   el("btn-terminar-lote").addEventListener("click", onTerminarLote);
   el("btn-punto-anterior").addEventListener("click", onPuntoAnterior);
+  el("btn-finalizar-lote").addEventListener("click", onFinalizarLote);
+
+  // Cualquier cosa que se escriba durante la visita se guarda al instante en el celular.
+  PANTALLAS_FLUJO.forEach((id) => {
+    el(id).addEventListener("input", () => guardarBorrador());
+    el(id).addEventListener("change", () => guardarBorrador());
+  });
+  el("btn-agregar-producto").addEventListener("click", () => guardarBorrador());
 
   el("btn-agregar-producto-informe").addEventListener("click", () => agregarBloqueProducto("lista-productos-informe"));
   el("informe-tipo-fumigacion").addEventListener("change", actualizarEtiquetasDosisRecomendacion);
@@ -1141,7 +1469,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       await sincronizar();
       await cargarConfigYClientes();
-      poblarSelectCliente();
+      poblarSelectCliente(true);
       await renderResumenHoy();
       await refrescarResumenCola();
     } catch (e) {
@@ -1179,7 +1507,8 @@ document.addEventListener("DOMContentLoaded", () => {
           }
           mostrarPantalla("pantalla-informes");
         } else {
-          mostrarPantalla("pantalla-visita");
+          // Si hay una visita a medio capturar, se vuelve justo a donde iba.
+          mostrarPantalla(visita && pantallaFlujo ? pantallaFlujo : "pantalla-visita");
         }
       } catch (e) {
         alert("Error al cambiar de pestaña: " + e.message);

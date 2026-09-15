@@ -28,13 +28,21 @@ Nada se sube directo: todo lo capturado entra primero a una **cola local** (Inde
 vacía contra el Excel y cada elemento pasa a `sincronizado`. Si algo falla, queda en `error` con el
 mensaje, y se reintenta la próxima vez. Por eso se puede trabajar el día entero sin señal.
 
+La visita en curso (pantalla, manejo, punto a medio llenar, observaciones) se guarda además en el
+celular con cada tecla (`visitaEnCurso`): si se recarga o se cierra la app, al volver sigue donde iba.
+Productividad y observaciones por lote tienen un solo pendiente por visita/lote que, al sincronizar,
+**reemplaza** sus filas en el Excel; quitar un producto aplicado encola su borrado en el Excel.
+
+Tabla que debe existir en el Excel: `Observaciones_Lotes` con encabezados
+`Cliente | Finca | Fecha visita | Lote | Potrero | Observaciones`.
+
 Las columnas que en el Excel son **fórmulas** (daños calculados, carga animal, etc.) se suben
 vacías a propósito, para que las calcule la propia hoja y no un valor fijo de la app.
 
 ## Antes de publicar un cambio
 
 ```bash
-node pruebas/correr.js   # 25 pruebas: cálculos, informe, escape de HTML, formato de filas
+node pruebas/correr.js   # 30 pruebas: cálculos, informe, escape de HTML, formato de filas
 node publicar.js         # corre las pruebas y sube la versión en app.js y sw.js a la vez
 git add -A && git commit -m "..." && git push
 ```

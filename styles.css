@@ -113,6 +113,16 @@ input.campo-invalido, select.campo-invalido, textarea.campo-invalido { border-co
 .botones-punto button { flex: 1; }
 #btn-punto-anterior:disabled { opacity: 0.4; }
 
+.aviso-suave {
+  background: var(--fondo-suave);
+  border-left: 4px solid var(--principal);
+  color: var(--principal-oscuro);
+  font-size: 13px;
+  padding: 8px 12px;
+  margin: 0 0 12px;
+  border-radius: 0 8px 8px 0;
+}
+#caja-observaciones-lote { margin-top: 16px; }
 .caja-nueva { background: var(--fondo-suave); border-radius: 10px; padding: 10px 12px; margin: -6px 0 12px; border: 1px solid var(--borde); }
 
 .producto-bloque { background: #f7f9fb; border: 1px solid var(--borde); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
