@@ -90,6 +90,10 @@ input.campo-invalido, select.campo-invalido, textarea.campo-invalido { border-co
 .hint { font-size: 12px; color: var(--gris); margin: -4px 0 10px; }
 #datos-estado { margin-top: 10px; }
 
+.productividad-lote-bloque { margin-bottom: 10px; }
+.productividad-lote-bloque .btn-desplegar-productividad { width: 100%; text-align: left; margin: 0; }
+.productividad-lote-bloque .productividad-lote-campos { border: 1px solid var(--borde); border-radius: 0 0 10px 10px; padding: 12px; margin-top: -4px; }
+
 .botones-punto { display: flex; gap: 10px; margin-top: 14px; }
 .botones-punto button { flex: 1; }
 #btn-punto-anterior:disabled { opacity: 0.4; }

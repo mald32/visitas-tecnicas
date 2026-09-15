@@ -74,25 +74,24 @@
       <option value="sin_datos">Sin datos</option>
     </select>
   </label>
-  <div id="productividad-campos" hidden>
-    <label id="productividad-lote-caja" hidden>Lote
-      <select id="productividad-lote-select"></select>
-    </label>
+  <div id="productividad-general" hidden>
     <div class="fila">
-      <label>Área del lote (hectáreas) <input type="number" step="any" id="pv-area"></label>
-      <label>Animales en ordeño <input type="number" step="any" id="pv-animales"></label>
+      <label>Área del lote (hectáreas) <input type="number" step="any" id="pv-g-area"></label>
+      <label>Animales en ordeño <input type="number" step="any" id="pv-g-animales"></label>
     </div>
     <div class="fila">
-      <label>Días de rotación <input type="number" step="any" id="pv-dias"></label>
-      <label>Producción diaria de leche (L/vaca·día) <input type="number" step="any" id="pv-produccion"></label>
+      <label>Días de rotación <input type="number" step="any" id="pv-g-dias"></label>
+      <label>Producción diaria de leche (L/vaca·día) <input type="number" step="any" id="pv-g-produccion"></label>
     </div>
     <p class="hint">Los siguientes 3 valores los calcula solo el Excel, aquí es solo una vista previa:</p>
     <div class="fila">
-      <label>Carga animal (animales/ha) <input type="text" id="pv-carga" disabled></label>
-      <label>Área diaria por animal (m²/vaca·día) <input type="text" id="pv-area-diaria" disabled></label>
+      <label>Carga animal (animales/ha) <input type="text" id="pv-g-carga" disabled></label>
+      <label>Área diaria por animal (m²/vaca·día) <input type="text" id="pv-g-area-diaria" disabled></label>
     </div>
-    <label>Productividad de la lechería (L leche/ha·día) <input type="text" id="pv-productividad" disabled></label>
+    <label>Productividad de la lechería (L leche/ha·día) <input type="text" id="pv-g-productividad" disabled></label>
   </div>
+
+  <div id="productividad-lotes-lista" hidden></div>
 
   <h2>¿Qué lote vas a muestrear?</h2>
   <div id="botones-lotes" class="grid-lotes"></div>

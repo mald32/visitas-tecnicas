@@ -223,6 +223,32 @@ const Informes = {
       }));
   },
 
+  // Manejo agronomico (tipo de fumigacion, volumen de mezcla, etc) y productos aplicados ya
+  // registrados para un lote de una visita exacta (mismo cliente+finca+fecha+lote), para poder
+  // precargarlos si se vuelve a entrar a ese lote (en vez de arrastrar datos de otra finca/visita).
+  async manejoYProductosDeLote(cliente, finca, fecha, lote) {
+    const filas = await this.filas();
+    const puntoDelLote = filas.find((f) =>
+      f[COL.cliente] === cliente && f[COL.finca] === finca && f[COL.fecha] === fecha && f[COL.lote] === lote
+    );
+    const manejo = puntoDelLote ? {
+      tipoFumigacion: puntoDelLote[COL.tipoFumigacion] || "",
+      litrosMezclaHa: puntoDelLote[COL.litrosMezclaHa] || "",
+      ordenMezclaCorrecto: puntoDelLote[COL.ordenMezclaCorrecto] || "",
+      phFinalMezcla: puntoDelLote[COL.phFinalMezcla] || "",
+    } : null;
+
+    const productosFilas = await this.filasProductos();
+    const productos = productosFilas
+      .filter((f) => f[COL_PA.cliente] === cliente && f[COL_PA.finca] === finca && f[COL_PA.fecha] === fecha && f[COL_PA.lote] === lote)
+      .map((f) => ({
+        nombre: f[COL_PA.producto], tipo: f[COL_PA.tipo], formulacion: f[COL_PA.formulacion],
+        unidad: f[COL_PA.unidad], dosis: f[COL_PA.dosis],
+      }));
+
+    return { manejo, productos };
+  },
+
   // Igual que filasProductos(), pero para Productividad_Fincas. Las columnas calculadas (Carga
   // Animal, Area Diaria por Animal, Productividad de la Lecheria) se recalculan aqui mismo para
   // las filas aun no sincronizadas, con las mismas formulas que tiene la hoja de Excel.

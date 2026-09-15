@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "31";
+const APP_VERSION = "32";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -248,7 +248,7 @@ async function onRetomarVisita(cliente, finca, fecha) {
   el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
   mostrarPantalla("pantalla-lotes");
   renderBotonesLotes();
-  resetearProductividad();
+  await precargarProductividad();
 }
 
 async function cargarConfigYClientes() {
@@ -338,7 +338,7 @@ async function onIniciarMonitoreo() {
   mostrarPantalla("pantalla-lotes");
   el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
   renderBotonesLotes();
-  resetearProductividad();
+  await precargarProductividad();
 }
 
 function renderBotonesLotes() {
@@ -361,74 +361,154 @@ async function onAgregarLoteNuevo() {
     cliente: visita.cliente, finca: visita.finca, numeroLotes: visita.numeroLotes,
   });
   renderBotonesLotes();
-  if (productividadModo === "lotes") poblarSelectLoteProductividad();
+  if (productividadModo === "lotes") renderProductividadLotes();
 }
 
 // ---------- Productividad (por visita, "en general" o "por lotes") ----------
 
-function claveProductividadActual() {
-  if (productividadModo === "general") return "general";
-  if (productividadModo === "lotes") return el("productividad-lote-select").value;
-  return null;
-}
-
 // Mismas formulas que la hoja Productividad_Fincas, solo para mostrar una vista previa en la app.
-function recalcularProductividad() {
-  const area = Number(el("pv-area").value) || 0;
-  const animales = Number(el("pv-animales").value) || 0;
-  const dias = Number(el("pv-dias").value) || 0;
-  const produccion = Number(el("pv-produccion").value) || 0;
+function calcularProductividad(area, animales, dias, produccion) {
   const carga = area > 0 ? animales / area : null;
   const areaDiaria = (animales > 0 && dias > 0) ? ((area * 10000) / animales) / dias : null;
   const productividad = area > 0 ? (produccion * animales) / area : null;
-  el("pv-carga").value = carga != null ? carga.toFixed(2) : "";
-  el("pv-area-diaria").value = areaDiaria != null ? areaDiaria.toFixed(2) : "";
-  el("pv-productividad").value = productividad != null ? productividad.toFixed(2) : "";
+  return { carga, areaDiaria, productividad };
 }
 
-function guardarCampoProductividadActual() {
-  const clave = claveProductividadActual();
-  if (!clave) return;
-  productividadDatos[clave] = {
-    area: el("pv-area").value, animales: el("pv-animales").value,
-    dias: el("pv-dias").value, produccion: el("pv-produccion").value,
+function recalcularProductividadGeneral() {
+  const area = Number(el("pv-g-area").value) || 0;
+  const animales = Number(el("pv-g-animales").value) || 0;
+  const dias = Number(el("pv-g-dias").value) || 0;
+  const produccion = Number(el("pv-g-produccion").value) || 0;
+  const { carga, areaDiaria, productividad } = calcularProductividad(area, animales, dias, produccion);
+  el("pv-g-carga").value = carga != null ? carga.toFixed(2) : "";
+  el("pv-g-area-diaria").value = areaDiaria != null ? areaDiaria.toFixed(2) : "";
+  el("pv-g-productividad").value = productividad != null ? productividad.toFixed(2) : "";
+}
+
+function guardarCampoProductividadGeneral() {
+  productividadDatos.general = {
+    area: el("pv-g-area").value, animales: el("pv-g-animales").value,
+    dias: el("pv-g-dias").value, produccion: el("pv-g-produccion").value,
   };
 }
 
-function cargarCamposProductividad(clave) {
-  const d = (clave && productividadDatos[clave]) || {};
-  el("pv-area").value = d.area || "";
-  el("pv-animales").value = d.animales || "";
-  el("pv-dias").value = d.dias || "";
-  el("pv-produccion").value = d.produccion || "";
-  recalcularProductividad();
+function cargarCamposProductividadGeneral() {
+  const d = productividadDatos.general || {};
+  el("pv-g-area").value = d.area || "";
+  el("pv-g-animales").value = d.animales || "";
+  el("pv-g-dias").value = d.dias || "";
+  el("pv-g-produccion").value = d.produccion || "";
+  recalcularProductividadGeneral();
 }
 
-function poblarSelectLoteProductividad() {
+// "Por lotes": cada lote es un bloque que se despliega/oculta al tocarlo (no un desplegable).
+function renderProductividadLotes() {
   let html = "";
-  for (let i = 1; i <= visita.numeroLotes; i++) html += `<option value="${i}">Productividad Lote ${i}</option>`;
-  el("productividad-lote-select").innerHTML = html;
+  for (let i = 1; i <= visita.numeroLotes; i++) {
+    html += `<div class="productividad-lote-bloque">
+      <button type="button" class="secundario btn-desplegar-productividad" data-lote="${i}">Lote ${i}</button>
+      <div class="productividad-lote-campos" data-lote="${i}" hidden>
+        <div class="fila">
+          <label>Área del lote (hectáreas) <input type="number" step="any" class="pv-area" data-lote="${i}"></label>
+          <label>Animales en ordeño <input type="number" step="any" class="pv-animales" data-lote="${i}"></label>
+        </div>
+        <div class="fila">
+          <label>Días de rotación <input type="number" step="any" class="pv-dias" data-lote="${i}"></label>
+          <label>Producción diaria de leche (L/vaca·día) <input type="number" step="any" class="pv-produccion" data-lote="${i}"></label>
+        </div>
+        <p class="hint">Los siguientes 3 valores los calcula solo el Excel, aquí es solo una vista previa:</p>
+        <div class="fila">
+          <label>Carga animal (animales/ha) <input type="text" class="pv-carga" data-lote="${i}" disabled></label>
+          <label>Área diaria por animal (m²/vaca·día) <input type="text" class="pv-area-diaria" data-lote="${i}" disabled></label>
+        </div>
+        <label>Productividad de la lechería (L leche/ha·día) <input type="text" class="pv-productividad" data-lote="${i}" disabled></label>
+      </div>
+    </div>`;
+  }
+  el("productividad-lotes-lista").innerHTML = html;
+
+  const campo = (clase, lote) => el("productividad-lotes-lista").querySelector(`.${clase}[data-lote="${lote}"]`);
+
+  for (let i = 1; i <= visita.numeroLotes; i++) {
+    const d = productividadDatos[String(i)];
+    if (d) {
+      campo("pv-area", i).value = d.area || "";
+      campo("pv-animales", i).value = d.animales || "";
+      campo("pv-dias", i).value = d.dias || "";
+      campo("pv-produccion", i).value = d.produccion || "";
+    }
+    recalcularProductividadLote(i);
+  }
+
+  el("productividad-lotes-lista").querySelectorAll(".btn-desplegar-productividad").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const campos = campo("productividad-lote-campos", btn.dataset.lote);
+      campos.hidden = !campos.hidden;
+    });
+  });
+  el("productividad-lotes-lista").querySelectorAll(".pv-area, .pv-animales, .pv-dias, .pv-produccion").forEach((input) => {
+    input.addEventListener("input", () => {
+      recalcularProductividadLote(input.dataset.lote);
+      guardarCampoProductividadLote(input.dataset.lote);
+    });
+  });
 }
 
-function resetearProductividad() {
-  productividadModo = "";
-  productividadDatos = {};
-  el("productividad-modo").value = "";
-  el("productividad-campos").hidden = true;
-  el("productividad-lote-caja").hidden = true;
-  cargarCamposProductividad(null);
+function recalcularProductividadLote(lote) {
+  const campo = (clase) => el("productividad-lotes-lista").querySelector(`.${clase}[data-lote="${lote}"]`);
+  const area = Number(campo("pv-area").value) || 0;
+  const animales = Number(campo("pv-animales").value) || 0;
+  const dias = Number(campo("pv-dias").value) || 0;
+  const produccion = Number(campo("pv-produccion").value) || 0;
+  const { carga, areaDiaria, productividad } = calcularProductividad(area, animales, dias, produccion);
+  campo("pv-carga").value = carga != null ? carga.toFixed(2) : "";
+  campo("pv-area-diaria").value = areaDiaria != null ? areaDiaria.toFixed(2) : "";
+  campo("pv-productividad").value = productividad != null ? productividad.toFixed(2) : "";
+}
+
+function guardarCampoProductividadLote(lote) {
+  const campo = (clase) => el("productividad-lotes-lista").querySelector(`.${clase}[data-lote="${lote}"]`);
+  productividadDatos[String(lote)] = {
+    area: campo("pv-area").value, animales: campo("pv-animales").value,
+    dias: campo("pv-dias").value, produccion: campo("pv-produccion").value,
+  };
+}
+
+// Muestra el bloque que corresponde al modo actual (general/lotes/sin_datos/nada elegido aun).
+function actualizarVistaProductividad() {
+  el("productividad-general").hidden = productividadModo !== "general";
+  el("productividad-lotes-lista").hidden = productividadModo !== "lotes";
+  if (productividadModo === "general") {
+    cargarCamposProductividadGeneral();
+  } else if (productividadModo === "lotes") {
+    renderProductividadLotes();
+  }
 }
 
 function onCambioModoProductividad() {
   productividadModo = el("productividad-modo").value;
-  el("productividad-campos").hidden = !productividadModo || productividadModo === "sin_datos";
-  el("productividad-lote-caja").hidden = productividadModo !== "lotes";
-  if (productividadModo === "lotes") {
-    poblarSelectLoteProductividad();
-    cargarCamposProductividad(el("productividad-lote-select").value);
-  } else if (productividadModo === "general") {
-    cargarCamposProductividad("general");
+  actualizarVistaProductividad();
+}
+
+// Si esta misma visita (cliente+finca+fecha exactos) ya tenia productividad guardada, se precarga
+// (en vez de empezar en blanco), igual que ya se hace con Recomendaciones.
+async function precargarProductividad() {
+  const guardadas = await Informes.productividadDeVisita(visita.cliente, visita.finca, visita.fecha);
+  productividadDatos = {};
+  if (guardadas.length === 0) {
+    productividadModo = "";
+  } else if (guardadas.some((g) => !g.lote)) {
+    productividadModo = "general";
+    const g = guardadas.find((x) => !x.lote);
+    productividadDatos.general = { area: g.area ?? "", animales: g.animales ?? "", dias: g.dias ?? "", produccion: g.produccion ?? "" };
+  } else {
+    productividadModo = "lotes";
+    guardadas.forEach((g) => {
+      productividadDatos[String(g.lote)] = { area: g.area ?? "", animales: g.animales ?? "", dias: g.dias ?? "", produccion: g.produccion ?? "" };
+    });
   }
+  el("productividad-modo").value = productividadModo;
+  actualizarVistaProductividad();
 }
 
 // Guarda en la cola (para subir a Productividad_Fincas) lo que se haya consignado en esta visita.
@@ -450,17 +530,20 @@ async function guardarProductividad() {
 
 // ---------- Paso 2: elegir lote ----------
 
-function onElegirLote(lote) {
+// Si este lote de esta misma visita (mismo cliente+finca+fecha) ya tenia manejo/productos
+// registrados (por ejemplo si se vuelve a entrar despues de sincronizar, o retomando la visita),
+// se precargan esos datos exactos, en vez de arrastrar lo ultimo usado en otra finca u otra visita.
+async function onElegirLote(lote) {
   loteActual = lote;
   el("manejo-lote-num").textContent = lote;
 
-  const cache = JSON.parse(localStorage.getItem("manejoAgronomicoUltimo") || "{}");
-  CAMPOS_MANEJO.forEach((c) => { el(c.id).value = cache[c.key] || ""; });
+  const { manejo, productos } = await Informes.manejoYProductosDeLote(visita.cliente, visita.finca, visita.fecha, lote);
+
+  CAMPOS_MANEJO.forEach((c) => { el(c.id).value = (manejo && manejo[c.key]) || ""; });
 
   el("lista-productos").innerHTML = "";
-  const productosCache = JSON.parse(localStorage.getItem("productosUltimos") || "[]");
-  if (productosCache.length > 0) {
-    productosCache.forEach((p) => agregarBloqueProducto("lista-productos", p));
+  if (productos.length > 0) {
+    productos.forEach((p) => agregarBloqueProducto("lista-productos", p));
   } else {
     agregarBloqueProducto("lista-productos");
   }
@@ -471,10 +554,8 @@ function onElegirLote(lote) {
 async function onIniciarMonitoreoLote() {
   manejoActual = {};
   CAMPOS_MANEJO.forEach((c) => { manejoActual[c.key] = el(c.id).value.trim(); });
-  localStorage.setItem("manejoAgronomicoUltimo", JSON.stringify(manejoActual));
 
   const productos = leerProductosFormulario("lista-productos");
-  localStorage.setItem("productosUltimos", JSON.stringify(productos));
 
   const itemsPendientes = await DB.listarItems();
   // Si ya se registro este mismo producto para este mismo lote/visita (p.ej. porque se volvio a
@@ -684,7 +765,7 @@ async function onTerminarLote() {
 
 async function onFinMuestreo() {
   if (!productividadModo) { marcarCampoInvalido(el("productividad-modo")); return; }
-  guardarCampoProductividadActual(); // guarda lo que este visible ahora mismo en pantalla
+  if (productividadModo === "general") guardarCampoProductividadGeneral(); // guarda lo visible ahora mismo (los de "por lotes" ya se guardan solos al escribir)
   if (!confirm("¿Seguro que quieres terminar la visita?")) return;
   await guardarProductividad();
   const items = await DB.listarItems();
@@ -981,11 +1062,8 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-iniciar-monitoreo").addEventListener("click", onIniciarMonitoreo);
 
   el("productividad-modo").addEventListener("change", onCambioModoProductividad);
-  el("productividad-lote-select").addEventListener("change", () => {
-    cargarCamposProductividad(el("productividad-lote-select").value);
-  });
-  ["pv-area", "pv-animales", "pv-dias", "pv-produccion"].forEach((id) => {
-    el(id).addEventListener("input", () => { recalcularProductividad(); guardarCampoProductividadActual(); });
+  ["pv-g-area", "pv-g-animales", "pv-g-dias", "pv-g-produccion"].forEach((id) => {
+    el(id).addEventListener("input", () => { recalcularProductividadGeneral(); guardarCampoProductividadGeneral(); });
   });
 
   el("btn-nuevo-lote").addEventListener("click", onAgregarLoteNuevo);
