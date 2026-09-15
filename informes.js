@@ -566,17 +566,26 @@ const Informes = {
       return orden != null && !Number.isNaN(Number(orden)) ? Number(orden) : Infinity;
     }
 
+    // Sufijo que indica con que equipo se aplica una dosis (usado tanto en Manejo como en Recomendaciones).
+    const UNIDAD_APLICACION_POR_TIPO = {
+      "Aerea (Dron)": "/Hectárea (Dron)",
+      "Terrestre (Estacionaria)": "/Caneca 200L (Estacionaria)",
+      "Terrestre (Bomba de espalda)": "/Bomba 20L (Bomba de espalda)",
+    };
+
     function manejoHtml(m, productos) {
       const filasM = [
         ["Tipo de fumigación", m.tipoFumigacion], ["Volumen de Mezcla/ha", m.litrosMezclaHa],
         ["Orden de mezcla correcto", m.ordenMezclaCorrecto], ["pH final de la mezcla", m.phFinalMezcla],
       ].filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "");
+      const sufijoDosis = UNIDAD_APLICACION_POR_TIPO[m.tipoFumigacion] || "";
       const productosLi = (productos || [])
         .slice()
         .sort((a, b) => ordenDeMezclaInforme(a.nombre) - ordenDeMezclaInforme(b.nombre))
         .map((p) => {
           const siglas = siglasFormulacion(p.formulacion);
-          return `<li><span class="manejo-etiqueta">${p.tipo || "Producto"}</span>${p.nombre}${siglas ? ` ${siglas}.` : "."}</li>`;
+          const dosis = p.dosis ? ` — ${p.dosis}${p.unidad || ""}${sufijoDosis}` : "";
+          return `<li><span class="manejo-etiqueta">${p.tipo || "Producto"}</span>${p.nombre}${siglas ? ` ${siglas}` : ""}${dosis}.</li>`;
         })
         .join("");
       if (filasM.length === 0 && !productosLi) return "";
@@ -689,11 +698,6 @@ const Informes = {
       "Terrestre (Estacionaria)": "Terrestre (Estacionaria)",
       "Terrestre (Bomba de espalda)": "Terrestre (Bomba de espalda)",
     };
-    const UNIDAD_APLICACION_POR_TIPO = {
-      "Aerea (Dron)": "/Hectárea (Dron)",
-      "Terrestre (Estacionaria)": "/Caneca 200L (Estacionaria)",
-      "Terrestre (Bomba de espalda)": "/Bomba 20L (Bomba de espalda)",
-    };
     function formatearDosis(p) {
       if (!p.dosis) return "";
       const sufijo = UNIDAD_APLICACION_POR_TIPO[p.tipoFumigacion] || "";
@@ -749,10 +753,8 @@ header h1{margin:0 0 4px;font-family:system-ui,-apple-system,"Segoe UI",Arial,sa
 .datos-grid div{background:var(--fondo-suave);border-radius:10px;padding:12px 18px;flex:1;min-width:180px;display:flex;align-items:center;gap:12px;}
 .datos-grid div .icono{width:34px;height:34px;min-width:34px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;}
 .datos-grid div .etiqueta{color:var(--gris);display:block;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px;}
-h2{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:15.5px;font-weight:800;letter-spacing:.3px;color:#fff;margin:30px 0 14px;padding:11px 18px;border-radius:6px;background:var(--principal);}
-h2.banner-azul{background:var(--acento);}
-h2.banner-amarillo{background:var(--amarillo);color:var(--principal-oscuro);}
-h2.banner-naranja{background:var(--naranja);}
+h2{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:19px;font-weight:800;letter-spacing:.4px;color:#fff;margin:34px 0 16px;padding:14px 20px;border-radius:4px;background:var(--principal-oscuro);}
+h2.banner-azul, h2.banner-amarillo, h2.banner-naranja{background:var(--principal-oscuro);color:#fff;}
 h3{font-size:15.5px;color:var(--texto);margin:16px 0 8px;font-weight:700;}
 table{width:100%;border-collapse:collapse;font-size:14.5px;margin-top:8px;}
 th,td{text-align:center;padding:9px 7px;border-bottom:1px solid var(--borde);}

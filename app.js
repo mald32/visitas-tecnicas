@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "33";
+const APP_VERSION = "34";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -928,6 +928,13 @@ async function onGenerarInforme() {
   if (!cliente) { marcarCampoInvalido(el("informe-cliente")); return; }
   if (!finca) { marcarCampoInvalido(el("informe-finca")); return; }
   if (!fecha) { marcarCampoInvalido(el("informe-fecha")); return; }
+
+  const hayProductosRecomendados = [...el("lista-productos-informe").querySelectorAll(".producto-bloque")]
+    .some((div) => div.querySelector(".p-nombre").value.trim());
+  if (hayProductosRecomendados) {
+    if (!el("informe-tipo-fumigacion").value) { marcarCampoInvalido(el("informe-tipo-fumigacion")); return; }
+    if (!el("informe-volumen-mezcla").value.trim()) { marcarCampoInvalido(el("informe-volumen-mezcla")); return; }
+  }
 
   const bloqueSinDosis = [...el("lista-productos-informe").querySelectorAll(".producto-bloque")]
     .find((div) => div.querySelector(".p-nombre").value.trim() && !div.querySelector(".p-dosis-reco").value.trim());
