@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "29";
+const APP_VERSION = "30";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -687,12 +687,27 @@ async function onVerDatos() {
         preview.style.height = preview.contentDocument.documentElement.scrollHeight + "px";
       } catch (e) { /* si por algo no se puede leer, se queda con la altura por defecto */ }
     };
+    await precargarRecomendacionesGuardadas(cliente, finca, fecha);
+
     el("datos-estado").textContent = "";
     el("informe-datos").hidden = false;
   } catch (e) {
     el("datos-estado").textContent = "No se pudieron cargar los datos: " + e.message;
   } finally {
     el("btn-ver-datos").disabled = false;
+  }
+}
+
+// Si esta finca ya tiene una recomendacion guardada para esta misma fecha exacta de visita, se
+// precarga en el formulario (para verla o volver a generar el informe). Si no hay nada guardado,
+// se deja un bloque en blanco como de costumbre.
+async function precargarRecomendacionesGuardadas(cliente, finca, fecha) {
+  const guardadas = await Informes.recomendacionesGuardadas(cliente, finca, fecha);
+  el("lista-productos-informe").innerHTML = "";
+  if (guardadas.length > 0) {
+    guardadas.forEach((p) => agregarBloqueProducto("lista-productos-informe", p));
+  } else {
+    agregarBloqueProducto("lista-productos-informe");
   }
 }
 
@@ -708,6 +723,26 @@ function productosRecomendadosOrdenados() {
   return leerProductosFormulario("lista-productos-informe")
     .slice()
     .sort((a, b) => ordenDeMezcla(a.nombre) - ordenDeMezcla(b.nombre));
+}
+
+// Guarda en la cola (para subir a Productos_Recomendados) los productos recomendados en esta
+// visita, sin duplicar si ya estaba exactamente esa misma fila guardada de antes.
+async function guardarProductosRecomendados(cliente, finca, fecha, productos) {
+  const itemsPendientes = await DB.listarItems();
+  const yaGuardado = (p) => itemsPendientes.some((it) =>
+    it.tipo === "producto_recomendado" &&
+    it.datos.cliente === cliente && it.datos.finca === finca && it.datos.fecha === fecha &&
+    it.datos.producto.toLowerCase() === p.nombre.toLowerCase() &&
+    (it.datos.formulacion || "").toLowerCase() === (p.formulacion || "").toLowerCase() &&
+    String(it.datos.dosis) === String(p.dosis)
+  );
+  for (const p of productos) {
+    if (!yaGuardado(p)) {
+      await DB.agregarItem("producto_recomendado", {
+        cliente, finca, fecha, producto: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad, dosis: p.dosis,
+      });
+    }
+  }
 }
 
 async function onGenerarInforme() {
@@ -737,6 +772,7 @@ async function onGenerarInforme() {
     const volumenMezcla = el("informe-volumen-mezcla").value.trim();
     const productos = productosRecomendadosOrdenados().map((p) => ({ ...p, tipoFumigacion }));
     const notas = el("informe-recomendaciones").value.trim();
+    await guardarProductosRecomendados(cliente, finca, fecha, productos);
     const html = await Informes.generar(cliente, finca, fecha, productos, notas, { tipo: tipoFumigacion, volumenMezcla });
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
@@ -786,6 +822,11 @@ async function sincronizar() {
         } else if (it.tipo === "producto_aplicado") {
           await Graph.agregarProductoAplicado([
             it.datos.cliente, it.datos.finca, it.datos.fecha, it.datos.lote,
+            it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
+          ]);
+        } else if (it.tipo === "producto_recomendado") {
+          await Graph.agregarProductoRecomendado([
+            it.datos.cliente, it.datos.finca, it.datos.fecha, "",
             it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
           ]);
         }

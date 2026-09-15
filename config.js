@@ -8,6 +8,7 @@ const CONFIG = {
   RUTA_ARCHIVO: "Documents/BASE_DE_DATOS_v2.xlsx",
   TABLE_NAME: "TablaBaseDatos",
   TABLA_PRODUCTOS_APLICADOS: "Productos_Aplicados",
+  TABLA_PRODUCTOS_RECOMENDADOS: "Productos_Recomendados",
   TABLA_PRODUCTOS: "Tabla2",
   HOJA_CONFIG: "Configuracion",
   HOJA_CLIENTES: "Clientes_Fincas",

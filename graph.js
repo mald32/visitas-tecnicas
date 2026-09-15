@@ -159,4 +159,12 @@ const Graph = {
       return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [valores] }) });
     });
   },
+
+  // Agrega una fila a la tabla Productos_Recomendados (un producto recomendado en el informe de una visita).
+  async agregarProductoRecomendado(valores) {
+    return this.conReintento((id) => {
+      const path = `/me/drive/items/${id}/workbook/tables('${CONFIG.TABLA_PRODUCTOS_RECOMENDADOS}')/rows/add`;
+      return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [valores] }) });
+    });
+  },
 };

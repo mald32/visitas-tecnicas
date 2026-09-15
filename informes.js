@@ -12,6 +12,10 @@ const COL = {
 // Columnas de la tabla Productos_Aplicados (un producto usado en un lote/visita, una fila por producto).
 const COL_PA = { cliente: 0, finca: 1, fecha: 2, lote: 3, producto: 4, tipo: 5, formulacion: 6, unidad: 7, dosis: 8 };
 
+// Columnas de la tabla Productos_Recomendados (mismos encabezados que Productos_Aplicados; el
+// campo Lote no aplica a una recomendacion y queda vacio).
+const COL_PR = { cliente: 0, finca: 1, fecha: 2, lote: 3, producto: 4, tipo: 5, formulacion: 6, unidad: 7, dosis: 8 };
+
 // El valor puede ser el indice de columna, o una funcion(fila) para variables calculadas (ej. Pasto Sano).
 const VARIABLES_HISTORIAL = {
   "Individuos Adultos de Collaria": COL.adultos,
@@ -171,6 +175,48 @@ const Informes = {
     return this._productosCache;
   },
 
+  // Igual que filasProductos(), pero para la tabla Productos_Recomendados (lo que se recomendo
+  // en el informe de una visita, para poder recuperarlo despues).
+  async filasRecomendados() {
+    if (!this._recomendadosCache) {
+      let crudas = null;
+      if (navigator.onLine) {
+        try {
+          crudas = await Graph.leerTabla(CONFIG.TABLA_PRODUCTOS_RECOMENDADOS);
+          await DB.guardarCache("productosRecomendadosBase", crudas);
+        } catch (e) {
+          console.warn("No se pudo leer Productos_Recomendados, usando caché local:", e.message);
+        }
+      }
+      if (!crudas) crudas = (await DB.leerCache("productosRecomendadosBase")) || [];
+
+      const pendientes = (await DB.listarItems()).filter((it) => it.tipo === "producto_recomendado" && it.estado === "pendiente");
+      const filasPendientes = pendientes.map((it) => [
+        it.datos.cliente, it.datos.finca, it.datos.fecha, "",
+        it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
+      ]);
+
+      this._recomendadosCache = [...crudas, ...filasPendientes].map((f) => {
+        const copia = [...f];
+        copia[COL_PR.fecha] = normalizarFecha(copia[COL_PR.fecha]);
+        return copia;
+      });
+    }
+    return this._recomendadosCache;
+  },
+
+  // Productos recomendados guardados para una visita exacta (mismo cliente+finca+fecha), para
+  // poder ver o regenerar el mismo informe. Vacio si nunca se genero una recomendacion ahi.
+  async recomendacionesGuardadas(cliente, finca, fecha) {
+    const filas = await this.filasRecomendados();
+    return filas
+      .filter((f) => f[COL_PR.cliente] === cliente && f[COL_PR.finca] === finca && f[COL_PR.fecha] === fecha)
+      .map((f) => ({
+        nombre: f[COL_PR.producto], tipo: f[COL_PR.tipo], formulacion: f[COL_PR.formulacion],
+        unidad: f[COL_PR.unidad], dosis: f[COL_PR.dosis],
+      }));
+  },
+
   formatoFechaVisible,
 
   async umbrales() {
@@ -195,6 +241,7 @@ const Informes = {
     this._filasCache = null;
     this._umbralesCache = null;
     this._productosCache = null;
+    this._recomendadosCache = null;
   },
 
   async fechasDisponibles(cliente, finca) {
