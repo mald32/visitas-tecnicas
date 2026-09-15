@@ -208,6 +208,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
     const productos = [{ nombre: "ORTHENE", tipo: "INSECTICIDA", unidad: "g", dosis: "200", tipoFumigacion: "Terrestre (Estacionaria)" }];
     const html = Informes.generarHtml(D, productos, "", { tipo: "Terrestre (Estacionaria)", volumenMezcla: "200" });
+    contiene(html, "200g/Caneca 200L (500g/Caneca 500L - 1000g/Caneca 1000L)", "con estacionaria se agregan canecas de 500 y 1000 L");
     contiene(html, "200g/Caneca 200L", "debería mostrar la dosis por caneca");
     noContiene(html, "200L (Estacionaria)", "el método ya está arriba: no se repite en cada producto");
     contiene(html, "Volumen de mezcla/hectárea");
@@ -422,6 +423,12 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     igual(r.carga, null);
     igual(r.areaDiaria, null);
     igual(r.productividad, null);
+  });
+
+  prueba("con estacionaria calcula canecas de 200, 500 y 1000 L por hectárea", () => {
+    igual(app.textoCanecas("Terrestre (Estacionaria)", "400"), "Canecas de 200L/ha: 2 · Canecas de 500L/ha: 0.8 · Canecas de 1000L/ha: 0.4");
+    igual(app.textoCanecas("Aerea (Dron)", "400"), "", "con dron no se muestran canecas");
+    igual(app.textoCanecas("Terrestre (Estacionaria)", ""), "", "sin volumen no se muestra nada");
   });
 
   // -------------------------------------------------------------------------

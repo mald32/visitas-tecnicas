@@ -859,10 +859,19 @@ const Informes = {
       "Terrestre (Estacionaria)": "Terrestre (Estacionaria)",
       "Terrestre (Bomba de espalda)": "Terrestre (Bomba de espalda)",
     };
+    // Con estacionaria la dosis se da por caneca de 200 L; se agrega la equivalencia para canecas
+    // de 500 y 1000 L (2,5 y 5 veces), que también se usan en campo.
     function formatearDosis(p) {
       if (!p.dosis) return "";
       const sufijo = UNIDAD_APLICACION_POR_TIPO[p.tipoFumigacion] || "";
-      return `${p.dosis}${p.unidad || ""}${sufijo}`;
+      const unidad = p.unidad || "";
+      let texto = `${p.dosis}${unidad}${sufijo}`;
+      const n = Number(String(p.dosis).trim().replace(",", "."));
+      if (p.tipoFumigacion === "Terrestre (Estacionaria)" && Number.isFinite(n) && n > 0) {
+        const redondear = (x) => String(Number(x.toFixed(2)));
+        texto += ` (${redondear(n * 2.5)}${unidad}/Caneca 500L - ${redondear(n * 5)}${unidad}/Caneca 1000L)`;
+      }
+      return texto;
     }
 
     const tipoFumigacionTexto = TIPOS_FUMIGACION_TEXTO[manejoFumigacion.tipo] || "";

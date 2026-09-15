@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "42";
+const APP_VERSION = "43";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -28,6 +28,8 @@ let productividadCargada = "";
 // copiarlo al siguiente lote aunque el primero todavía no tenga puntos.
 let manejoModo = "general"; // "general" (igual para toda la finca) o "lotes"
 let manejoDatos = {}; // {"general": {campos, productos}, "1": {...}, "2": {...}}
+let manejoPropios = new Set(); // lotes (del 2 en adelante) con manejo propio; los demás copian el del Lote 1
+let productividadPropios = new Set(); // igual, para productividad por lotes
 let manejoRenderizado = false; // si el formulario de manejo en pantalla corresponde a la visita abierta
 // Pantalla del flujo de captura en la que va la visita (para volver ahí desde Informes o al recargar).
 let pantallaFlujo = null;
@@ -197,7 +199,7 @@ function guardarBorrador() {
     }
   }
   borradores[claveDeVisita(visita)] = {
-    visita, pantalla: pantallaFlujo || "pantalla-lotes", loteActual, manejoActual, manejo: { modo: manejoModo, datos: manejoDatos },
+    visita, pantalla: pantallaFlujo || "pantalla-lotes", loteActual, manejoActual, manejo: { modo: manejoModo, datos: manejoDatos, propios: [...manejoPropios] },
     capturandoLote, puntoMostrado, editandoPuntoId, sinGuardar, actualizado: new Date().toISOString(),
   };
   return escribirBorradores();
@@ -234,6 +236,7 @@ async function restaurarBorrador(b, exacta) {
   await DB.guardarCache("visitaActiva", claveDeVisita(visita));
 
   el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
+  cerrarSecciones();
   await precargarProductividad();
   await precargarManejo(b.manejo);
   // Visitas guardadas por versiones anteriores (manejo escrito lote por lote en otra pantalla).
@@ -284,6 +287,8 @@ async function salirDeVisita() {
   loteActual = null;
   pantallaFlujo = null;
   manejoDatos = {};
+  manejoPropios = new Set();
+  productividadPropios = new Set();
   manejoRenderizado = false;
   sinGuardar = { manejo: {}, punto: {}, obs: {} };
   await DB.guardarCache("visitaActiva", null);
@@ -321,6 +326,8 @@ async function onBorrarVisita() {
   loteActual = null;
   pantallaFlujo = null;
   manejoDatos = {};
+  manejoPropios = new Set();
+  productividadPropios = new Set();
   manejoRenderizado = false;
   sinGuardar = { manejo: {}, punto: {}, obs: {} };
   await mostrarInicioVisitas();
@@ -328,6 +335,32 @@ async function onBorrarVisita() {
   alert(enExcel
     ? "Visita borrada. Lo que ya estaba en tu Excel se borrará allá la próxima vez que sincronices."
     : "Visita borrada.");
+}
+
+function cerrarSecciones() {
+  document.querySelectorAll("#pantalla-lotes .seccion-titulo").forEach((btn) => {
+    btn.setAttribute("aria-expanded", "false");
+    btn.nextElementSibling.hidden = true;
+  });
+}
+
+// Con un solo lote no tiene sentido preguntar "en general o por lotes": se usa "en general".
+function actualizarSelectoresModo() {
+  const unico = !visita || visita.numeroLotes <= 1;
+  el("productividad-modo-caja").hidden = unico;
+  el("manejo-modo-caja").hidden = unico;
+  if (!unico) return;
+  if (productividadModo !== "general") {
+    if (productividadModo === "lotes" && !tieneDatosProductividad(productividadDatos.general) && productividadDatos["1"]) {
+      productividadDatos.general = copiar(productividadDatos["1"]);
+    }
+    productividadModo = "general";
+    el("productividad-modo").value = "general";
+  }
+  if (manejoModo !== "general") {
+    if (manejoVacio(manejoDatos.general)) manejoDatos.general = copiar(manejoDeLote(1));
+    manejoModo = "general";
+  }
 }
 
 async function mostrarInicioVisitas() {
@@ -574,11 +607,14 @@ async function abrirVisita(datos) {
   visita = datos;
   loteActual = null;
   manejoDatos = {};
+  manejoPropios = new Set();
+  productividadPropios = new Set();
   manejoRenderizado = false;
   sinGuardar = { manejo: {}, punto: {}, obs: {} };
   await DB.guardarCache("visitaActiva", claveDeVisita(visita));
   mostrarPantalla("pantalla-lotes");
   el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
+  cerrarSecciones();
   await precargarProductividad();
   await precargarManejo(null);
   renderLotesAMuestrear();
@@ -594,7 +630,8 @@ function botonAcordeon(texto, detalle = "") {
 function activarAcordeones(contenedor) {
   contenedor.querySelectorAll(".acordeon-titulo").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const cuerpo = btn.nextElementSibling;
+      const bloque = btn.closest(".acordeon-lote, .productividad-lote-bloque");
+      const cuerpo = bloque.querySelector(".acordeon-cuerpo, .productividad-lote-campos");
       cuerpo.hidden = !cuerpo.hidden;
       btn.setAttribute("aria-expanded", String(!cuerpo.hidden));
     });
@@ -618,15 +655,24 @@ async function renderLotesAMuestrear() {
     const sub = deVisita.filter((f) => String(f[B.lote]) === String(i));
     const potrero = sub.map((f) => f[B.potrero]).find(Boolean);
     const detalle = sub.length ? `${sub.length} punto(s)${potrero ? ` · Potrero ${esc(potrero)}` : ""}` : "sin puntos";
-    html += `<div class="acordeon-lote">${botonAcordeon(`Lote ${i}`, detalle)}<div class="acordeon-cuerpo" hidden>
-      <button type="button" class="boton-lote" data-lote="${i}">${sub.length ? "Continuar muestreo" : "Iniciar muestreo"}</button>
-    </div></div>`;
+    html += `<div class="acordeon-lote">
+      <div class="acordeon-cabeza">
+        <button type="button" class="btn-papelera btn-borrar-lote" data-lote="${i}" title="Borrar el Lote ${i}" aria-label="Borrar el Lote ${i}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12H7L6 9zm4 2v8h2v-8h-2zm4 0v8h2v-8h-2z"/></svg></button>
+        ${botonAcordeon(`Lote ${i}`, detalle)}
+      </div>
+      <div class="acordeon-cuerpo" hidden>
+        <button type="button" class="boton-lote" data-lote="${i}">${sub.length ? "Continuar muestreo" : "Iniciar muestreo"}</button>
+      </div>
+    </div>`;
   }
   const contenedor = el("botones-lotes");
   contenedor.innerHTML = html;
   activarAcordeones(contenedor);
   contenedor.querySelectorAll(".boton-lote").forEach((btn) => {
     btn.addEventListener("click", () => onElegirLote(Number(btn.dataset.lote)));
+  });
+  contenedor.querySelectorAll(".btn-borrar-lote").forEach((btn) => {
+    btn.addEventListener("click", () => onBorrarLote(Number(btn.dataset.lote)));
   });
 }
 
@@ -640,8 +686,9 @@ async function onAgregarLoteNuevo() {
     cliente: visita.cliente, finca: visita.finca, numeroLotes: visita.numeroLotes,
   });
   renderLotesAMuestrear();
-  if (productividadModo === "lotes") renderProductividadLotes();
-  if (manejoModo === "lotes") renderManejo();
+  actualizarSelectoresModo();
+  actualizarVistaProductividad();
+  renderManejo();
   await guardarBorrador();
 }
 
@@ -682,6 +729,14 @@ function cargarCamposProductividadGeneral() {
   recalcularProductividadGeneral();
 }
 
+// Datos que valen para un lote en "por lotes": los suyos si los escribió, o si no los del Lote 1.
+function productividadDeLote(lote) {
+  const clave = String(lote);
+  return clave === "1" || productividadPropios.has(clave) ? productividadDatos[clave] : productividadDatos["1"];
+}
+
+const AVISO_COPIA_LOTE_1 = "Igual al Lote 1 mientras no lo cambies.";
+
 // "Por lotes": cada lote es un bloque que se despliega/oculta al tocarlo (no un desplegable).
 function renderProductividadLotes() {
   let html = "";
@@ -689,6 +744,7 @@ function renderProductividadLotes() {
     html += `<div class="productividad-lote-bloque">
       ${botonAcordeon(`Lote ${i}`)}
       <div class="productividad-lote-campos" data-lote="${i}" hidden>
+        <p class="aviso-suave pv-heredado" data-lote="${i}" hidden>${AVISO_COPIA_LOTE_1}</p>
         <div class="fila">
           <label>Área del lote (hectáreas) <input type="number" step="any" class="pv-area" data-lote="${i}"></label>
           <label>Animales en ordeño <input type="number" step="any" class="pv-animales" data-lote="${i}"></label>
@@ -707,28 +763,38 @@ function renderProductividadLotes() {
     </div>`;
   }
   el("productividad-lotes-lista").innerHTML = html;
-
-  const campo = (clase, lote) => el("productividad-lotes-lista").querySelector(`.${clase}[data-lote="${lote}"]`);
-
-  for (let i = 1; i <= visita.numeroLotes; i++) {
-    const d = productividadDatos[String(i)];
-    if (d) {
-      campo("pv-area", i).value = d.area || "";
-      campo("pv-animales", i).value = d.animales || "";
-      campo("pv-dias", i).value = d.dias || "";
-      campo("pv-produccion", i).value = d.produccion || "";
-    }
-    recalcularProductividadLote(i);
-  }
+  for (let i = 1; i <= visita.numeroLotes; i++) llenarProductividadLote(i);
 
   activarAcordeones(el("productividad-lotes-lista"));
   el("productividad-lotes-lista").querySelectorAll(".pv-area, .pv-animales, .pv-dias, .pv-produccion").forEach((input) => {
     input.addEventListener("input", () => {
-      recalcularProductividadLote(input.dataset.lote);
-      guardarCampoProductividadLote(input.dataset.lote);
+      const lote = input.dataset.lote;
+      if (lote !== "1") productividadPropios.add(lote);
+      guardarCampoProductividadLote(lote);
+      recalcularProductividadLote(lote);
+      // Lo escrito en el Lote 1 se copia de una vez en los lotes que no tienen datos propios.
+      if (lote === "1") {
+        for (let i = 2; i <= visita.numeroLotes; i++) if (!productividadPropios.has(String(i))) llenarProductividadLote(i);
+      } else {
+        llenarProductividadLote(lote, true);
+      }
       guardarProductividadVisita();
     });
   });
+}
+
+function llenarProductividadLote(lote, soloAviso = false) {
+  const lista = el("productividad-lotes-lista");
+  const campo = (clase) => lista.querySelector(`.${clase}[data-lote="${lote}"]`);
+  const heredado = String(lote) !== "1" && !productividadPropios.has(String(lote));
+  campo("pv-heredado").hidden = !(heredado && tieneDatosProductividad(productividadDatos["1"]));
+  if (soloAviso) return;
+  const d = productividadDeLote(lote) || {};
+  campo("pv-area").value = d.area ?? "";
+  campo("pv-animales").value = d.animales ?? "";
+  campo("pv-dias").value = d.dias ?? "";
+  campo("pv-produccion").value = d.produccion ?? "";
+  recalcularProductividadLote(lote);
 }
 
 function recalcularProductividadLote(lote) {
@@ -763,7 +829,14 @@ function actualizarVistaProductividad() {
 }
 
 function onCambioModoProductividad() {
-  productividadModo = el("productividad-modo").value;
+  const nuevo = el("productividad-modo").value;
+  if (nuevo === "lotes" && !tieneDatosProductividad(productividadDatos["1"]) && tieneDatosProductividad(productividadDatos.general)) {
+    productividadDatos["1"] = copiar(productividadDatos.general);
+  }
+  if (nuevo === "general" && !tieneDatosProductividad(productividadDatos.general) && tieneDatosProductividad(productividadDatos["1"])) {
+    productividadDatos.general = copiar(productividadDatos["1"]);
+  }
+  productividadModo = nuevo;
   actualizarVistaProductividad();
   guardarProductividadVisita();
 }
@@ -787,6 +860,12 @@ async function precargarProductividad() {
     const clave = g.lote === "" || g.lote == null ? "general" : String(g.lote);
     productividadDatos[clave] = { area: g.area ?? "", animales: g.animales ?? "", dias: g.dias ?? "", produccion: g.produccion ?? "" };
   });
+  // Un lote cuenta como "con datos propios" solo si lo guardado es distinto a lo del Lote 1; si es
+  // igual, sigue copiando lo que se escriba en el Lote 1.
+  const firma = (d) => (d ? JSON.stringify(["area", "animales", "dias", "produccion"].map((k) => (d[k] == null ? "" : String(d[k])))) : "");
+  productividadPropios = new Set(Object.keys(productividadDatos)
+    .filter((k) => k !== "general" && k !== "1" && firma(productividadDatos[k]) !== firma(productividadDatos["1"])));
+
   if (ultimoGuardado) {
     productividadModo = ultimoGuardado.datos.modo || "";
   } else if (guardadas.length === 0) {
@@ -795,6 +874,7 @@ async function precargarProductividad() {
     productividadModo = guardadas.some((g) => g.lote === "" || g.lote == null) ? "general" : "lotes";
   }
   el("productividad-modo").value = productividadModo;
+  actualizarSelectoresModo();
   actualizarVistaProductividad();
   productividadCargada = firmaProductividad();
 }
@@ -809,7 +889,7 @@ function filasProductividadActuales() {
   if (productividadModo === "lotes") {
     const filas = [];
     for (let i = 1; i <= visita.numeroLotes; i++) {
-      const d = productividadDatos[String(i)];
+      const d = productividadDeLote(i);
       if (tieneDatosProductividad(d)) filas.push({ lote: i, ...camposProductividad(d) });
     }
     return filas;
@@ -856,7 +936,26 @@ const firmaManejo = (m) => JSON.stringify({
 });
 
 function manejoDeLote(lote) {
-  return (manejoModo === "general" ? manejoDatos.general : manejoDatos[String(lote)]) || manejoEnBlanco();
+  if (manejoModo === "general") return manejoDatos.general || manejoEnBlanco();
+  const clave = String(lote);
+  const propio = clave === "1" || manejoPropios.has(clave);
+  return (propio ? manejoDatos[clave] : manejoDatos["1"]) || manejoEnBlanco();
+}
+
+const TIPO_ESTACIONARIA = "Terrestre (Estacionaria)";
+const redondear2 = (x) => String(Number(x.toFixed(2)));
+
+// Con fumigación estacionaria, cuántas canecas de 200, 500 y 1000 L se necesitan por hectárea.
+function textoCanecas(tipo, volumen) {
+  const v = Number(String(volumen == null ? "" : volumen).trim().replace(",", "."));
+  if (tipo !== TIPO_ESTACIONARIA || !(v > 0)) return "";
+  return `Canecas de 200L/ha: ${redondear2(v / 200)} · Canecas de 500L/ha: ${redondear2(v / 500)} · Canecas de 1000L/ha: ${redondear2(v / 1000)}`;
+}
+
+function mostrarCanecas(elemento, tipo, volumen) {
+  const texto = textoCanecas(tipo, volumen);
+  elemento.textContent = texto;
+  elemento.hidden = !texto;
 }
 
 function htmlFormularioManejo(clave) {
@@ -864,9 +963,10 @@ function htmlFormularioManejo(clave) {
   return `<div class="manejo-form" data-clave="${clave}">
     <p class="aviso-suave manejo-copiado" hidden></p>
     <label>Tipo de fumigación
-      <select class="m-campo" data-key="tipoFumigacion">${opciones([["", "-"], ["Aerea (Dron)", "Aérea (Dron)"], ["Terrestre (Estacionaria)", "Terrestre (Estacionaria)"], ["Terrestre (Bomba de espalda)", "Terrestre (Bomba de espalda)"]])}</select>
+      <select class="m-campo" data-key="tipoFumigacion">${opciones([["", "-"], ["Aerea (Dron)", "Aérea (Dron)"], [TIPO_ESTACIONARIA, "Terrestre (Estacionaria)"], ["Terrestre (Bomba de espalda)", "Terrestre (Bomba de espalda)"]])}</select>
     </label>
     <label>Volumen de Mezcla/ha <input type="number" step="any" class="m-campo" data-key="litrosMezclaHa"></label>
+    <p class="canecas" hidden></p>
     <h3>Productos aplicados</h3>
     <p class="hint">Agrega uno por uno los productos usados (acondicionador, insecticida, fungicida, fertilizante foliar, coadyuvante, etc.).</p>
     <div id="lista-productos-${clave}"></div>
@@ -878,8 +978,17 @@ function htmlFormularioManejo(clave) {
   </div>`;
 }
 
-function llenarFormularioManejo(contenedor, clave, m, aviso) {
-  const form = contenedor.querySelector(`.manejo-form[data-clave="${clave}"]`);
+function formularioManejo(clave) {
+  return document.querySelector(`#pantalla-lotes .manejo-form[data-clave="${clave}"]`);
+}
+
+function actualizarCanecasManejo(form) {
+  const valor = (k) => form.querySelector(`.m-campo[data-key="${k}"]`).value;
+  mostrarCanecas(form.querySelector(".canecas"), valor("tipoFumigacion"), valor("litrosMezclaHa"));
+}
+
+function llenarFormularioManejo(clave, m, aviso) {
+  const form = formularioManejo(clave);
   form.querySelectorAll(".m-campo").forEach((c) => {
     const valor = m.campos && m.campos[c.dataset.key];
     c.value = valor == null ? "" : valor;
@@ -889,23 +998,45 @@ function llenarFormularioManejo(contenedor, clave, m, aviso) {
   (m.productos && m.productos.length ? m.productos : [{}]).forEach((p) => agregarBloqueProducto(idLista, p));
   form.querySelector(".manejo-copiado").textContent = aviso || "";
   form.querySelector(".manejo-copiado").hidden = !aviso;
-  form.querySelector(".btn-agregar-producto-manejo").addEventListener("click", () => {
-    agregarBloqueProducto(idLista);
-    guardarBorrador();
-  });
+  actualizarCanecasManejo(form);
 }
 
-// Pasa lo escrito en los formularios de manejo a manejoDatos (se llama antes de guardar o cambiar de modo).
+// Pasa lo escrito en los formularios de manejo a manejoDatos (se llama antes de guardar o cambiar
+// de modo). Los lotes que solo copian el Lote 1 no guardan datos propios.
 function leerManejoDePantalla() {
   if (!manejoRenderizado) return;
   document.querySelectorAll("#pantalla-lotes .manejo-form").forEach((form) => {
+    const clave = form.dataset.clave;
+    if (clave !== "general" && clave !== "1" && !manejoPropios.has(clave)) return;
     const campos = {};
     form.querySelectorAll(".m-campo").forEach((c) => { campos[c.dataset.key] = c.value; });
-    manejoDatos[form.dataset.clave] = { campos, productos: leerBloquesProductoCrudos(`lista-productos-${form.dataset.clave}`) };
+    manejoDatos[clave] = { campos, productos: leerBloquesProductoCrudos(`lista-productos-${clave}`) };
   });
 }
 
+// Algo cambió en el formulario de manejo "clave": un lote editado deja de copiar el Lote 1, y lo que
+// se escriba en el Lote 1 se copia de inmediato en los lotes que siguen copiándolo.
+function onEditarManejo(clave, evento) {
+  const form = formularioManejo(clave);
+  if (form) actualizarCanecasManejo(form);
+  if (manejoModo !== "lotes" || clave === "general") return;
+  if (clave !== "1") {
+    if (!manejoPropios.has(clave)) {
+      manejoPropios.add(clave);
+      form.querySelector(".manejo-copiado").hidden = true;
+    }
+    return;
+  }
+  leerManejoDePantalla();
+  for (let i = 2; i <= visita.numeroLotes; i++) {
+    if (!manejoPropios.has(String(i))) llenarFormularioManejo(String(i), manejoDatos["1"] || manejoEnBlanco(), avisoCopiaManejo());
+  }
+}
+
+const avisoCopiaManejo = () => (manejoVacio(manejoDatos["1"]) ? "" : AVISO_COPIA_LOTE_1);
+
 function renderManejo() {
+  actualizarSelectoresModo();
   el("manejo-modo").value = manejoModo;
   const general = el("manejo-general");
   const lista = el("manejo-lotes-lista");
@@ -914,46 +1045,43 @@ function renderManejo() {
   general.innerHTML = "";
   lista.innerHTML = "";
 
+  const claves = [];
   if (manejoModo === "general") {
     general.innerHTML = htmlFormularioManejo("general");
-    llenarFormularioManejo(general, "general", manejoDatos.general || manejoEnBlanco());
+    claves.push("general");
   } else {
     let html = "";
     for (let i = 1; i <= visita.numeroLotes; i++) {
       html += `<div class="acordeon-lote">${botonAcordeon(`Lote ${i}`)}<div class="acordeon-cuerpo" hidden>${htmlFormularioManejo(String(i))}</div></div>`;
+      claves.push(String(i));
     }
     lista.innerHTML = html;
-    for (let i = 1; i <= visita.numeroLotes; i++) {
-      let aviso = "";
-      // Un lote sin nada escrito arranca con el manejo de otro lote (el Lote 1 primero) o con el general:
-      // casi siempre se maneja igual toda la finca.
-      if (!manejoDatos[String(i)]) {
-        let fuente = null;
-        for (let j = 1; j <= visita.numeroLotes; j++) {
-          if (j !== i && !manejoVacio(manejoDatos[String(j)])) { fuente = j; break; }
-        }
-        if (fuente) {
-          manejoDatos[String(i)] = copiar(manejoDatos[String(fuente)]);
-          aviso = `Se copió el manejo del Lote ${fuente}. Si este lote se manejó distinto, cámbialo aquí.`;
-        } else if (!manejoVacio(manejoDatos.general)) {
-          manejoDatos[String(i)] = copiar(manejoDatos.general);
-          aviso = "Se copió el manejo general. Si este lote se manejó distinto, cámbialo aquí.";
-        }
-      }
-      llenarFormularioManejo(lista, String(i), manejoDatos[String(i)] || manejoEnBlanco(), aviso);
-    }
     activarAcordeones(lista);
   }
+
+  claves.forEach((clave) => {
+    const form = formularioManejo(clave);
+    const heredado = clave !== "general" && clave !== "1" && !manejoPropios.has(clave);
+    llenarFormularioManejo(clave, manejoDeLote(clave === "general" ? 1 : Number(clave)), heredado ? avisoCopiaManejo() : "");
+    form.querySelector(".btn-agregar-producto-manejo").addEventListener("click", () => {
+      agregarBloqueProducto(`lista-productos-${clave}`);
+      onEditarManejo(clave);
+      guardarBorrador();
+    });
+    ["input", "change"].forEach((tipo) => form.addEventListener(tipo, () => onEditarManejo(clave)));
+    form.addEventListener("click", (e) => { if (e.target.closest(".btn-quitar-producto")) onEditarManejo(clave); });
+  });
   manejoRenderizado = true;
 }
 
 function onCambioModoManejo() {
   leerManejoDePantalla();
   const nuevo = el("manejo-modo").value;
-  if (nuevo === "general" && manejoVacio(manejoDatos.general)) {
-    for (let i = 1; i <= visita.numeroLotes; i++) {
-      if (!manejoVacio(manejoDatos[String(i)])) { manejoDatos.general = copiar(manejoDatos[String(i)]); break; }
-    }
+  if (nuevo === "general" && manejoVacio(manejoDatos.general) && !manejoVacio(manejoDatos["1"])) {
+    manejoDatos.general = copiar(manejoDatos["1"]);
+  }
+  if (nuevo === "lotes" && manejoVacio(manejoDatos["1"]) && !manejoVacio(manejoDatos.general)) {
+    manejoDatos["1"] = copiar(manejoDatos.general);
   }
   manejoModo = nuevo;
   renderManejo();
@@ -967,6 +1095,7 @@ async function precargarManejo(guardado) {
   if (guardado && guardado.modo) {
     manejoModo = guardado.modo;
     manejoDatos = guardado.datos || {};
+    manejoPropios = new Set(guardado.propios || Object.keys(manejoDatos).filter((k) => k !== "general" && k !== "1"));
   } else {
     manejoDatos = {};
     const conDatos = [];
@@ -990,6 +1119,10 @@ async function precargarManejo(guardado) {
     } else {
       manejoModo = "lotes";
     }
+    // Solo tiene manejo propio el lote cuyo manejo registrado es distinto al del Lote 1.
+    const firmaLote1 = manejoDatos["1"] ? firmaManejo(manejoDatos["1"]) : null;
+    manejoPropios = new Set(Object.keys(manejoDatos)
+      .filter((k) => k !== "general" && k !== "1" && firmaManejo(manejoDatos[k]) !== firmaLote1));
   }
   renderManejo();
 }
@@ -1105,12 +1238,11 @@ async function onElegirLote(lote) {
   }
 }
 
-// Borra el lote que se está muestreando con todo lo suyo (puntos, productos aplicados, observaciones
+// Borra un lote (papelera a la izquierda de su nombre en "Lotes a muestrear") con todo lo suyo (puntos, productos aplicados, observaciones
 // y productividad del lote). Lo que ya estaba en el Excel se borra allá en la próxima sincronización.
-async function onBorrarLote() {
-  if (!visita || loteActual == null) return;
+async function onBorrarLote(lote) {
+  if (!visita || !lote) return;
   const v = visita;
-  const lote = loteActual;
   if (!confirm(`¿Borrar el Lote ${lote} de esta visita?\n\nSe borran sus puntos, productos aplicados, observaciones y productividad del lote, también del Excel. No se puede deshacer.`)) return;
 
   const TIPOS_DEL_LOTE = ["punto", "producto_aplicado", "eliminar_producto_aplicado", "observacion_lote"];
@@ -1131,24 +1263,26 @@ async function onBorrarLote() {
   for (const it of delLote) await DB.eliminarItem(it.id);
   if (enExcel) await DB.agregarItem("eliminar_lote", { cliente: v.cliente, finca: v.finca, fecha: v.fecha, lote });
 
+  leerManejoDePantalla();
   delete manejoDatos[String(lote)];
+  manejoPropios.delete(String(lote));
+  productividadPropios.delete(String(lote));
   delete sinGuardar.punto[String(lote)];
   delete sinGuardar.obs[String(lote)];
   if (lote === v.numeroLotes && v.numeroLotes > 1) v.numeroLotes -= 1;
-  capturandoLote = false;
-  editandoPuntoId = null;
-  loteActual = null;
-  el("form-punto").reset();
-  mostrarCajaObservacionesLote(false);
-
-  if (productividadDatos[String(lote)]) {
-    delete productividadDatos[String(lote)];
-    if (productividadModo === "lotes") actualizarVistaProductividad();
-    await guardarProductividadVisita();
-  } else if (productividadModo === "lotes") {
-    actualizarVistaProductividad();
+  if (String(loteActual) === String(lote)) {
+    capturandoLote = false;
+    editandoPuntoId = null;
+    loteActual = null;
+    el("form-punto").reset();
+    mostrarCajaObservacionesLote(false);
   }
-  if (manejoModo === "lotes") renderManejo();
+
+  delete productividadDatos[String(lote)];
+  actualizarSelectoresModo();
+  actualizarVistaProductividad();
+  await guardarProductividadVisita();
+  renderManejo();
 
   await renderLotesAMuestrear();
   mostrarPantalla("pantalla-lotes");
@@ -1368,7 +1502,13 @@ async function onFinalizarLote() {
 }
 
 async function onFinMuestreo() {
-  if (!productividadModo) { marcarCampoInvalido(el("productividad-modo")); return; }
+  if (!productividadModo) {
+    const caja = el("productividad-modo").closest(".seccion");
+    caja.querySelector(".seccion-titulo").setAttribute("aria-expanded", "true");
+    caja.querySelector(".seccion-cuerpo").hidden = false;
+    marcarCampoInvalido(el("productividad-modo"));
+    return;
+  }
   if (productividadModo === "general") guardarCampoProductividadGeneral(); // guarda lo visible ahora mismo (los de "por lotes" ya se guardan solos al escribir)
   if (!confirm("¿Seguro que quieres terminar la visita?")) return;
   await guardarProductividadVisita();
@@ -1408,6 +1548,8 @@ async function onFinMuestreo() {
   loteActual = null;
   pantallaFlujo = null;
   manejoDatos = {};
+  manejoPropios = new Set();
+  productividadPropios = new Set();
   manejoRenderizado = false;
   sinGuardar = { manejo: {}, punto: {}, obs: {} };
   mostrarPantalla("pantalla-fin");
@@ -1508,6 +1650,7 @@ async function precargarRecomendacionesGuardadas(cliente, finca, fecha) {
   el("informe-tipo-fumigacion").value = (informe && informe.tipoFumigacion) || "";
   el("informe-volumen-mezcla").value = (informe && informe.volumenMezcla) || "";
   el("informe-recomendaciones").value = (informe && informe.notas) || "";
+  mostrarCanecas(el("informe-canecas"), el("informe-tipo-fumigacion").value, el("informe-volumen-mezcla").value);
   el("lista-productos-informe").innerHTML = "";
   if (guardadas.length > 0) {
     guardadas.forEach((p) => agregarBloqueProducto("lista-productos-informe", p));
@@ -1956,7 +2099,6 @@ document.addEventListener("DOMContentLoaded", () => {
     el(id).addEventListener("input", () => guardarBorrador());
     el(id).addEventListener("change", () => guardarBorrador());
   });
-  el("btn-borrar-lote").addEventListener("click", onBorrarLote);
   el("manejo-modo").addEventListener("change", onCambioModoManejo);
   document.querySelectorAll(".seccion-titulo").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1968,6 +2110,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("btn-agregar-producto-informe").addEventListener("click", () => agregarBloqueProducto("lista-productos-informe"));
   el("informe-tipo-fumigacion").addEventListener("change", actualizarEtiquetasDosisRecomendacion);
+  const canecasInforme = () => mostrarCanecas(el("informe-canecas"), el("informe-tipo-fumigacion").value, el("informe-volumen-mezcla").value);
+  el("informe-tipo-fumigacion").addEventListener("change", canecasInforme);
+  el("informe-volumen-mezcla").addEventListener("input", canecasInforme);
 
   el("form-punto").addEventListener("submit", onGuardarPunto);
 

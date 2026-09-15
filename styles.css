@@ -196,8 +196,9 @@ button.secundario {
 .acordeon-titulo small { font-size: 12px; color: var(--gris); }
 .acordeon-cuerpo { border: 1px solid var(--borde); border-radius: 0 0 10px 10px; padding: 12px; margin-top: -4px; }
 #pantalla-lotes .producto-bloque button.secundario { width: auto; }
-.visita-encabezado h2 { flex: 1; }
-#pantalla-punto .btn-papelera,
+.acordeon-cabeza { display: flex; align-items: center; gap: 8px; }
+.acordeon-cabeza .acordeon-titulo { flex: 1; }
+.canecas { font-size: 12px; color: var(--principal-oscuro); background: var(--fondo-suave); border-radius: 8px; padding: 6px 10px; margin: -6px 0 12px; }
 #pantalla-lotes .btn-papelera {
   width: auto; margin: 0; padding: 8px; line-height: 0; flex-shrink: 0;
   background: #fff; color: var(--rojo); border: 1.5px solid var(--rojo); border-radius: 50%;

@@ -74,9 +74,33 @@
   </div>
 
   <div class="seccion">
-    <button type="button" class="seccion-titulo" aria-expanded="true"><span>Productividad</span><span class="flecha" aria-hidden="true">▸</span></button>
-    <div class="seccion-cuerpo">
-      <label>¿Cómo vas a consignar la productividad de esta visita? <span class="asterisco">*</span>
+    <button type="button" class="seccion-titulo" aria-expanded="false"><span>Lotes a muestrear</span><span class="flecha" aria-hidden="true">▸</span></button>
+    <div class="seccion-cuerpo" hidden>
+      <div id="botones-lotes"></div>
+      <button id="btn-nuevo-lote" class="secundario">+ Nuevo lote</button>
+    </div>
+  </div>
+
+  <div class="seccion">
+    <button type="button" class="seccion-titulo" aria-expanded="false"><span>Manejo agronómico</span><span class="flecha" aria-hidden="true">▸</span></button>
+    <div class="seccion-cuerpo" hidden>
+      <p class="hint">Todo es opcional. Se guarda en los puntos y productos de cada lote al muestrearlo.</p>
+      <label id="manejo-modo-caja">¿Cómo vas a consignar el manejo agronómico de esta visita?
+        <select id="manejo-modo">
+          <option value="general">En general (igual para todos los lotes)</option>
+          <option value="lotes">Por lotes</option>
+        </select>
+      </label>
+      <div id="manejo-general"></div>
+      <div id="manejo-lotes-lista" hidden></div>
+      <datalist id="datalist-productos"></datalist>
+    </div>
+  </div>
+
+  <div class="seccion">
+    <button type="button" class="seccion-titulo" aria-expanded="false"><span>Productividad</span><span class="flecha" aria-hidden="true">▸</span></button>
+    <div class="seccion-cuerpo" hidden>
+      <label id="productividad-modo-caja">¿Cómo vas a consignar la productividad de esta visita? <span class="asterisco">*</span>
         <select id="productividad-modo">
           <option value="">-</option>
           <option value="general">En general</option>
@@ -104,41 +128,12 @@
     </div>
   </div>
 
-  <div class="seccion">
-    <button type="button" class="seccion-titulo" aria-expanded="true"><span>Manejo agronómico</span><span class="flecha" aria-hidden="true">▸</span></button>
-    <div class="seccion-cuerpo">
-      <p class="hint">Todo es opcional. Se guarda en los puntos y productos de cada lote al muestrearlo.</p>
-      <label>¿Cómo vas a consignar el manejo agronómico de esta visita?
-        <select id="manejo-modo">
-          <option value="general">En general (igual para todos los lotes)</option>
-          <option value="lotes">Por lotes</option>
-        </select>
-      </label>
-      <div id="manejo-general"></div>
-      <div id="manejo-lotes-lista" hidden></div>
-      <datalist id="datalist-productos"></datalist>
-    </div>
-  </div>
-
-  <div class="seccion">
-    <button type="button" class="seccion-titulo" aria-expanded="true"><span>Lotes a muestrear</span><span class="flecha" aria-hidden="true">▸</span></button>
-    <div class="seccion-cuerpo">
-      <div id="botones-lotes"></div>
-      <button id="btn-nuevo-lote" class="secundario">+ Nuevo lote</button>
-    </div>
-  </div>
-
   <button id="btn-fin-muestreo-lotes">Fin del muestreo</button>
 </section>
 
 <!-- Paso 3: capturar puntos de muestreo del lote elegido -->
 <section id="pantalla-punto" hidden>
-  <div class="visita-encabezado">
-    <h2>Lote <span id="lote-actual-num"></span> · punto <span id="punto-actual-num"></span></h2>
-    <button type="button" id="btn-borrar-lote" class="btn-papelera" title="Borrar este lote" aria-label="Borrar este lote">
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12H7L6 9zm4 2v8h2v-8h-2zm4 0v8h2v-8h-2z"/></svg>
-    </button>
-  </div>
+  <h2>Lote <span id="lote-actual-num"></span> · punto <span id="punto-actual-num"></span></h2>
 
   <label>Potrero del lote <span class="asterisco">*</span> <input type="text" id="potrero-nombre-punto" placeholder="Ej: Potrero 3"></label>
 
@@ -246,6 +241,7 @@
       </label>
       <label>Volumen de mezcla/hectárea <span class="asterisco">*</span> <input type="text" id="informe-volumen-mezcla" placeholder="Ej: 200"></label>
     </div>
+    <p id="informe-canecas" class="canecas" hidden></p>
 
     <h3>Productos recomendados</h3>
     <p class="hint">Agrega uno por uno los productos que recomiendas para el manejo de este cultivo.</p>
