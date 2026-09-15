@@ -30,6 +30,7 @@ header {
 }
 
 header h1 { font-family: inherit; font-weight: 800; font-size: 19px; color: var(--principal); margin: 0; }
+.version-tag { font-size: 11px; font-weight: 400; color: var(--gris); vertical-align: middle; }
 .titulo-box { display: flex; align-items: center; gap: 10px; }
 .titulo-box .logo { height: 32px; width: auto; }
 

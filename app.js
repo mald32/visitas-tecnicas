@@ -1,4 +1,9 @@
 // Orquestación de la app: login, flujo de visita (datos -> lote -> puntos -> fin), cola y sincronización.
+
+// Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
+// poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
+const APP_VERSION = "28";
+
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
 
@@ -144,6 +149,7 @@ function fechaLocalHoy() {
 }
 
 async function iniciar() {
+  el("app-version").textContent = "v" + APP_VERSION;
   registrarServiceWorker();
   await Graph.init();
 
@@ -797,10 +803,21 @@ function actualizarEstadoConexion() {
   el("estado-conexion").className = navigator.onLine ? "en-linea" : "sin-conexion";
 }
 
+// Registra el service worker y hace que, apenas haya una version nueva instalada, la pagina se
+// recargue sola una vez para aplicarla (sin tener que borrar datos del sitio a mano).
 function registrarServiceWorker() {
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW no registrado:", e));
-  }
+  if (!("serviceWorker" in navigator)) return;
+
+  navigator.serviceWorker.register("sw.js").then((registro) => {
+    registro.update(); // no confiar solo en el cache del navegador para sw.js: revisar ya mismo
+  }).catch((e) => console.warn("SW no registrado:", e));
+
+  let yaRecargando = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (yaRecargando) return;
+    yaRecargando = true;
+    window.location.reload();
+  });
 }
 
 document.addEventListener("DOMContentLoaded", () => {
