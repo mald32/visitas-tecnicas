@@ -137,14 +137,19 @@ const Graph = {
     await this.escribirRango(CONFIG.HOJA_CLIENTES, `C${fila}:C${fila}`, [[numeroLotes]]);
   },
 
-  // Agrega un producto nuevo al catálogo de la hoja Productos (igual patrón que Clientes_Fincas).
-  // Columnas reales: A Nombre, B Tipo, C Formulacion, D Siglas, E Orden (calculada), F Unidad.
+  // Agrega un producto nuevo al catálogo de la hoja Productos, usando la Tabla real (no un rango
+  // suelto) para que la formula de la columna Orden se autocalcule igual que en las demas filas.
+  // Columnas reales: A Nombre, B Tipo, C Formulacion, D Siglas, E Orden (formula), F Unidad.
+  // Las Siglas se sacan del propio texto de Formulacion (ej. "SC" de "SC (Suspension Concentrada)").
   async agregarProductoCatalogo(nombre, tipo, formulacion, unidad) {
     const filas = await this.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:A500");
-    const usadas = filas.filter((f) => f[0]).length;
-    const fila = 4 + usadas;
-    await this.escribirRango(CONFIG.HOJA_PRODUCTOS, `A${fila}:C${fila}`, [[nombre, tipo, formulacion]]);
-    await this.escribirRango(CONFIG.HOJA_PRODUCTOS, `F${fila}:F${fila}`, [[unidad]]);
+    const yaExiste = filas.some((f) => f[0] && String(f[0]).trim().toLowerCase() === nombre.trim().toLowerCase());
+    if (yaExiste) return;
+    const siglas = formulacion ? String(formulacion).split(" (")[0].trim() : "";
+    return this.conReintento((id) => {
+      const path = `/me/drive/items/${id}/workbook/tables('${CONFIG.TABLA_PRODUCTOS}')/rows/add`;
+      return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [[nombre, tipo, formulacion, siglas, null, unidad]] }) });
+    });
   },
 
   // Agrega una fila a la tabla Productos_Aplicados (un producto usado en un lote/visita).

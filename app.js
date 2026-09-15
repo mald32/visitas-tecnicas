@@ -378,12 +378,16 @@ async function onIniciarMonitoreoLote() {
   const productos = leerProductosFormulario("lista-productos");
   localStorage.setItem("productosUltimos", JSON.stringify(productos));
 
+  const itemsPendientes = await DB.listarItems();
   for (const p of productos) {
     await DB.agregarItem("producto_aplicado", {
       cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: loteActual,
       producto: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad, dosis: p.dosis,
     });
-    const yaExiste = catalogoProductos.some((c) => c.nombre.toLowerCase() === p.nombre.toLowerCase());
+    // Ademas del catalogo ya sincronizado, hay que revisar si ya se encolo "producto_nuevo" para este
+    // mismo producto en otro lote de esta misma visita (aun sin subir a Excel), para no duplicarlo.
+    const yaExiste = catalogoProductos.some((c) => c.nombre.toLowerCase() === p.nombre.toLowerCase())
+      || itemsPendientes.some((it) => it.tipo === "producto_nuevo" && it.datos.nombre.toLowerCase() === p.nombre.toLowerCase());
     if (!yaExiste) {
       catalogoProductos.push({ nombre: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad });
       await DB.guardarCache("catalogoProductos", catalogoProductos);
@@ -537,8 +541,22 @@ async function onPuntoAnterior() {
   el("btn-punto-anterior").disabled = puntoMostrado <= 1;
 }
 
+// Sin importar en que punto se haya escrito el nombre del potrero, al terminar el lote se le
+// pone ese mismo nombre a TODOS los puntos ya guardados de este lote (solo si aun no se sincronizaron).
+async function aplicarPotreroATodosLosPuntos(potrero) {
+  const delLote = await puntosDelLoteActual();
+  for (const it of delLote) {
+    if (it.estado === "pendiente" && it.datos.fila[18] !== potrero) {
+      const fila = [...it.datos.fila];
+      fila[18] = potrero;
+      await DB.actualizarDatosItem(it.id, { fila });
+    }
+  }
+}
+
 async function onTerminarLote() {
-  if (!el("potrero-nombre-punto").value.trim()) {
+  const potrero = el("potrero-nombre-punto").value.trim();
+  if (!potrero) {
     marcarCampoInvalido(el("potrero-nombre-punto"));
     return;
   }
@@ -548,6 +566,7 @@ async function onTerminarLote() {
   } else if (capturandoLote && el("form-punto").checkValidity()) {
     await guardarPuntoActual();
   }
+  await aplicarPotreroATodosLosPuntos(potrero);
   capturandoLote = false;
   mostrarPantalla("pantalla-lotes");
   await refrescarResumenCola();
@@ -720,6 +739,12 @@ async function onGenerarInforme() {
 
 // ---------- Sincronización ----------
 
+// Columnas de "Base de datos" que en el Excel real son formulas calculadas por la propia hoja
+// (Dano Collaria Total, Incidencia Moluscos, Dano Moluscos, Dano Hongos). Las calculamos tambien
+// aqui en JS para poder generar los informes antes de sincronizar, pero al subir a Excel se dejan
+// en blanco para que sea la formula de la hoja la que las calcule (y no un valor fijo nuestro).
+const COLUMNAS_CALCULADAS_EXCEL = [9, 13, 14, 17];
+
 let sincronizando = false;
 async function sincronizar() {
   if (sincronizando || !navigator.onLine) return;
@@ -731,7 +756,9 @@ async function sincronizar() {
     for (const it of items.filter((i) => i.estado === "pendiente")) {
       try {
         if (it.tipo === "punto") {
-          await Graph.agregarFila(it.datos.fila);
+          const filaParaExcel = [...it.datos.fila];
+          for (const idx of COLUMNAS_CALCULADAS_EXCEL) filaParaExcel[idx] = null;
+          await Graph.agregarFila(filaParaExcel);
         } else if (it.tipo === "cliente_finca") {
           await Graph.agregarClienteFinca(it.datos.cliente, it.datos.finca, it.datos.numeroLotes);
         } else if (it.tipo === "actualizar_lotes") {
