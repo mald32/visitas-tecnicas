@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "38";
+const APP_VERSION = "39";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -365,6 +365,7 @@ async function cargarConfigYClientes() {
   if (navigator.onLine) {
     try {
       await conLimiteDeTiempo(leerConfigYClientesDeExcel(), 12000);
+      el("aviso-esquema").hidden = true;
       return;
     } catch (e) {
       console.warn("No se pudo leer de Graph, usando caché local:", e.message);

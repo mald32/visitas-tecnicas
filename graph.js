@@ -37,12 +37,22 @@ const Graph = {
 
   async token() {
     if (!cuentaActiva) throw new Error("No hay sesión iniciada");
+    if (!navigator.onLine) throw new Error("Sin conexión a internet");
     try {
       const r = await msalApp.acquireTokenSilent({ scopes: CONFIG.GRAPH_SCOPES, account: cuentaActiva });
       return r.accessToken;
     } catch (e) {
-      const r = await msalApp.acquireTokenPopup({ scopes: CONFIG.GRAPH_SCOPES });
-      return r.accessToken;
+      // Solo se abre la ventana de login si Microsoft de verdad pide volver a iniciar sesión. Si el
+      // fallo es por falta de internet, abrir una ventana solo produce "popup_window_error".
+      if (!(e instanceof msal.InteractionRequiredAuthError)) {
+        throw new Error("No se pudo conectar con Microsoft (revisa tu internet)");
+      }
+      try {
+        const r = await msalApp.acquireTokenPopup({ scopes: CONFIG.GRAPH_SCOPES });
+        return r.accessToken;
+      } catch (e2) {
+        throw new Error("Tu sesión de Microsoft expiró. Cuando tengas internet, dale a \"Sincronizar\" para volver a conectarte");
+      }
     }
   },
 

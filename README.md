@@ -28,6 +28,7 @@ Nada se sube directo: todo lo capturado entra primero a una **cola local** (Inde
 vacía contra el Excel y cada elemento pasa a `sincronizado`. Si algo falla, queda en `error` con el
 mensaje, y se reintenta la próxima vez. Por eso se puede trabajar el día entero sin señal.
 
+La librería de login (MSAL) está copiada en `lib/` para que la app abra sin internet.
 La visita en curso (pantalla, manejo, punto a medio llenar, observaciones) se guarda además en el
 celular con cada tecla (`visitaEnCurso`): si se recarga o se cierra la app, al volver sigue donde iba.
 Productividad y observaciones por lote tienen un solo pendiente por visita/lote que, al sincronizar,
