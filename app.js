@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "28";
+const APP_VERSION = "29";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -385,11 +385,23 @@ async function onIniciarMonitoreoLote() {
   localStorage.setItem("productosUltimos", JSON.stringify(productos));
 
   const itemsPendientes = await DB.listarItems();
+  // Si ya se registro este mismo producto para este mismo lote/visita (p.ej. porque se volvio a
+  // entrar a la pantalla de manejo y se le dio "Iniciar monitoreo" otra vez), no se vuelve a encolar.
+  const yaRegistradoEnLote = (p) => itemsPendientes.some((it) =>
+    it.tipo === "producto_aplicado" &&
+    it.datos.cliente === visita.cliente && it.datos.finca === visita.finca &&
+    it.datos.fecha === visita.fecha && it.datos.lote === loteActual &&
+    it.datos.producto.toLowerCase() === p.nombre.toLowerCase() &&
+    (it.datos.formulacion || "").toLowerCase() === (p.formulacion || "").toLowerCase() &&
+    String(it.datos.dosis) === String(p.dosis)
+  );
   for (const p of productos) {
-    await DB.agregarItem("producto_aplicado", {
-      cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: loteActual,
-      producto: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad, dosis: p.dosis,
-    });
+    if (!yaRegistradoEnLote(p)) {
+      await DB.agregarItem("producto_aplicado", {
+        cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: loteActual,
+        producto: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad, dosis: p.dosis,
+      });
+    }
     // Ademas del catalogo ya sincronizado, hay que revisar si ya se encolo "producto_nuevo" para este
     // mismo producto en otro lote de esta misma visita (aun sin subir a Excel), para no duplicarlo.
     const yaExiste = catalogoProductos.some((c) => c.nombre.toLowerCase() === p.nombre.toLowerCase())
