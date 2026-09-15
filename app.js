@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "30";
+const APP_VERSION = "31";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -16,6 +16,11 @@ let capturandoLote = false; // mientras es true, no se sincroniza (para poder fi
 let manejoActual = {}; // manejo agronomico del lote que se esta capturando ahora mismo
 let catalogoProductos = []; // [{nombre, tipo, formulacion, unidad}] cargado de la hoja Productos
 let contadorProductos = 0;
+
+// Productividad de la visita: "" (sin elegir), "general", "lotes" o "sin_datos".
+let productividadModo = "";
+// Datos escritos por el usuario, por clave: "general" o el numero de lote (como texto), ej: {"general":{...}} o {"1":{...},"2":{...}}.
+let productividadDatos = {};
 
 const CAMPOS_MANEJO = [
   { id: "m-tipo-fumigacion", key: "tipoFumigacion" },
@@ -243,6 +248,7 @@ async function onRetomarVisita(cliente, finca, fecha) {
   el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
   mostrarPantalla("pantalla-lotes");
   renderBotonesLotes();
+  resetearProductividad();
 }
 
 async function cargarConfigYClientes() {
@@ -332,6 +338,7 @@ async function onIniciarMonitoreo() {
   mostrarPantalla("pantalla-lotes");
   el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
   renderBotonesLotes();
+  resetearProductividad();
 }
 
 function renderBotonesLotes() {
@@ -354,6 +361,91 @@ async function onAgregarLoteNuevo() {
     cliente: visita.cliente, finca: visita.finca, numeroLotes: visita.numeroLotes,
   });
   renderBotonesLotes();
+  if (productividadModo === "lotes") poblarSelectLoteProductividad();
+}
+
+// ---------- Productividad (por visita, "en general" o "por lotes") ----------
+
+function claveProductividadActual() {
+  if (productividadModo === "general") return "general";
+  if (productividadModo === "lotes") return el("productividad-lote-select").value;
+  return null;
+}
+
+// Mismas formulas que la hoja Productividad_Fincas, solo para mostrar una vista previa en la app.
+function recalcularProductividad() {
+  const area = Number(el("pv-area").value) || 0;
+  const animales = Number(el("pv-animales").value) || 0;
+  const dias = Number(el("pv-dias").value) || 0;
+  const produccion = Number(el("pv-produccion").value) || 0;
+  const carga = area > 0 ? animales / area : null;
+  const areaDiaria = (animales > 0 && dias > 0) ? ((area * 10000) / animales) / dias : null;
+  const productividad = area > 0 ? (produccion * animales) / area : null;
+  el("pv-carga").value = carga != null ? carga.toFixed(2) : "";
+  el("pv-area-diaria").value = areaDiaria != null ? areaDiaria.toFixed(2) : "";
+  el("pv-productividad").value = productividad != null ? productividad.toFixed(2) : "";
+}
+
+function guardarCampoProductividadActual() {
+  const clave = claveProductividadActual();
+  if (!clave) return;
+  productividadDatos[clave] = {
+    area: el("pv-area").value, animales: el("pv-animales").value,
+    dias: el("pv-dias").value, produccion: el("pv-produccion").value,
+  };
+}
+
+function cargarCamposProductividad(clave) {
+  const d = (clave && productividadDatos[clave]) || {};
+  el("pv-area").value = d.area || "";
+  el("pv-animales").value = d.animales || "";
+  el("pv-dias").value = d.dias || "";
+  el("pv-produccion").value = d.produccion || "";
+  recalcularProductividad();
+}
+
+function poblarSelectLoteProductividad() {
+  let html = "";
+  for (let i = 1; i <= visita.numeroLotes; i++) html += `<option value="${i}">Productividad Lote ${i}</option>`;
+  el("productividad-lote-select").innerHTML = html;
+}
+
+function resetearProductividad() {
+  productividadModo = "";
+  productividadDatos = {};
+  el("productividad-modo").value = "";
+  el("productividad-campos").hidden = true;
+  el("productividad-lote-caja").hidden = true;
+  cargarCamposProductividad(null);
+}
+
+function onCambioModoProductividad() {
+  productividadModo = el("productividad-modo").value;
+  el("productividad-campos").hidden = !productividadModo || productividadModo === "sin_datos";
+  el("productividad-lote-caja").hidden = productividadModo !== "lotes";
+  if (productividadModo === "lotes") {
+    poblarSelectLoteProductividad();
+    cargarCamposProductividad(el("productividad-lote-select").value);
+  } else if (productividadModo === "general") {
+    cargarCamposProductividad("general");
+  }
+}
+
+// Guarda en la cola (para subir a Productividad_Fincas) lo que se haya consignado en esta visita.
+async function guardarProductividad() {
+  if (productividadModo === "general") {
+    const d = productividadDatos.general;
+    if (d && (d.area || d.animales || d.dias || d.produccion)) {
+      await DB.agregarItem("productividad", { cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: "", ...d });
+    }
+  } else if (productividadModo === "lotes") {
+    for (let i = 1; i <= visita.numeroLotes; i++) {
+      const d = productividadDatos[String(i)];
+      if (d && (d.area || d.animales || d.dias || d.produccion)) {
+        await DB.agregarItem("productividad", { cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: i, ...d });
+      }
+    }
+  }
 }
 
 // ---------- Paso 2: elegir lote ----------
@@ -591,7 +683,10 @@ async function onTerminarLote() {
 }
 
 async function onFinMuestreo() {
+  if (!productividadModo) { marcarCampoInvalido(el("productividad-modo")); return; }
+  guardarCampoProductividadActual(); // guarda lo que este visible ahora mismo en pantalla
   if (!confirm("¿Seguro que quieres terminar la visita?")) return;
+  await guardarProductividad();
   const items = await DB.listarItems();
   const puntosVisita = items.filter(
     (it) => it.tipo === "punto" && it.datos.cliente === visita.cliente && it.datos.finca === visita.finca && it.datos.fecha === visita.fecha
@@ -829,6 +924,13 @@ async function sincronizar() {
             it.datos.cliente, it.datos.finca, it.datos.fecha, "",
             it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
           ]);
+        } else if (it.tipo === "productividad") {
+          await Graph.agregarProductividad([
+            it.datos.cliente, it.datos.finca, it.datos.fecha, it.datos.lote,
+            Number(it.datos.area) || null, Number(it.datos.animales) || null,
+            Number(it.datos.dias) || null, Number(it.datos.produccion) || null,
+            null, null, null,
+          ]);
         }
         await DB.marcarSincronizado(it.id);
         subidos += 1;
@@ -877,6 +979,14 @@ document.addEventListener("DOMContentLoaded", () => {
   el("cliente").addEventListener("change", poblarSelectFinca);
   el("finca").addEventListener("change", onCambioFinca);
   el("btn-iniciar-monitoreo").addEventListener("click", onIniciarMonitoreo);
+
+  el("productividad-modo").addEventListener("change", onCambioModoProductividad);
+  el("productividad-lote-select").addEventListener("change", () => {
+    cargarCamposProductividad(el("productividad-lote-select").value);
+  });
+  ["pv-area", "pv-animales", "pv-dias", "pv-produccion"].forEach((id) => {
+    el(id).addEventListener("input", () => { recalcularProductividad(); guardarCampoProductividadActual(); });
+  });
 
   el("btn-nuevo-lote").addEventListener("click", onAgregarLoteNuevo);
   el("btn-agregar-producto").addEventListener("click", () => agregarBloqueProducto("lista-productos"));

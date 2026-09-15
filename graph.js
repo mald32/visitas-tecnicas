@@ -167,4 +167,14 @@ const Graph = {
       return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [valores] }) });
     });
   },
+
+  // Agrega una fila a la tabla Productividad_Fincas. Las ultimas 3 columnas (Carga Animal, Area
+  // Diaria por Animal, Productividad de la Lecheria) son formulas de la propia tabla: se dejan en
+  // null para que Excel las calcule solo, igual que con las demas tablas con columnas calculadas.
+  async agregarProductividad(valores) {
+    return this.conReintento((id) => {
+      const path = `/me/drive/items/${id}/workbook/tables('${CONFIG.TABLA_PRODUCTIVIDAD}')/rows/add`;
+      return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [valores] }) });
+    });
+  },
 };

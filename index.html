@@ -63,8 +63,38 @@
 
 <!-- Paso 2: elegir lote a muestrear -->
 <section id="pantalla-lotes" hidden>
-  <h2>¿Qué lote vas a muestrear?</h2>
   <p id="resumen-visita" class="hint"></p>
+
+  <h2>Productividad</h2>
+  <label>¿Cómo vas a consignar la productividad de esta visita? <span class="asterisco">*</span>
+    <select id="productividad-modo">
+      <option value="">-</option>
+      <option value="general">En general</option>
+      <option value="lotes">Por lotes</option>
+      <option value="sin_datos">Sin datos</option>
+    </select>
+  </label>
+  <div id="productividad-campos" hidden>
+    <label id="productividad-lote-caja" hidden>Lote
+      <select id="productividad-lote-select"></select>
+    </label>
+    <div class="fila">
+      <label>Área del lote (hectáreas) <input type="number" step="any" id="pv-area"></label>
+      <label>Animales en ordeño <input type="number" step="any" id="pv-animales"></label>
+    </div>
+    <div class="fila">
+      <label>Días de rotación <input type="number" step="any" id="pv-dias"></label>
+      <label>Producción diaria de leche (L/vaca·día) <input type="number" step="any" id="pv-produccion"></label>
+    </div>
+    <p class="hint">Los siguientes 3 valores los calcula solo el Excel, aquí es solo una vista previa:</p>
+    <div class="fila">
+      <label>Carga animal (animales/ha) <input type="text" id="pv-carga" disabled></label>
+      <label>Área diaria por animal (m²/vaca·día) <input type="text" id="pv-area-diaria" disabled></label>
+    </div>
+    <label>Productividad de la lechería (L leche/ha·día) <input type="text" id="pv-productividad" disabled></label>
+  </div>
+
+  <h2>¿Qué lote vas a muestrear?</h2>
   <div id="botones-lotes" class="grid-lotes"></div>
   <button id="btn-nuevo-lote" class="secundario">+ Nuevo lote</button>
   <button id="btn-fin-muestreo-lotes">Fin del muestreo</button>
@@ -83,7 +113,7 @@
       <option value="Terrestre (Bomba de espalda)">Terrestre (Bomba de espalda)</option>
     </select>
   </label>
-  <label>Litros de mezcla / ha <input type="number" step="any" id="m-litros-mezcla"></label>
+  <label>Volumen de Mezcla/ha <input type="number" step="any" id="m-litros-mezcla"></label>
 
   <h3>Productos aplicados</h3>
   <p class="hint">Agrega uno por uno los productos usados (acondicionador, insecticida, fungicida, fertilizante foliar, coadyuvante, etc.).</p>

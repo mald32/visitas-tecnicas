@@ -16,6 +16,12 @@ const COL_PA = { cliente: 0, finca: 1, fecha: 2, lote: 3, producto: 4, tipo: 5, 
 // campo Lote no aplica a una recomendacion y queda vacio).
 const COL_PR = { cliente: 0, finca: 1, fecha: 2, lote: 3, producto: 4, tipo: 5, formulacion: 6, unidad: 7, dosis: 8 };
 
+// Columnas de la tabla Productividad_Fincas. Las ultimas 3 son formulas calculadas por Excel.
+const COL_PF = {
+  cliente: 0, finca: 1, fecha: 2, lote: 3, area: 4, animales: 5, dias: 6, produccion: 7,
+  cargaAnimal: 8, areaDiaria: 9, productividadLecheria: 10,
+};
+
 // El valor puede ser el indice de columna, o una funcion(fila) para variables calculadas (ej. Pasto Sano).
 const VARIABLES_HISTORIAL = {
   "Individuos Adultos de Collaria": COL.adultos,
@@ -217,6 +223,75 @@ const Informes = {
       }));
   },
 
+  // Igual que filasProductos(), pero para Productividad_Fincas. Las columnas calculadas (Carga
+  // Animal, Area Diaria por Animal, Productividad de la Lecheria) se recalculan aqui mismo para
+  // las filas aun no sincronizadas, con las mismas formulas que tiene la hoja de Excel.
+  async filasProductividad() {
+    if (!this._productividadCache) {
+      let crudas = null;
+      if (navigator.onLine) {
+        try {
+          crudas = await Graph.leerTabla(CONFIG.TABLA_PRODUCTIVIDAD);
+          await DB.guardarCache("productividadBase", crudas);
+        } catch (e) {
+          console.warn("No se pudo leer Productividad_Fincas, usando caché local:", e.message);
+        }
+      }
+      if (!crudas) crudas = (await DB.leerCache("productividadBase")) || [];
+
+      const pendientes = (await DB.listarItems()).filter((it) => it.tipo === "productividad" && it.estado === "pendiente");
+      const filasPendientes = pendientes.map((it) => {
+        const area = Number(it.datos.area) || 0, animales = Number(it.datos.animales) || 0;
+        const dias = Number(it.datos.dias) || 0, produccion = Number(it.datos.produccion) || 0;
+        const carga = area > 0 ? animales / area : null;
+        const areaDiaria = (animales > 0 && dias > 0) ? ((area * 10000) / animales) / dias : null;
+        const productividadLecheria = area > 0 ? (produccion * animales) / area : null;
+        return [
+          it.datos.cliente, it.datos.finca, it.datos.fecha, it.datos.lote,
+          area || null, animales || null, dias || null, produccion || null,
+          carga, areaDiaria, productividadLecheria,
+        ];
+      });
+
+      this._productividadCache = [...crudas, ...filasPendientes].map((f) => {
+        const copia = [...f];
+        copia[COL_PF.fecha] = normalizarFecha(copia[COL_PF.fecha]);
+        return copia;
+      });
+    }
+    return this._productividadCache;
+  },
+
+  async productividadDeVisita(cliente, finca, fecha) {
+    const filas = await this.filasProductividad();
+    return filas
+      .filter((f) => f[COL_PF.cliente] === cliente && f[COL_PF.finca] === finca && f[COL_PF.fecha] === fecha)
+      .map((f) => ({
+        lote: f[COL_PF.lote], area: f[COL_PF.area], animales: f[COL_PF.animales], dias: f[COL_PF.dias],
+        produccion: f[COL_PF.produccion], cargaAnimal: f[COL_PF.cargaAnimal],
+        areaDiaria: f[COL_PF.areaDiaria], productividadLecheria: f[COL_PF.productividadLecheria],
+      }));
+  },
+
+  // Catalogo de productos (hoja Productos) solo para saber el orden de mezcla de cada uno, y asi
+  // poder ordenar los productos aplicados/recomendados igual que en la app.
+  async filasCatalogoProductos() {
+    if (!this._catalogoCache) {
+      let crudas = null;
+      if (navigator.onLine) {
+        try {
+          crudas = await Graph.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:E500");
+          await DB.guardarCache("catalogoOrdenBase", crudas);
+        } catch (e) {
+          console.warn("No se pudo leer el catalogo de Productos, usando caché local:", e.message);
+        }
+      }
+      if (!crudas) crudas = (await DB.leerCache("catalogoOrdenBase")) || [];
+      this._catalogoCache = crudas;
+    }
+    return this._catalogoCache;
+  },
+
   formatoFechaVisible,
 
   async umbrales() {
@@ -242,6 +317,8 @@ const Informes = {
     this._umbralesCache = null;
     this._productosCache = null;
     this._recomendadosCache = null;
+    this._productividadCache = null;
+    this._catalogoCache = null;
   },
 
   async fechasDisponibles(cliente, finca) {
@@ -256,6 +333,10 @@ const Informes = {
     const filas = await this.filas();
     const umbrales = await this.umbrales();
     const productosAplicados = await this.filasProductos();
+    const productividad = await this.productividadDeVisita(cliente, finca, fecha);
+    const catalogoProductos = await this.filasCatalogoProductos();
+    const ordenProductos = {};
+    catalogoProductos.forEach((f) => { if (f[0]) ordenProductos[String(f[0]).trim().toLowerCase()] = f[4]; });
 
     const visita = filas.filter((f) => f[COL.cliente] === cliente && f[COL.finca] === finca && f[COL.fecha] === fecha);
     const lotesReales = [...new Set(visita.map((f) => f[COL.lote]))].sort((a, b) => a - b);
@@ -404,6 +485,7 @@ const Informes = {
       cliente, finca, fecha, visita_numero: visitaNumero, lotes_reales: lotesReales, lotes_finca: lotesFinca,
       tabla_lotes: tablaLotes, barras_estatica: barrasEstatica, historial, umbrales_historial: umbralesHistorial, tortas, alertas, umbrales,
       promedio_finca: promedioFinca, promedio_barras: promedioBarras, promedio_torta: promedioTorta,
+      productividad, orden_productos: ordenProductos,
     };
   },
 
@@ -452,12 +534,20 @@ const Informes = {
       return String(formulacion).split(" (")[0].trim();
     }
 
+    // Mismo orden de mezcla que en Recomendaciones (columna Orden del catalogo Productos).
+    function ordenDeMezclaInforme(nombre) {
+      const orden = D.orden_productos[String(nombre || "").trim().toLowerCase()];
+      return orden != null && !Number.isNaN(Number(orden)) ? Number(orden) : Infinity;
+    }
+
     function manejoHtml(m, productos) {
       const filasM = [
-        ["Tipo de fumigación", m.tipoFumigacion], ["Litros de mezcla/ha", m.litrosMezclaHa],
+        ["Tipo de fumigación", m.tipoFumigacion], ["Volumen de Mezcla/ha", m.litrosMezclaHa],
         ["Orden de mezcla correcto", m.ordenMezclaCorrecto], ["pH final de la mezcla", m.phFinalMezcla],
       ].filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "");
       const productosLi = (productos || [])
+        .slice()
+        .sort((a, b) => ordenDeMezclaInforme(a.nombre) - ordenDeMezclaInforme(b.nombre))
         .map((p) => {
           const siglas = siglasFormulacion(p.formulacion);
           return `<li><span class="manejo-etiqueta">${p.tipo || "Producto"}</span>${p.nombre}${siglas ? ` ${siglas}.` : "."}</li>`;
@@ -509,6 +599,19 @@ const Informes = {
         : "";
       return `<div class="manejo-box">${subtitulo}${manejo}</div>`;
     }).join("");
+
+    const numero = (v) => (v == null ? "-" : Number(v).toFixed(2));
+    const productividadHtml = (D.productividad || []).length
+      ? `<div class="tabla-scroll"><table><thead><tr>
+          <th>Lote</th><th>Área (ha)</th><th>Animales en ordeño</th><th>Días rotación</th>
+          <th>Producción (L/vaca·día)</th><th>Carga animal</th><th>Área diaria/animal (m²)</th><th>Productividad (L/ha·día)</th>
+        </tr></thead><tbody>${D.productividad.map((p) => `<tr>
+          <td>${p.lote ? "Lote " + p.lote : "General"}</td>
+          <td>${numero(p.area)}</td><td>${numero(p.animales)}</td><td>${numero(p.dias)}</td>
+          <td>${numero(p.produccion)}</td><td>${numero(p.cargaAnimal)}</td>
+          <td>${numero(p.areaDiaria)}</td><td>${numero(p.productividadLecheria)}</td>
+        </tr>`).join("")}</tbody></table></div>`
+      : `<p class="hint">Sin datos de productividad registrados en esta visita.</p>`;
 
     const porLoteHtml = D.tabla_lotes.map((t, i) => {
       const leyenda = D.tortas[i].valores.map((v, vi) =>
@@ -708,6 +811,9 @@ footer{margin-top:36px;font-size:12.5px;color:#a89c8c;text-align:center;}
     return t && t.potrero ? `Lote ${l} (Potrero ${t.potrero})` : `Lote ${l}`;
   }).join(", ")}</div></div>
 </div>
+
+<h2 class="banner-naranja">Indicadores de productividad</h2>
+${productividadHtml}
 
 <h2 class="banner-azul">Manejo agronómico aplicado</h2>
 ${manejoTodosHtml || '<p class="hint">Sin manejo agronómico registrado en esta visita.</p>'}
