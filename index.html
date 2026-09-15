@@ -66,7 +66,12 @@
 
 <!-- Paso 2: elegir lote a muestrear -->
 <section id="pantalla-lotes" hidden>
-  <p id="resumen-visita" class="hint"></p>
+  <div class="visita-encabezado">
+    <p id="resumen-visita" class="hint"></p>
+    <button type="button" id="btn-borrar-visita" class="btn-papelera" title="Borrar esta visita" aria-label="Borrar esta visita">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12H7L6 9zm4 2v8h2v-8h-2zm4 0v8h2v-8h-2z"/></svg>
+    </button>
+  </div>
 
   <h2>Productividad</h2>
   <label>¿Cómo vas a consignar la productividad de esta visita? <span class="asterisco">*</span>
@@ -200,7 +205,7 @@
 <!-- Pestaña Historial de visitas -->
 <section id="pantalla-historial" hidden>
   <h2>Historial de visitas</h2>
-  <p class="hint">Solo visitas terminadas y con informe generado, de la más reciente a la más antigua.</p>
+  <p class="hint">Todas las visitas de la base de datos, de la más reciente a la más antigua.</p>
 
   <div id="historial-filtros">
     <div class="fila">

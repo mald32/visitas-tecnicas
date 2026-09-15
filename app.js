@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "40";
+const APP_VERSION = "41";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -302,6 +302,45 @@ async function salirDeVisita() {
   sinGuardar = { manejo: {}, punto: {}, obs: {} };
   await DB.guardarCache("visitaActiva", null);
   await mostrarInicioVisitas();
+}
+
+// Borra la visita abierta con todo lo suyo: puntos, productos aplicados y recomendados,
+// productividad, observaciones de lotes e informe. Lo que solo estaba en el celular se borra de una
+// vez; si algo ya estaba en el Excel, queda pendiente borrarlo allá en la próxima sincronización.
+async function onBorrarVisita() {
+  if (!visita) return;
+  const v = visita;
+  if (!confirm(`¿Borrar la visita de ${v.cliente} · ${v.finca} del ${Informes.formatoFechaVisible(v.fecha)}?\n\nSe borran todos sus puntos, productos, productividad, observaciones y recomendaciones, también del Excel. No se puede deshacer.`)) return;
+
+  const items = await DB.listarItems();
+  const deLaVisita = items.filter((it) => it.tipo !== "eliminar_visita" && it.datos &&
+    it.datos.cliente === v.cliente && it.datos.finca === v.finca && it.datos.fecha === v.fecha &&
+    it.tipo !== "cliente_finca" && it.tipo !== "actualizar_lotes" && it.tipo !== "producto_nuevo");
+  const huboSubidas = deLaVisita.some((it) => it.estado !== "pendiente");
+  let enExcel = huboSubidas;
+  if (!enExcel) {
+    try {
+      const remotas = await Informes._tablaRemota(CONFIG.TABLE_NAME, "filasBase");
+      enExcel = remotas.some((f) => f[ESQUEMA.BASE.cliente] === v.cliente && f[ESQUEMA.BASE.finca] === v.finca &&
+        normalizarFecha(f[ESQUEMA.BASE.fecha]) === v.fecha);
+    } catch (e) {
+      enExcel = true; // si no se puede confirmar, mejor pedir el borrado en el Excel
+    }
+  }
+  for (const it of deLaVisita) await DB.eliminarItem(it.id);
+  if (enExcel) await DB.agregarItem("eliminar_visita", { cliente: v.cliente, finca: v.finca, fecha: v.fecha });
+
+  await borrarBorrador();
+  visita = null;
+  loteActual = null;
+  pantallaFlujo = null;
+  manejoPorLote = {};
+  sinGuardar = { manejo: {}, punto: {}, obs: {} };
+  await mostrarInicioVisitas();
+  await refrescarResumenCola();
+  alert(enExcel
+    ? "Visita borrada. Lo que ya estaba en tu Excel se borrará allá la próxima vez que sincronices."
+    : "Visita borrada.");
 }
 
 async function mostrarInicioVisitas() {
@@ -1422,7 +1461,7 @@ async function abrirHistorial() {
   el("historial-estado").textContent = "Cargando visitas...";
   el("historial-lista").innerHTML = "";
   try {
-    visitasHistorial = await Informes.visitasConInforme(new Set(Object.keys(borradores)));
+    visitasHistorial = await Informes.visitasHistorial();
     renderListaHistorial();
   } catch (e) {
     el("historial-estado").textContent = "No se pudo cargar el historial: " + e.message;
@@ -1437,13 +1476,25 @@ function renderListaHistorial() {
     (!desde || v.fecha >= desde) && (!hasta || v.fecha <= hasta) && (!cliente || v.cliente === cliente));
   el("historial-estado").textContent = filtradas.length
     ? `${filtradas.length} visita(s)`
-    : "No hay visitas terminadas con informe para ese filtro.";
+    : "No hay visitas para ese filtro.";
   el("historial-lista").innerHTML = filtradas.map((v, i) => `<p class="visita-hoy historial-visita" data-i="${visitasHistorial.indexOf(v)}">
     <strong>${Informes.formatoFechaVisible(v.fecha)}</strong> · ${esc(v.cliente)} · ${esc(v.finca)}<br>
-    <span class="hint">${v.numeroLotes} lote(s) · Toca para ver el detalle</span></p>`).join("");
+    <span class="hint">${v.numeroLotes} lote(s)${borradores[v.clave] ? " · en curso" : ""} · Toca para ver el detalle</span>
+    ${faltantesHistorial(v)}</p>`).join("");
   el("historial-lista").querySelectorAll(".historial-visita").forEach((p) => {
     p.addEventListener("click", () => verDetalleHistorial(visitasHistorial[Number(p.dataset.i)]));
   });
+}
+
+function faltantesHistorial(v) {
+  const faltan = [
+    v.faltaAplicados ? "productos aplicados" : "",
+    v.faltaRecomendacion ? "recomendación" : "",
+    v.faltaProductividad ? "datos de productividad" : "",
+  ].filter(Boolean);
+  return faltan.length
+    ? `<span class="historial-faltantes">Falta: ${faltan.join(", ")}</span>`
+    : `<span class="historial-completa">Información completa</span>`;
 }
 
 async function verDetalleHistorial(v) {
@@ -1530,9 +1581,27 @@ function grupoDeOrden(it) {
   return null;
 }
 
+// Tablas donde vive información de una visita, con sus columnas (para borrarla completa).
+function tablasDeVisita() {
+  return [
+    [CONFIG.TABLE_NAME, ESQUEMA.BASE], [CONFIG.TABLA_PRODUCTOS_APLICADOS, ESQUEMA.PRODUCTOS_APLICADOS],
+    [CONFIG.TABLA_PRODUCTOS_RECOMENDADOS, ESQUEMA.PRODUCTOS_RECOMENDADOS], [CONFIG.TABLA_PRODUCTIVIDAD, ESQUEMA.PRODUCTIVIDAD],
+    [CONFIG.TABLA_OBSERVACIONES_LOTES, ESQUEMA.OBSERVACIONES_LOTES], [CONFIG.TABLA_INFORMES_GENERADOS, ESQUEMA.INFORMES_GENERADOS],
+  ];
+}
+
 async function subirItem(it) {
   const d = it.datos;
-  if (it.tipo === "eliminar_producto_aplicado") {
+  if (it.tipo === "eliminar_visita") {
+    for (const [tabla, columnas] of tablasDeVisita()) {
+      try {
+        await Graph.eliminarFilasDonde(tabla, (f) => coincideVisitaExcel(f, columnas, d, false));
+      } catch (e) {
+        // Si una tabla opcional todavía no existe en el Excel, no hay nada que borrar ahí.
+        if (!/itemnotfound/i.test(e.message)) throw e;
+      }
+    }
+  } else if (it.tipo === "eliminar_producto_aplicado") {
     const C = ESQUEMA.PRODUCTOS_APLICADOS;
     await Graph.eliminarFilasDonde(CONFIG.TABLA_PRODUCTOS_APLICADOS, (f) => coincideVisitaExcel(f, C, d, true) &&
       claveProducto(f[C.producto], f[C.formulacion], f[C.dosis]) === claveProducto(d.producto, d.formulacion, d.dosis));
@@ -1572,7 +1641,8 @@ async function sincronizar() {
     const gruposDetenidos = new Set();
     for (const it of items.filter((i) => i.estado === "pendiente")) {
       const grupo = grupoDeOrden(it);
-      if (grupo && gruposDetenidos.has(grupo)) continue;
+      const visitaDelItem = it.datos && it.datos.fecha ? `v|${it.datos.cliente}|${it.datos.finca}|${it.datos.fecha}` : null;
+      if ((grupo && gruposDetenidos.has(grupo)) || (visitaDelItem && gruposDetenidos.has(visitaDelItem))) continue;
       try {
         if (await subirItem(it)) {
           // ya subido arriba
@@ -1610,6 +1680,7 @@ async function sincronizar() {
         await DB.marcarError(it.id, e.message);
         errores.push(e.message);
         if (grupo) gruposDetenidos.add(grupo);
+        if (it.tipo === "eliminar_visita") gruposDetenidos.add(visitaDelItem);
       }
     }
   } finally {
@@ -1666,6 +1737,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-terminar-lote").addEventListener("click", onTerminarLote);
   el("btn-punto-anterior").addEventListener("click", onPuntoAnterior);
   el("btn-finalizar-lote").addEventListener("click", onFinalizarLote);
+  el("btn-borrar-visita").addEventListener("click", onBorrarVisita);
 
   // Cualquier cosa que se escriba durante la visita se guarda al instante en el celular.
   PANTALLAS_FLUJO.forEach((id) => {

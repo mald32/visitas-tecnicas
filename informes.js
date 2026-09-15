@@ -160,6 +160,15 @@ const Informes = {
     return this._remoto[claveCache];
   },
 
+  // Filas del Excel con la fecha normalizada, sin las de visitas que se borraron en la app y aún
+  // no se borran allá (así desaparecen de informes e historial desde el primer momento).
+  async _remota(nombreTabla, claveCache, columnas) {
+    const crudas = this._normalizarFechas(await this._tablaRemota(nombreTabla, claveCache), columnas.fecha);
+    const borradas = new Set((await this._pendientes()).filter((it) => it.tipo === "eliminar_visita").map((it) => claveVisita(it.datos)));
+    if (borradas.size === 0) return crudas;
+    return crudas.filter((f) => !borradas.has(claveVisita({ cliente: f[columnas.cliente], finca: f[columnas.finca], fecha: f[columnas.fecha] })));
+  },
+
   // Lo pendiente de subir se consulta en cada llamada (no se cachea), para que lo recién
   // capturado o borrado se vea de inmediato al volver a entrar a un lote o a un informe.
   async _pendientes() {
@@ -176,15 +185,15 @@ const Informes = {
 
   // Tabla "Base de datos" + puntos capturados aún sin sincronizar.
   async filas() {
-    const crudas = await this._tablaRemota(CONFIG.TABLE_NAME, "filasBase");
+    const crudas = await this._remota(CONFIG.TABLE_NAME, "filasBase", COL);
     const pendientes = (await this._pendientes()).filter((it) => it.tipo === "punto").map((it) => it.datos.fila);
-    return this._normalizarFechas([...crudas, ...pendientes], COL.fecha);
+    return [...crudas, ...this._normalizarFechas(pendientes, COL.fecha)];
   },
 
   // Productos_Aplicados: lo del Excel, menos lo que se quitó en la app y aún no se borra allá,
   // más lo agregado en la app y aún no se sube.
   async filasProductos() {
-    const crudas = this._normalizarFechas(await this._tablaRemota(CONFIG.TABLA_PRODUCTOS_APLICADOS, "productosAplicadosBase"), COL_PA.fecha);
+    const crudas = await this._remota(CONFIG.TABLA_PRODUCTOS_APLICADOS, "productosAplicadosBase", COL_PA);
     const pendientes = await this._pendientes();
     const quitados = new Set(pendientes.filter((it) => it.tipo === "eliminar_producto_aplicado")
       .map((it) => claveVisitaLote(it.datos) + "|" + claveProducto(it.datos.producto, it.datos.formulacion, it.datos.dosis)));
@@ -199,12 +208,12 @@ const Informes = {
 
   // Productos_Recomendados (lo que se recomendó en el informe de una visita).
   async filasRecomendados() {
-    const crudas = await this._tablaRemota(CONFIG.TABLA_PRODUCTOS_RECOMENDADOS, "productosRecomendadosBase");
+    const crudas = await this._remota(CONFIG.TABLA_PRODUCTOS_RECOMENDADOS, "productosRecomendadosBase", COL_PR);
     const pendientes = (await this._pendientes()).filter((it) => it.tipo === "producto_recomendado").map((it) => [
       it.datos.cliente, it.datos.finca, it.datos.fecha, "",
       it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
     ]);
-    return this._normalizarFechas([...crudas, ...pendientes], COL_PR.fecha);
+    return [...crudas, ...this._normalizarFechas(pendientes, COL_PR.fecha)];
   },
 
   // Productos recomendados guardados para una visita exacta (mismo cliente+finca+fecha), para
@@ -249,7 +258,7 @@ const Informes = {
   // visita (así un cambio de "en general" a "por lotes" no deja filas viejas). Las columnas
   // calculadas se recalculan aquí para lo no sincronizado, con las mismas fórmulas del Excel.
   async filasProductividad() {
-    const crudas = this._normalizarFechas(await this._tablaRemota(CONFIG.TABLA_PRODUCTIVIDAD, "productividadBase"), COL_PF.fecha);
+    const crudas = await this._remota(CONFIG.TABLA_PRODUCTIVIDAD, "productividadBase", COL_PF);
     const pendientes = await this._pendientes();
     const reemplazos = pendientes.filter((it) => it.tipo === "productividad_visita");
     const visitasReemplazadas = new Set(reemplazos.map((it) => claveVisita(it.datos)));
@@ -288,7 +297,7 @@ const Informes = {
 
   // Observaciones_Lotes: una por lote de cada visita. Una pendiente reemplaza la del Excel.
   async filasObservacionesLotes() {
-    const crudas = this._normalizarFechas(await this._tablaRemota(CONFIG.TABLA_OBSERVACIONES_LOTES, "observacionesLotesBase"), COL_OL.fecha);
+    const crudas = await this._remota(CONFIG.TABLA_OBSERVACIONES_LOTES, "observacionesLotesBase", COL_OL);
     const pendientes = (await this._pendientes()).filter((it) => it.tipo === "observacion_lote");
     const reemplazadas = new Set(pendientes.map((it) => claveVisitaLote(it.datos)));
     const conservadas = crudas.filter((f) => !reemplazadas.has(claveVisitaLote({
@@ -300,7 +309,7 @@ const Informes = {
 
   // Informes_Generados: uno por visita. Uno pendiente reemplaza el del Excel.
   async filasInformesGenerados() {
-    const crudas = this._normalizarFechas(await this._tablaRemota(CONFIG.TABLA_INFORMES_GENERADOS, "informesGeneradosBase"), COL_IG.fecha);
+    const crudas = await this._remota(CONFIG.TABLA_INFORMES_GENERADOS, "informesGeneradosBase", COL_IG);
     const pendientes = (await this._pendientes()).filter((it) => it.tipo === "informe_generado");
     const reemplazadas = new Set(pendientes.map((it) => claveVisita(it.datos)));
     const conservadas = crudas.filter((f) => !reemplazadas.has(claveVisita({ cliente: f[COL_IG.cliente], finca: f[COL_IG.finca], fecha: f[COL_IG.fecha] })));
@@ -317,25 +326,29 @@ const Informes = {
     } : null;
   },
 
-  // Visitas para el Historial: las que tienen puntos capturados y un informe generado. Las de antes
-  // de existir Informes_Generados se reconocen porque tienen productos recomendados guardados.
-  // `excluir` son las claves "cliente|finca|fecha" de las visitas que siguen en curso.
-  async visitasConInforme(excluir = new Set()) {
+  // Visitas para el Historial: todas las de la hoja "Base de datos" (y las capturadas aún sin subir),
+  // de la más reciente a la más antigua, indicando si les falta registrar productos aplicados, la
+  // recomendación (productos recomendados o informe generado) o los datos de productividad.
+  async visitasHistorial() {
     const filas = await this.filas();
-    const conPuntos = {};
+    const visitas = {};
     filas.forEach((f) => {
       const k = claveVisita({ cliente: f[COL.cliente], finca: f[COL.finca], fecha: f[COL.fecha] });
-      if (!conPuntos[k]) conPuntos[k] = { cliente: f[COL.cliente], finca: f[COL.finca], fecha: f[COL.fecha], lotes: new Set() };
-      conPuntos[k].lotes.add(String(f[COL.lote]));
+      if (!visitas[k]) visitas[k] = { clave: k, cliente: f[COL.cliente], finca: f[COL.finca], fecha: f[COL.fecha], lotes: new Set() };
+      visitas[k].lotes.add(String(f[COL.lote]));
     });
-    const conInforme = new Set([
-      ...(await this.filasInformesGenerados()).map((f) => claveVisita({ cliente: f[COL_IG.cliente], finca: f[COL_IG.finca], fecha: f[COL_IG.fecha] })),
-      ...(await this.filasRecomendados()).map((f) => claveVisita({ cliente: f[COL_PR.cliente], finca: f[COL_PR.finca], fecha: f[COL_PR.fecha] })),
-    ]);
-    return Object.entries(conPuntos)
-      .filter(([k]) => conInforme.has(k) && !excluir.has(k))
-      .map(([, v]) => ({ cliente: v.cliente, finca: v.finca, fecha: v.fecha, numeroLotes: v.lotes.size }))
-      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : String(a.cliente).localeCompare(String(b.cliente), "es")));
+    const claves = (lista, C) => new Set(lista.map((f) => claveVisita({ cliente: f[C.cliente], finca: f[C.finca], fecha: f[C.fecha] })));
+    const conAplicados = claves(await this.filasProductos(), COL_PA);
+    const conRecomendacion = new Set([...claves(await this.filasRecomendados(), COL_PR), ...claves(await this.filasInformesGenerados(), COL_IG)]);
+    const conProductividad = claves(await this.filasProductividad(), COL_PF);
+    return Object.values(visitas)
+      .map((v) => ({
+        clave: v.clave, cliente: v.cliente, finca: v.finca, fecha: v.fecha, numeroLotes: v.lotes.size,
+        faltaAplicados: !conAplicados.has(v.clave),
+        faltaRecomendacion: !conRecomendacion.has(v.clave),
+        faltaProductividad: !conProductividad.has(v.clave),
+      }))
+      .sort((x, y) => (x.fecha < y.fecha ? 1 : x.fecha > y.fecha ? -1 : String(x.cliente).localeCompare(String(y.cliente), "es")));
   },
 
   // Todo lo guardado de una visita para mostrarlo en el Historial.

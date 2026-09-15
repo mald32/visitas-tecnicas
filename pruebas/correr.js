@@ -330,23 +330,34 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     filaPunto({ fecha: "2026-08-01" }), filaPunto({ fecha: "2026-09-14" }), filaPunto({ fecha: "2026-09-10" }),
   ];
 
-  await pruebaAsync("solo muestra visitas con informe, de la más reciente a la más antigua", async () => {
-    const { Informes } = cargarInformes({
-      filas: filasTresVisitas,
-      informesGenerados: [["CLIENTE", "FINCA", "2026-08-01", "2026-08-02", "", "", ""]],
-      cola: [{ tipo: "informe_generado", datos: { cliente: "CLIENTE", finca: "FINCA", fecha: "2026-09-14", fechaInforme: "2026-09-15" } }],
-    });
-    const v = await Informes.visitasConInforme();
-    igual(v.map((x) => x.fecha).join(","), "2026-09-14,2026-08-01", "la del 10 no tiene informe");
+  await pruebaAsync("muestra todas las visitas de la base de datos, de la más reciente a la más antigua", async () => {
+    const { Informes } = cargarInformes({ filas: filasTresVisitas });
+    const v = await Informes.visitasHistorial();
+    igual(v.map((x) => x.fecha).join(","), "2026-09-14,2026-09-10,2026-08-01");
   });
 
-  await pruebaAsync("no muestra en el historial una visita que sigue en curso", async () => {
+  await pruebaAsync("indica qué información le falta a cada visita", async () => {
     const { Informes } = cargarInformes({
       filas: filasTresVisitas,
-      informesGenerados: [["CLIENTE", "FINCA", "2026-09-14", "2026-09-14", "", "", ""]],
+      productosAplicados: [["CLIENTE", "FINCA", "2026-09-14", 1, "ORTHENE", "INSECTICIDA", "SC", "cc", 200]],
+      informesGenerados: [["CLIENTE", "FINCA", "2026-09-14", "2026-09-15", "", "", "Nota"]],
+      productividad: [["CLIENTE", "FINCA", "2026-08-01", "", 10, 20, 30, 15, 2, 1, 30]],
     });
-    const v = await Informes.visitasConInforme(new Set(["CLIENTE|FINCA|2026-09-14"]));
-    igual(v.length, 0);
+    const v = await Informes.visitasHistorial();
+    const del14 = v.find((x) => x.fecha === "2026-09-14"), del01 = v.find((x) => x.fecha === "2026-08-01");
+    igual([del14.faltaAplicados, del14.faltaRecomendacion, del14.faltaProductividad].join(), "false,false,true");
+    igual([del01.faltaAplicados, del01.faltaRecomendacion, del01.faltaProductividad].join(), "true,true,false");
+  });
+
+  await pruebaAsync("una visita borrada en la app desaparece aunque siga en el Excel", async () => {
+    const { Informes } = cargarInformes({
+      filas: filasTresVisitas,
+      productosAplicados: [["CLIENTE", "FINCA", "2026-09-14", 1, "ORTHENE", "INSECTICIDA", "SC", "cc", 200]],
+      cola: [{ tipo: "eliminar_visita", datos: { cliente: "CLIENTE", finca: "FINCA", fecha: "2026-09-14" } }],
+    });
+    const v = await Informes.visitasHistorial();
+    igual(v.map((x) => x.fecha).join(","), "2026-09-10,2026-08-01");
+    igual((await Informes.filasProductos()).length, 0, "sus productos aplicados tampoco deben verse");
   });
 
   // -------------------------------------------------------------------------

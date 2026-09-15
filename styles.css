@@ -177,6 +177,14 @@ button.secundario {
 }
 
 .historial-visita { cursor: pointer; }
+.historial-faltantes { display: block; font-size: 11px; color: var(--rojo); margin-top: 2px; }
+.historial-completa { display: block; font-size: 11px; color: var(--principal); margin-top: 2px; }
+.visita-encabezado { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.visita-encabezado #resumen-visita { margin: 0; }
+#pantalla-lotes .btn-papelera {
+  width: auto; margin: 0; padding: 8px; line-height: 0; flex-shrink: 0;
+  background: #fff; color: var(--rojo); border: 1.5px solid var(--rojo); border-radius: 50%;
+}
 .historial-bloque {
   border: 1px solid var(--borde);
   border-radius: 10px;
