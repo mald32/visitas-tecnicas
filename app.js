@@ -136,6 +136,13 @@ function mostrarPantalla(id) {
   PANTALLAS.forEach((p) => (el(p).hidden = p !== id));
 }
 
+// new Date().toISOString() da la fecha en UTC: en Colombia (UTC-5), pasadas las 7pm ya muestra
+// la fecha de manana. Esta funcion da la fecha de HOY en la zona horaria local del celular.
+function fechaLocalHoy() {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
 async function iniciar() {
   registrarServiceWorker();
   await Graph.init();
@@ -167,7 +174,7 @@ async function iniciar() {
 async function despuesDeLogin() {
   await cargarConfigYClientes();
   poblarSelectCliente();
-  el("fecha").value = new Date().toISOString().slice(0, 10);
+  el("fecha").value = fechaLocalHoy();
   await renderResumenHoy();
   el("nav-tabs").hidden = false;
   mostrarPantalla("pantalla-visita");
@@ -175,7 +182,7 @@ async function despuesDeLogin() {
 
 // Solo muestra lo que aún NO se ha subido a Excel; al sincronizar, desaparece de aquí.
 async function renderResumenHoy() {
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = fechaLocalHoy();
   const items = await DB.listarItems();
   const puntosHoy = items.filter((it) => it.tipo === "punto" && it.datos.fecha === hoy && it.estado === "pendiente");
 
@@ -802,7 +809,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-nueva-visita").addEventListener("click", async () => {
     await cargarConfigYClientes();
     poblarSelectCliente();
-    el("fecha").value = new Date().toISOString().slice(0, 10);
+    el("fecha").value = fechaLocalHoy();
     await renderResumenHoy();
     mostrarPantalla("pantalla-visita");
   });

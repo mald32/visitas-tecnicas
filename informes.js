@@ -421,17 +421,32 @@ const Informes = {
         ? `<div class="manejo-columnas">${filasM.map(([k, v]) => `<div><span class="manejo-etiqueta">${k}</span>${v}</div>`).join("")}</div>`
         : "";
       const listaProductos = productosLi
-        ? `<span class="manejo-subtitulo">Productos a aplicar</span><ul class="manejo-lista">${productosLi}</ul>`
+        ? `<span class="manejo-subtitulo">Productos aplicados</span><ul class="manejo-lista">${productosLi}</ul>`
         : "";
       return columnas + listaProductos;
     }
 
     // Si dos o mas lotes tuvieron exactamente el mismo manejo (mismos productos y datos), se
     // reporta una sola vez con un subtitulo indicando a que lotes aplica, en vez de repetirlo.
+    // La firma normaliza espacios y el orden de los productos, para que el mismo manejo no se
+    // considere "distinto" solo porque los productos quedaron en otro orden.
+    function normalizar(v) { return v == null ? "" : String(v).trim(); }
+    function firmaManejo(t) {
+      const m = t.manejo || {};
+      const productosOrdenados = (t.productos || [])
+        .map((p) => [normalizar(p.tipo), normalizar(p.nombre), normalizar(p.formulacion), normalizar(p.unidad), normalizar(p.dosis)])
+        .map((campos) => campos.join("|"))
+        .sort();
+      return JSON.stringify({
+        tipoFumigacion: normalizar(m.tipoFumigacion), litrosMezclaHa: normalizar(m.litrosMezclaHa),
+        ordenMezclaCorrecto: normalizar(m.ordenMezclaCorrecto), phFinalMezcla: normalizar(m.phFinalMezcla),
+        productos: productosOrdenados,
+      });
+    }
     const gruposManejo = [];
     const indicePorFirma = new Map();
     for (const t of D.tabla_lotes) {
-      const firma = JSON.stringify({ m: t.manejo, p: (t.productos || []).map((p) => [p.tipo, p.nombre, p.formulacion, p.unidad, p.dosis]) });
+      const firma = firmaManejo(t);
       if (!indicePorFirma.has(firma)) {
         indicePorFirma.set(firma, gruposManejo.length);
         gruposManejo.push({ lotes: [t.lote], manejo: t.manejo, productos: t.productos });
@@ -466,8 +481,8 @@ const Informes = {
       const leyendaProm = D.promedio_torta.map((v, vi) =>
         `<li><span class="leg-swatch" style="background:${COLORES_TORTA[vi]}"></span>${ETIQUETAS_TORTA[vi]}: ${fmt(v, true)}</li>`
       ).join("");
-      return `<div class="lote-bloque">
-        <h3>Estado general de la finca (promedio de todos los lotes)</h3>
+      return `<div class="lote-bloque lote-bloque-promedio">
+        <h3>★ Estado general de la finca (promedio de todos los lotes)</h3>
         <div class="lote-fila">
           <div class="chart-box chart-barras"><canvas id="barrasPromedio" width="480" height="220"></canvas></div>
           <div class="torta-box">
@@ -574,6 +589,8 @@ td.alerta{background:#fbe4e1;color:var(--rojo);font-weight:700;}
 .lote-bloque{margin-top:22px;padding-top:18px;border-top:1px solid var(--borde);}
 .lote-bloque:first-child{border-top:none;padding-top:0;}
 .lote-bloque h3{color:var(--principal);font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:17px;font-weight:800;}
+.lote-bloque-promedio{margin-top:28px;padding:18px;border:2px solid var(--acento);border-radius:8px;background:var(--fondo-suave);}
+.lote-bloque-promedio h3{color:var(--acento);}
 .lote-fila{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-top:12px;}
 .chart-barras{flex:2;min-width:320px;}
 .torta-box{text-align:center;}
@@ -639,7 +656,10 @@ footer{margin-top:36px;font-size:12.5px;color:#a89c8c;text-align:center;}
 
 <div class="datos-grid">
   <div><span class="icono">📅</span><div><span class="etiqueta">Fecha de visita</span>${D.fecha}</div></div>
-  <div><span class="icono">📋</span><div><span class="etiqueta">Lotes revisados</span>${D.lotes_reales.map((l) => "Lote " + l).join(", ")}</div></div>
+  <div><span class="icono">📋</span><div><span class="etiqueta">Lotes revisados</span>${D.lotes_reales.map((l) => {
+    const t = D.tabla_lotes.find((x) => x.lote === l);
+    return t && t.potrero ? `Lote ${l} (Potrero ${t.potrero})` : `Lote ${l}`;
+  }).join(", ")}</div></div>
 </div>
 
 <h2 class="banner-azul">Manejo agronómico aplicado</h2>
