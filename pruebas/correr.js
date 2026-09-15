@@ -324,8 +324,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     igual(manejo.tipoFumigacion, "Aerea (Dron)");
   });
 
-  console.log("
-Historial de visitas");
+  console.log("\nHistorial de visitas");
 
   const filasTresVisitas = [
     filaPunto({ fecha: "2026-08-01" }), filaPunto({ fecha: "2026-09-14" }), filaPunto({ fecha: "2026-09-10" }),
