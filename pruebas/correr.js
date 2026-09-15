@@ -81,11 +81,12 @@ function filaPunto({ cliente = "CLIENTE", finca = "FINCA", fecha = "2026-09-14",
 
 // Carga informes.js con Graph/DB simulados que devuelven las filas que le pasemos.
 function cargarInformes({ filas = [], productosAplicados = [], recomendados = [], productividad = [], catalogo = [],
-  observacionesLotes = [], cola = [], cache = {}, leerTablaColgada = false } = {}) {
+  observacionesLotes = [], informesGenerados = [], cola = [], cache = {}, leerTablaColgada = false } = {}) {
   const Graph = {
     async leerTabla(nombre) {
       if (leerTablaColgada) return new Promise(() => {}); // red "en línea" pero sin internet real
       if (nombre === "Observaciones_Lotes") return observacionesLotes;
+      if (nombre === "Informes_Generados") return informesGenerados;
       if (nombre === "TablaBaseDatos") return filas;
       if (nombre === "Productos_Aplicados") return productosAplicados;
       if (nombre === "Productos_Recomendados") return recomendados;
@@ -109,6 +110,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     TABLA_PRODUCTOS_RECOMENDADOS: "Productos_Recomendados",
     TABLA_PRODUCTIVIDAD: "Productividad_Fincas",
     TABLA_OBSERVACIONES_LOTES: "Observaciones_Lotes",
+    TABLA_INFORMES_GENERADOS: "Informes_Generados",
     ASESOR: { nombre: "Miguel Leon", profesion: "Ingeniero Agrónomo" },
   };
   return cargarApp(["esquema.js", "informes.js"], { Graph, DB, CONFIG }, ["Informes"]);
@@ -320,6 +322,32 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     Informes.LIMITE_LECTURA_MS = 30;
     const { manejo } = await Informes.manejoYProductosDeLote("CLIENTE", "FINCA", "2026-09-14", 1);
     igual(manejo.tipoFumigacion, "Aerea (Dron)");
+  });
+
+  console.log("
+Historial de visitas");
+
+  const filasTresVisitas = [
+    filaPunto({ fecha: "2026-08-01" }), filaPunto({ fecha: "2026-09-14" }), filaPunto({ fecha: "2026-09-10" }),
+  ];
+
+  await pruebaAsync("solo muestra visitas con informe, de la más reciente a la más antigua", async () => {
+    const { Informes } = cargarInformes({
+      filas: filasTresVisitas,
+      informesGenerados: [["CLIENTE", "FINCA", "2026-08-01", "2026-08-02", "", "", ""]],
+      cola: [{ tipo: "informe_generado", datos: { cliente: "CLIENTE", finca: "FINCA", fecha: "2026-09-14", fechaInforme: "2026-09-15" } }],
+    });
+    const v = await Informes.visitasConInforme();
+    igual(v.map((x) => x.fecha).join(","), "2026-09-14,2026-08-01", "la del 10 no tiene informe");
+  });
+
+  await pruebaAsync("no muestra en el historial una visita que sigue en curso", async () => {
+    const { Informes } = cargarInformes({
+      filas: filasTresVisitas,
+      informesGenerados: [["CLIENTE", "FINCA", "2026-09-14", "2026-09-14", "", "", ""]],
+    });
+    const v = await Informes.visitasConInforme(new Set(["CLIENTE|FINCA|2026-09-14"]));
+    igual(v.length, 0);
   });
 
   // -------------------------------------------------------------------------

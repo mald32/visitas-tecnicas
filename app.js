@@ -148,7 +148,7 @@ function leerProductosFormulario(containerId) {
 }
 
 const el = (id) => document.getElementById(id);
-const PANTALLAS = ["pantalla-login", "pantalla-visita", "pantalla-lotes", "pantalla-manejo", "pantalla-punto", "pantalla-fin", "pantalla-informes"];
+const PANTALLAS = ["pantalla-login", "pantalla-visita", "pantalla-lotes", "pantalla-manejo", "pantalla-punto", "pantalla-fin", "pantalla-informes", "pantalla-historial"];
 
 const PANTALLAS_FLUJO = ["pantalla-lotes", "pantalla-manejo", "pantalla-punto"];
 
@@ -157,13 +157,21 @@ function mostrarPantalla(id) {
   if (PANTALLAS_FLUJO.includes(id)) pantallaFlujo = id;
 }
 
-// ---------- Visita en curso: todo lo escrito se guarda en el celular al instante ----------
+// ---------- Visitas en curso: todo lo escrito se guarda en el celular al instante ----------
 
-// Guarda en el celular la visita que se está capturando, con lo que haya escrito en pantalla en
-// ese momento (manejo, productos, el punto a medio llenar, las observaciones del lote). Si se
-// recarga la página, se cierra la app o se apaga el celular, al volver se sigue donde iba.
+// Cada visita iniciada y no terminada ("Fin del muestreo") queda guardada en el celular con lo que
+// se haya escrito: manejo, productos, el punto a medio llenar y las observaciones del lote. Puede
+// haber varias a la vez; se listan en "Visitas en curso". Si se recarga o se cierra la app estando
+// dentro de una, al volver se abre justo donde iba.
 const CAMPOS_PUNTO = ["potrero-nombre-punto", "adultos", "ninfas", "incid-coll", "sev-coll", "loritos", "lepidopteros",
   "hojas-moluscos", "incid-hongos", "sev-hongos", "observaciones"];
+
+let borradores = {}; // {"cliente|finca|fecha": borrador}
+// Lo escrito y todavía no confirmado con un botón, por lote, para no perderlo al salir de la visita
+// y volver a entrar por el menú de lotes: {manejo: {lote: {...}}, punto: {lote: {...}}, obs: {lote: "texto"}}.
+let sinGuardar = { manejo: {}, punto: {}, obs: {} };
+
+const claveDeVisita = (v) => `${v.cliente}|${v.finca}|${v.fecha}`;
 
 function leerBloquesProductoCrudos(containerId) {
   return [...el(containerId).querySelectorAll(".producto-bloque")].map((div) => {
@@ -172,45 +180,79 @@ function leerBloquesProductoCrudos(containerId) {
   });
 }
 
-async function guardarBorrador() {
-  if (!visita) return;
-  const campos = {};
-  CAMPOS_MANEJO.forEach((c) => { campos[c.key] = el(c.id).value; });
-  const punto = {};
-  CAMPOS_PUNTO.forEach((id) => { punto[id] = el(id).value; });
-  await DB.guardarCache("visitaEnCurso", {
+let colaBorradores = Promise.resolve();
+function escribirBorradores() {
+  const copia = JSON.parse(JSON.stringify(borradores));
+  colaBorradores = colaBorradores.then(() => DB.guardarCache("visitasEnCurso", copia))
+    .catch((e) => console.warn("No se pudo guardar la visita en curso:", e.message));
+  return colaBorradores;
+}
+
+function guardarBorrador() {
+  if (!visita) return Promise.resolve();
+  const lote = loteActual == null ? null : String(loteActual);
+  if (lote && pantallaFlujo === "pantalla-manejo") {
+    const campos = {};
+    CAMPOS_MANEJO.forEach((c) => { campos[c.key] = el(c.id).value; });
+    sinGuardar.manejo[lote] = {
+      campos, productos: leerBloquesProductoCrudos("lista-productos"),
+      copiado: el("manejo-copiado").hidden ? "" : el("manejo-copiado").textContent,
+    };
+  } else if (lote && pantallaFlujo === "pantalla-punto") {
+    if (!el("caja-observaciones-lote").hidden) {
+      sinGuardar.obs[lote] = el("observaciones-lote").value;
+    } else if (!editandoPuntoId) {
+      const punto = {};
+      CAMPOS_PUNTO.forEach((id) => { punto[id] = el(id).value; });
+      sinGuardar.punto[lote] = punto;
+    }
+  }
+  borradores[claveDeVisita(visita)] = {
     visita, pantalla: pantallaFlujo || "pantalla-lotes", loteActual, manejoActual, manejoPorLote,
-    capturandoLote, puntoMostrado, editandoPuntoId,
-    manejoFormulario: { campos, productos: leerBloquesProductoCrudos("lista-productos"), copiado: el("manejo-copiado").hidden ? "" : el("manejo-copiado").textContent },
-    punto, observacionesLoteAbierta: !el("caja-observaciones-lote").hidden, observacionesLote: el("observaciones-lote").value,
-  });
+    capturandoLote, puntoMostrado, editandoPuntoId, sinGuardar, actualizado: new Date().toISOString(),
+  };
+  return escribirBorradores();
+}
+
+async function cargarBorradores() {
+  borradores = (await DB.leerCache("visitasEnCurso")) || {};
+  // La v38/v39 guardaba una sola visita en curso con otro nombre: se pasa al formato nuevo.
+  const anterior = await DB.leerCache("visitaEnCurso");
+  if (anterior && anterior.visita) {
+    const k = claveDeVisita(anterior.visita);
+    if (!borradores[k]) borradores[k] = { ...anterior, sinGuardar: { manejo: {}, punto: { [anterior.loteActual]: anterior.punto || {} }, obs: {} } };
+    await DB.guardarCache("visitaActiva", k);
+    await DB.guardarCache("visitaEnCurso", null);
+    await escribirBorradores();
+  }
 }
 
 async function borrarBorrador() {
-  await DB.guardarCache("visitaEnCurso", null);
+  if (visita) delete borradores[claveDeVisita(visita)];
+  await escribirBorradores();
+  await DB.guardarCache("visitaActiva", null);
 }
 
-async function restaurarBorrador(b) {
+// exacta = true: vuelve a la misma pantalla (al recargar la app). Si no, entra al menú de lotes.
+async function restaurarBorrador(b, exacta) {
   visita = b.visita;
   loteActual = b.loteActual;
   manejoActual = b.manejoActual || {};
   manejoPorLote = b.manejoPorLote || {};
   capturandoLote = !!b.capturandoLote;
-  editandoPuntoId = b.editandoPuntoId || null;
+  editandoPuntoId = exacta ? (b.editandoPuntoId || null) : null;
+  sinGuardar = b.sinGuardar || { manejo: {}, punto: {}, obs: {} };
+  ["manejo", "punto", "obs"].forEach((k) => { if (!sinGuardar[k]) sinGuardar[k] = {}; });
+  await DB.guardarCache("visitaActiva", claveDeVisita(visita));
 
   el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
   renderBotonesLotes();
   await precargarProductividad();
 
-  if (b.pantalla === "pantalla-manejo" && loteActual) {
-    el("manejo-lote-num").textContent = loteActual;
-    const m = b.manejoFormulario || {};
-    CAMPOS_MANEJO.forEach((c) => { el(c.id).value = (m.campos && m.campos[c.key]) || ""; });
-    el("lista-productos").innerHTML = "";
-    (m.productos && m.productos.length ? m.productos : [{}]).forEach((p) => agregarBloqueProducto("lista-productos", p));
-    el("manejo-copiado").textContent = m.copiado || "";
-    el("manejo-copiado").hidden = !m.copiado;
-  } else if (b.pantalla === "pantalla-punto" && loteActual) {
+  const pantalla = exacta && loteActual && PANTALLAS_FLUJO.includes(b.pantalla) ? b.pantalla : "pantalla-lotes";
+  if (pantalla === "pantalla-manejo") {
+    llenarFormularioManejo(sinGuardar.manejo[String(loteActual)] || {});
+  } else if (pantalla === "pantalla-punto") {
     el("lote-actual-num").textContent = loteActual;
     el("form-punto").reset();
     await calcularSiguientePunto();
@@ -218,13 +260,55 @@ async function restaurarBorrador(b) {
       puntoMostrado = b.puntoMostrado;
       el("punto-actual-num").textContent = puntoMostrado;
     }
-    CAMPOS_PUNTO.forEach((id) => { if (b.punto && b.punto[id] != null) el(id).value = b.punto[id]; });
+    const obs = sinGuardar.obs[String(loteActual)];
+    if (obs != null && b.pantalla === "pantalla-punto" && capturandoLote === false) {
+      mostrarCajaObservacionesLote(true);
+      el("observaciones-lote").value = obs;
+    } else {
+      mostrarCajaObservacionesLote(false);
+      llenarPuntoSinGuardar();
+    }
     el("btn-punto-anterior").disabled = puntoMostrado <= 1;
-    mostrarCajaObservacionesLote(!!b.observacionesLoteAbierta);
-    el("observaciones-lote").value = b.observacionesLote || "";
     await refrescarResumenCola();
   }
-  mostrarPantalla(PANTALLAS_FLUJO.includes(b.pantalla) && (b.pantalla === "pantalla-lotes" || loteActual) ? b.pantalla : "pantalla-lotes");
+  mostrarPantalla(pantalla);
+}
+
+function llenarFormularioManejo(m) {
+  el("manejo-lote-num").textContent = loteActual;
+  CAMPOS_MANEJO.forEach((c) => { el(c.id).value = (m.campos && m.campos[c.key]) || ""; });
+  el("lista-productos").innerHTML = "";
+  (m.productos && m.productos.length ? m.productos : [{}]).forEach((p) => agregarBloqueProducto("lista-productos", p));
+  el("manejo-copiado").textContent = m.copiado || "";
+  el("manejo-copiado").hidden = !m.copiado;
+}
+
+function llenarPuntoSinGuardar() {
+  const punto = sinGuardar.punto[String(loteActual)];
+  if (!punto || editandoPuntoId) return;
+  CAMPOS_PUNTO.forEach((id) => {
+    if (punto[id] != null && punto[id] !== "" ) el(id).value = punto[id];
+  });
+}
+
+// Botón/pestaña "Visitas" estando dentro de una visita: se guarda tal cual y se vuelve al menú de
+// elegir cliente. La visita queda en "Visitas en curso" para retomarla cuando se quiera.
+async function salirDeVisita() {
+  if (visita) await guardarBorrador();
+  visita = null;
+  loteActual = null;
+  pantallaFlujo = null;
+  manejoPorLote = {};
+  sinGuardar = { manejo: {}, punto: {}, obs: {} };
+  await DB.guardarCache("visitaActiva", null);
+  await mostrarInicioVisitas();
+}
+
+async function mostrarInicioVisitas() {
+  poblarSelectCliente();
+  el("fecha").value = fechaLocalHoy();
+  await renderVisitasEnCurso();
+  mostrarPantalla("pantalla-visita");
 }
 
 function mostrarCajaObservacionesLote(mostrar) {
@@ -271,73 +355,49 @@ async function iniciar() {
 
 async function despuesDeLogin() {
   await cargarConfigYClientes();
-  poblarSelectCliente();
-  el("fecha").value = fechaLocalHoy();
-  await renderResumenHoy();
   el("nav-tabs").hidden = false;
-  const borrador = await DB.leerCache("visitaEnCurso");
-  if (borrador && borrador.visita) {
-    await restaurarBorrador(borrador);
+  await cargarBorradores();
+  const activa = await DB.leerCache("visitaActiva");
+  if (activa && borradores[activa]) {
+    await restaurarBorrador(borradores[activa], true);
   } else {
-    mostrarPantalla("pantalla-visita");
+    await mostrarInicioVisitas();
   }
   if (navigator.onLine) verificarFormatoDelExcel(); // en segundo plano: no debe demorar la entrada
 }
 
-// Solo muestra lo que aún NO se ha subido a Excel; al sincronizar, desaparece de aquí.
-async function renderResumenHoy() {
-  const hoy = fechaLocalHoy();
-  const items = await DB.listarItems();
-  const puntosHoy = items.filter((it) => it.tipo === "punto" && it.datos.fecha === hoy && it.estado === "pendiente");
-
-  if (puntosHoy.length === 0) {
+// Visitas iniciadas y no terminadas, de la más reciente a la más antigua.
+async function renderVisitasEnCurso() {
+  const lista = Object.values(borradores).filter((b) => b && b.visita)
+    .sort((a, b) => (a.visita.fecha < b.visita.fecha ? 1 : a.visita.fecha > b.visita.fecha ? -1 : 0));
+  if (lista.length === 0) {
     el("resumen-hoy").innerHTML = "";
     return;
   }
-
-  const visitas = {};
-  for (const p of puntosHoy) {
-    const clave = `${p.datos.cliente}|||${p.datos.finca}`;
-    if (!visitas[clave]) visitas[clave] = { cliente: p.datos.cliente, finca: p.datos.finca, lotes: {} };
-    const v = visitas[clave];
-    if (!v.lotes[p.datos.lote]) v.lotes[p.datos.lote] = { cantidad: 0, potrero: null };
-    v.lotes[p.datos.lote].cantidad += 1;
-    if (p.datos.fila[ESQUEMA.BASE.potrero] && !v.lotes[p.datos.lote].potrero) v.lotes[p.datos.lote].potrero = p.datos.fila[ESQUEMA.BASE.potrero];
-  }
-
-  let html = "<h2>Visitas de hoy sin sincronizar</h2>";
-  let i = 1;
-  for (const v of Object.values(visitas)) {
-    html += `<p class="visita-hoy" data-cliente="${v.cliente}" data-finca="${v.finca}" data-fecha="${hoy}"><strong>Visita ${i}</strong><br>${v.cliente} · ${v.finca}<br>`;
-    html += Object.entries(v.lotes)
-      .map(([lote, info]) => {
-        const etiqueta = info.potrero ? `Lote ${lote} (Potrero ${info.potrero})` : `Lote ${lote}`;
-        return `${etiqueta}: ${info.cantidad} punto(s)`;
-      })
-      .join("<br>");
-    html += "<br><span class=\"hint\">Toca para continuar muestreando</span></p>";
-    i++;
-  }
+  const items = await DB.listarItems();
+  let html = "<h2>Visitas en curso</h2>";
+  lista.forEach((b) => {
+    const v = b.visita;
+    const puntos = items.filter((it) => it.tipo === "punto" && it.datos.cliente === v.cliente && it.datos.finca === v.finca && it.datos.fecha === v.fecha);
+    const lotes = {};
+    puntos.forEach((p) => {
+      const l = lotes[p.datos.lote] || (lotes[p.datos.lote] = { cantidad: 0, potrero: "" });
+      l.cantidad += 1;
+      if (!l.potrero && p.datos.fila[ESQUEMA.BASE.potrero]) l.potrero = p.datos.fila[ESQUEMA.BASE.potrero];
+    });
+    const detalle = Object.keys(lotes).length
+      ? Object.entries(lotes).sort((a, b) => a[0] - b[0]).map(([lote, info]) =>
+        `${info.potrero ? `Lote ${lote} (Potrero ${esc(info.potrero)})` : `Lote ${lote}`}: ${info.cantidad} punto(s)`).join("<br>")
+      : "Sin puntos todavía";
+    html += `<p class="visita-hoy" data-clave="${esc(claveDeVisita(v))}"><strong>${esc(v.cliente)} · ${esc(v.finca)}</strong><br>${Informes.formatoFechaVisible(v.fecha)}<br>${detalle}<br><span class="hint">Toca para continuar la visita</span></p>`;
+  });
   el("resumen-hoy").innerHTML = html;
   el("resumen-hoy").querySelectorAll(".visita-hoy").forEach((elem) => {
-    elem.addEventListener("click", () =>
-      onRetomarVisita(elem.dataset.cliente, elem.dataset.finca, elem.dataset.fecha)
-    );
+    elem.addEventListener("click", async () => {
+      const b = borradores[elem.dataset.clave];
+      if (b) await restaurarBorrador(b, false);
+    });
   });
-}
-
-// Reabre una visita de hoy que ya tiene puntos guardados localmente, para seguir muestreando o agregar lotes.
-async function onRetomarVisita(cliente, finca, fecha) {
-  const f = clientesFincas.find((c) => c.cliente === cliente && c.finca === finca);
-  let numeroLotes = f ? f.numeroLotes : 1;
-
-  const items = await DB.listarItems();
-  const lotesUsados = items
-    .filter((it) => it.tipo === "punto" && it.datos.cliente === cliente && it.datos.finca === finca && it.datos.fecha === fecha)
-    .map((it) => it.datos.lote);
-  if (lotesUsados.length > 0) numeroLotes = Math.max(numeroLotes, ...lotesUsados);
-
-  await abrirVisita({ cliente, finca, fecha, numeroLotes });
 }
 
 // Compara los encabezados reales de "Base de datos" contra los que espera el código. Si alguien
@@ -479,9 +539,17 @@ async function onIniciarMonitoreo() {
 
 // Deja la visita guardada en el celular desde el primer momento, antes de capturar nada.
 async function abrirVisita(datos) {
+  const enCurso = borradores[claveDeVisita(datos)];
+  if (enCurso) {
+    enCurso.visita.numeroLotes = Math.max(enCurso.visita.numeroLotes || 1, datos.numeroLotes || 1);
+    await restaurarBorrador(enCurso, false);
+    return;
+  }
   visita = datos;
   loteActual = null;
   manejoPorLote = {};
+  sinGuardar = { manejo: {}, punto: {}, obs: {} };
+  await DB.guardarCache("visitaActiva", claveDeVisita(visita));
   mostrarPantalla("pantalla-lotes");
   el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
   renderBotonesLotes();
@@ -740,6 +808,14 @@ async function onElegirLote(lote) {
     loteActual = lote;
     el("manejo-lote-num").textContent = lote;
 
+    const pendienteDeConfirmar = sinGuardar.manejo[String(lote)];
+    if (pendienteDeConfirmar) {
+      llenarFormularioManejo(pendienteDeConfirmar);
+      mostrarPantalla("pantalla-manejo");
+      await guardarBorrador();
+      return;
+    }
+
     let manejo = await leerManejoDeLote(lote);
     let copiadoDe = null;
     if (manejoVacio(manejo)) {
@@ -774,6 +850,7 @@ async function onIniciarMonitoreoLote() {
 
   const productos = leerProductosFormulario("lista-productos");
   manejoPorLote[String(loteActual)] = { campos: { ...manejoActual }, productos };
+  delete sinGuardar.manejo[String(loteActual)];
   el("manejo-copiado").hidden = true;
 
   // Lo que ya estaba registrado para ESTE lote (en el Excel o pendiente en el celular). Se compara
@@ -845,6 +922,7 @@ async function onIniciarMonitoreoLote() {
   el("lote-actual-num").textContent = loteActual;
   el("form-punto").reset();
   mostrarCajaObservacionesLote(false);
+  llenarPuntoSinGuardar();
   el("btn-punto-anterior").disabled = puntoMostrado <= 1;
   mostrarPantalla("pantalla-punto");
   await guardarBorrador();
@@ -1026,8 +1104,10 @@ async function onTerminarLote() {
   } catch (e) {
     console.warn("No se pudo leer la observación del lote:", e.message);
   }
-  el("observaciones-lote").value = existente;
+  const escrita = sinGuardar.obs[String(loteActual)];
+  el("observaciones-lote").value = escrita != null ? escrita : existente;
   el("observaciones-lote").dataset.inicial = existente;
+  delete sinGuardar.punto[String(loteActual)];
   mostrarCajaObservacionesLote(true);
   el("caja-observaciones-lote").scrollIntoView({ behavior: "smooth", block: "start" });
   await guardarBorrador();
@@ -1048,6 +1128,7 @@ async function onFinalizarLote() {
   }
   if (potrero) await aplicarPotreroATodosLosPuntos(potrero);
 
+  delete sinGuardar.obs[String(loteActual)];
   mostrarCajaObservacionesLote(false);
   el("observaciones-lote").value = "";
   mostrarPantalla("pantalla-lotes");
@@ -1083,11 +1164,12 @@ async function onFinMuestreo() {
     resumen += "\n\nTodos los puntos ya están sincronizados con tu Excel.";
   }
   el("resumen-final").textContent = resumen;
+  await borrarBorrador(); // la visita terminada sale de "Visitas en curso"
   visita = null;
   loteActual = null;
   pantallaFlujo = null;
   manejoPorLote = {};
-  await borrarBorrador();
+  sinGuardar = { manejo: {}, punto: {}, obs: {} };
   mostrarPantalla("pantalla-fin");
 }
 
@@ -1101,28 +1183,36 @@ async function refrescarResumenCola() {
 
 // ---------- Pestaña Informes ----------
 
+// Al entrar a Informes no queda nada elegido: hay que escoger cliente, finca y fecha a propósito.
 function poblarSelectInformeCliente() {
   const clientes = clientesOrdenados();
-  el("informe-cliente").innerHTML = clientes.map((c) => `<option value="${c}">${c}</option>`).join("");
+  el("informe-cliente").innerHTML = `<option value="">Elija cliente</option>` +
+    clientes.map((c) => `<option value="${c}">${c}</option>`).join("");
   poblarSelectInformeFinca();
 }
 
 function poblarSelectInformeFinca() {
   const cliente = el("informe-cliente").value;
   const fincas = clientesFincas.filter((c) => c.cliente === cliente).map((f) => f.finca).sort(porNombre);
-  el("informe-finca").innerHTML = fincas.map((f) => `<option value="${f}">${f}</option>`).join("");
+  el("informe-finca").innerHTML = cliente
+    ? `<option value="">Elija finca</option>` + fincas.map((f) => `<option value="${f}">${f}</option>`).join("")
+    : `<option value="">Elija primero el cliente</option>`;
   poblarSelectInformeFecha();
 }
 
 async function poblarSelectInformeFecha() {
   const cliente = el("informe-cliente").value;
   const finca = el("informe-finca").value;
-  el("informe-fecha").innerHTML = `<option>Cargando fechas...</option>`;
   ocultarDatosInforme();
+  if (!cliente || !finca) {
+    el("informe-fecha").innerHTML = `<option value="">Elija primero la finca</option>`;
+    return;
+  }
+  el("informe-fecha").innerHTML = `<option value="">Cargando fechas...</option>`;
   try {
     const fechas = await Informes.fechasDisponibles(cliente, finca);
     el("informe-fecha").innerHTML = fechas.length
-      ? fechas.map((f) => `<option value="${f}">${Informes.formatoFechaVisible(f)}</option>`).join("")
+      ? `<option value="">Elija fecha</option>` + fechas.map((f) => `<option value="${f}">${Informes.formatoFechaVisible(f)}</option>`).join("")
       : `<option value="">Sin visitas registradas</option>`;
   } catch (e) {
     el("informe-fecha").innerHTML = `<option value="">Error al cargar fechas</option>`;
@@ -1174,6 +1264,10 @@ async function onVerDatos() {
 // se deja un bloque en blanco como de costumbre.
 async function precargarRecomendacionesGuardadas(cliente, finca, fecha) {
   const guardadas = await Informes.recomendacionesGuardadas(cliente, finca, fecha);
+  const informe = await Informes.informeGuardado(cliente, finca, fecha);
+  el("informe-tipo-fumigacion").value = (informe && informe.tipoFumigacion) || "";
+  el("informe-volumen-mezcla").value = (informe && informe.volumenMezcla) || "";
+  el("informe-recomendaciones").value = (informe && informe.notas) || "";
   el("lista-productos-informe").innerHTML = "";
   if (guardadas.length > 0) {
     guardadas.forEach((p) => agregarBloqueProducto("lista-productos-informe", p));
@@ -1251,6 +1345,7 @@ async function onGenerarInforme() {
     const productos = productosRecomendadosOrdenados().map((p) => ({ ...p, tipoFumigacion }));
     const notas = el("informe-recomendaciones").value.trim();
     await guardarProductosRecomendados(cliente, finca, fecha, productos);
+    await registrarInformeGenerado({ cliente, finca, fecha, fechaInforme: fechaLocalHoy(), tipoFumigacion, volumenMezcla, notas });
     const html = await Informes.generar(cliente, finca, fecha, productos, notas, { tipo: tipoFumigacion, volumenMezcla });
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
@@ -1276,21 +1371,136 @@ async function onGenerarInforme() {
   }
 }
 
-// Sube a Productos_Recomendados lo que este pendiente (se llama justo despues de generar un
-// informe, para que quede sincronizado de una vez si hay conexion, sin esperar a "Sincronizar").
+// Deja constancia de que la visita ya tiene informe (es lo que la hace aparecer en el Historial),
+// con el tipo de fumigación, volumen y notas escritos. Uno solo por visita: se actualiza si se regenera.
+async function registrarInformeGenerado(datos) {
+  const pendiente = (await DB.listarItems()).find((it) => it.tipo === "informe_generado" && it.estado === "pendiente" &&
+    it.datos.cliente === datos.cliente && it.datos.finca === datos.finca && it.datos.fecha === datos.fecha);
+  if (pendiente) await DB.actualizarDatosItem(pendiente.id, datos);
+  else await DB.agregarItem("informe_generado", datos);
+}
+
+// Sube lo del informe que esté pendiente (se llama justo después de generarlo, para que quede en el
+// Excel de una vez si hay conexión, sin esperar a "Sincronizar").
 async function sincronizarProductosRecomendadosPendientes() {
   const items = await DB.listarItems();
-  const pendientes = items.filter((it) => it.tipo === "producto_recomendado" && it.estado === "pendiente");
+  const pendientes = items.filter((it) => (it.tipo === "producto_recomendado" || it.tipo === "informe_generado") && it.estado === "pendiente");
   for (const it of pendientes) {
     try {
-      await Graph.agregarProductoRecomendado([
-        it.datos.cliente, it.datos.finca, it.datos.fecha, "",
-        it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
-      ]);
+      if (it.tipo === "informe_generado") {
+        await subirItem(it);
+      } else {
+        await Graph.agregarProductoRecomendado([
+          it.datos.cliente, it.datos.finca, it.datos.fecha, "",
+          it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
+        ]);
+      }
       await DB.marcarSincronizado(it.id);
     } catch (e) {
       await DB.marcarError(it.id, e.message);
     }
+  }
+}
+
+// ---------- Historial de visitas ----------
+
+const TEXTO_TIPO_FUMIGACION = {
+  "Aerea (Dron)": "Aérea (Dron)", "Terrestre (Estacionaria)": "Terrestre (Estacionaria)", "Terrestre (Bomba de espalda)": "Terrestre (Bomba de espalda)",
+};
+const SUFIJO_DOSIS = { "Aerea (Dron)": "/Hectárea", "Terrestre (Estacionaria)": "/Caneca 200L", "Terrestre (Bomba de espalda)": "/Bomba 20L" };
+
+let visitasHistorial = [];
+
+async function abrirHistorial() {
+  el("historial-detalle").hidden = true;
+  el("historial-filtros").hidden = false;
+  const anterior = el("historial-cliente").value;
+  el("historial-cliente").innerHTML = `<option value="">Todos los clientes</option>` +
+    clientesOrdenados().map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+  el("historial-cliente").value = anterior || "";
+  mostrarPantalla("pantalla-historial");
+  el("historial-estado").textContent = "Cargando visitas...";
+  el("historial-lista").innerHTML = "";
+  try {
+    visitasHistorial = await Informes.visitasConInforme(new Set(Object.keys(borradores)));
+    renderListaHistorial();
+  } catch (e) {
+    el("historial-estado").textContent = "No se pudo cargar el historial: " + e.message;
+  }
+}
+
+function renderListaHistorial() {
+  const desde = el("historial-desde").value;
+  const hasta = el("historial-hasta").value;
+  const cliente = el("historial-cliente").value;
+  const filtradas = visitasHistorial.filter((v) =>
+    (!desde || v.fecha >= desde) && (!hasta || v.fecha <= hasta) && (!cliente || v.cliente === cliente));
+  el("historial-estado").textContent = filtradas.length
+    ? `${filtradas.length} visita(s)`
+    : "No hay visitas terminadas con informe para ese filtro.";
+  el("historial-lista").innerHTML = filtradas.map((v, i) => `<p class="visita-hoy historial-visita" data-i="${visitasHistorial.indexOf(v)}">
+    <strong>${Informes.formatoFechaVisible(v.fecha)}</strong> · ${esc(v.cliente)} · ${esc(v.finca)}<br>
+    <span class="hint">${v.numeroLotes} lote(s) · Toca para ver el detalle</span></p>`).join("");
+  el("historial-lista").querySelectorAll(".historial-visita").forEach((p) => {
+    p.addEventListener("click", () => verDetalleHistorial(visitasHistorial[Number(p.dataset.i)]));
+  });
+}
+
+async function verDetalleHistorial(v) {
+  el("historial-filtros").hidden = true;
+  el("historial-detalle").hidden = false;
+  const contenido = el("historial-detalle-contenido");
+  contenido.innerHTML = `<p class="hint">Cargando...</p>`;
+  window.scrollTo(0, 0);
+  try {
+    const d = await Informes.detalleVisita(v.cliente, v.finca, v.fecha);
+    const num = (x, dec = 1) => (x == null || x === "" || Number.isNaN(Number(x)) ? "-" : Number(x).toFixed(dec));
+    const dosis = (p, tipo) => (p.dosis ? ` — ${esc(p.dosis)}${esc(p.unidad || "")}${SUFIJO_DOSIS[tipo] || ""}` : "");
+    const listaProductos = (productos, tipo) => productos.length
+      ? `<ul>${productos.map((p) => `<li><strong>${esc(p.nombre)}</strong>${p.tipo ? ` (${esc(p.tipo)})` : ""}${dosis(p, tipo)}</li>`).join("")}</ul>`
+      : `<p class="historial-dato">Sin productos registrados.</p>`;
+
+    let html = `<h2>${esc(v.cliente)} · ${esc(v.finca)}</h2>
+      <p class="historial-dato">Visita del ${Informes.formatoFechaVisible(v.fecha)}${d.informe && d.informe.fechaInforme ? ` · informe generado el ${Informes.formatoFechaVisible(d.informe.fechaInforme)}` : ""}</p>`;
+
+    html += `<h3>Productos aplicados antes de la visita</h3>`;
+    html += d.lotes.map((l) => {
+      const m = l.manejo || {};
+      const datosManejo = [
+        m.tipoFumigacion ? `Fumigación: ${TEXTO_TIPO_FUMIGACION[m.tipoFumigacion] || esc(m.tipoFumigacion)}` : "",
+        m.litrosMezclaHa ? `Volumen de mezcla: ${esc(m.litrosMezclaHa)} L/ha` : "",
+        m.ordenMezclaCorrecto ? `Orden de mezcla correcto: ${esc(m.ordenMezclaCorrecto)}` : "",
+        m.phFinalMezcla ? `pH final: ${esc(m.phFinalMezcla)}` : "",
+      ].filter(Boolean).join(" · ");
+      return `<div class="historial-bloque"><h4>Lote ${esc(l.lote)}${l.potrero ? ` · Potrero ${esc(l.potrero)}` : ""}</h4>
+        ${datosManejo ? `<p class="historial-dato">${datosManejo}</p>` : ""}
+        ${listaProductos(l.productos, m.tipoFumigacion)}
+        ${l.observacion ? `<p class="historial-dato"><em>Observaciones: ${esc(l.observacion)}</em></p>` : ""}</div>`;
+    }).join("");
+
+    const tipoReco = d.informe ? d.informe.tipoFumigacion : "";
+    html += `<h3>Productos recomendados</h3><div class="historial-bloque">
+      ${tipoReco || (d.informe && d.informe.volumenMezcla) ? `<p class="historial-dato">${[
+        tipoReco ? `Fumigación: ${TEXTO_TIPO_FUMIGACION[tipoReco] || esc(tipoReco)}` : "",
+        d.informe.volumenMezcla ? `Volumen de mezcla: ${esc(d.informe.volumenMezcla)} L/ha` : "",
+      ].filter(Boolean).join(" · ")}</p>` : ""}
+      ${listaProductos(d.recomendados, tipoReco)}
+      ${d.informe && d.informe.notas ? `<p class="historial-dato"><em>${esc(d.informe.notas).replace(/\n/g, "<br>")}</em></p>` : ""}</div>`;
+
+    html += `<h3>Productividad de la finca</h3>`;
+    html += d.productividad.length ? d.productividad.map((p) => `<div class="historial-bloque">
+        <h4>${p.lote === "" || p.lote == null ? "Finca en general" : `Lote ${esc(p.lote)}`}</h4>
+        <p class="historial-dato">Área ${num(p.area, 2)} ha · ${num(p.animales, 0)} animales en ordeño · rotación ${num(p.dias, 0)} días · ${num(p.produccion, 1)} L/vaca·día</p>
+        <div class="historial-kpis">
+          <div><strong>${num(p.productividadLecheria)}</strong>L leche/ha·día</div>
+          <div><strong>${num(p.cargaAnimal, 2)}</strong>animales/ha</div>
+          <div><strong>${num(p.areaDiaria)}</strong>m²/vaca·día</div>
+        </div></div>`).join("")
+      : `<p class="historial-dato">Sin datos de productividad en esta visita.</p>`;
+
+    contenido.innerHTML = html;
+  } catch (e) {
+    contenido.innerHTML = `<p class="hint">No se pudo cargar el detalle: ${esc(e.message)}</p>`;
   }
 }
 
@@ -1316,6 +1526,7 @@ function grupoDeOrden(it) {
   if (it.tipo === "producto_aplicado" || it.tipo === "eliminar_producto_aplicado") return `pa|${d.cliente}|${d.finca}|${d.fecha}|${d.lote}`;
   if (it.tipo === "productividad_visita") return `pf|${d.cliente}|${d.finca}|${d.fecha}`;
   if (it.tipo === "observacion_lote") return `ol|${d.cliente}|${d.finca}|${d.fecha}|${d.lote}`;
+  if (it.tipo === "informe_generado") return `ig|${d.cliente}|${d.finca}|${d.fecha}`;
   return null;
 }
 
@@ -1339,6 +1550,11 @@ async function subirItem(it) {
     if (d.observaciones) {
       await Graph.agregarFilaEnTabla(CONFIG.TABLA_OBSERVACIONES_LOTES, [d.cliente, d.finca, d.fecha, d.lote, d.potrero || "", d.observaciones]);
     }
+  } else if (it.tipo === "informe_generado") {
+    await Graph.eliminarFilasDonde(CONFIG.TABLA_INFORMES_GENERADOS, (f) => coincideVisitaExcel(f, ESQUEMA.INFORMES_GENERADOS, d, false));
+    await Graph.agregarFilaEnTabla(CONFIG.TABLA_INFORMES_GENERADOS, [
+      d.cliente, d.finca, d.fecha, d.fechaInforme, d.tipoFumigacion || "", d.volumenMezcla || "", d.notas || "",
+    ]);
   } else {
     return false;
   }
@@ -1471,7 +1687,7 @@ document.addEventListener("DOMContentLoaded", () => {
       await sincronizar();
       await cargarConfigYClientes();
       poblarSelectCliente(true);
-      await renderResumenHoy();
+      await renderVisitasEnCurso();
       await refrescarResumenCola();
     } catch (e) {
       alert("Ocurrió un error al sincronizar: " + e.message);
@@ -1483,16 +1699,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("btn-nueva-visita").addEventListener("click", async () => {
     await cargarConfigYClientes();
-    poblarSelectCliente();
-    el("fecha").value = fechaLocalHoy();
-    await renderResumenHoy();
-    mostrarPantalla("pantalla-visita");
+    await mostrarInicioVisitas();
   });
 
   el("informe-cliente").addEventListener("change", poblarSelectInformeFinca);
   el("informe-finca").addEventListener("change", poblarSelectInformeFecha);
   el("informe-fecha").addEventListener("change", ocultarDatosInforme);
   el("btn-ver-datos").addEventListener("click", onVerDatos);
+
+  ["historial-desde", "historial-hasta", "historial-cliente"].forEach((id) => el(id).addEventListener("change", renderListaHistorial));
+  el("btn-historial-volver").addEventListener("click", () => {
+    el("historial-detalle").hidden = true;
+    el("historial-filtros").hidden = false;
+  });
   el("btn-generar-informe").addEventListener("click", onGenerarInforme);
 
   document.querySelectorAll(".tab-boton").forEach((btn) => {
@@ -1500,16 +1719,16 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         document.querySelectorAll(".tab-boton").forEach((b) => b.classList.remove("activa"));
         btn.classList.add("activa");
+        if (visita) await salirDeVisita(); // queda guardada en "Visitas en curso"
         if (btn.dataset.tab === "informes") {
           Informes.invalidarCache();
           poblarSelectInformeCliente();
-          if (el("lista-productos-informe").children.length === 0) {
-            agregarBloqueProducto("lista-productos-informe");
-          }
           mostrarPantalla("pantalla-informes");
+        } else if (btn.dataset.tab === "historial") {
+          Informes.invalidarCache();
+          await abrirHistorial();
         } else {
-          // Si hay una visita a medio capturar, se vuelve justo a donde iba.
-          mostrarPantalla(visita && pantallaFlujo ? pantallaFlujo : "pantalla-visita");
+          await mostrarInicioVisitas();
         }
       } catch (e) {
         alert("Error al cambiar de pestaña: " + e.message);

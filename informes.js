@@ -7,6 +7,7 @@ const COL_PA = ESQUEMA.PRODUCTOS_APLICADOS;
 const COL_PR = ESQUEMA.PRODUCTOS_RECOMENDADOS;
 const COL_PF = ESQUEMA.PRODUCTIVIDAD;
 const COL_OL = ESQUEMA.OBSERVACIONES_LOTES;
+const COL_IG = ESQUEMA.INFORMES_GENERADOS;
 
 // El valor puede ser el indice de columna, o una funcion(fila) para variables calculadas (ej. Pasto Sano).
 const VARIABLES_HISTORIAL = {
@@ -295,6 +296,67 @@ const Informes = {
     })));
     const nuevas = pendientes.map((it) => [it.datos.cliente, it.datos.finca, it.datos.fecha, it.datos.lote, it.datos.potrero, it.datos.observaciones]);
     return [...conservadas, ...this._normalizarFechas(nuevas, COL_OL.fecha)];
+  },
+
+  // Informes_Generados: uno por visita. Uno pendiente reemplaza el del Excel.
+  async filasInformesGenerados() {
+    const crudas = this._normalizarFechas(await this._tablaRemota(CONFIG.TABLA_INFORMES_GENERADOS, "informesGeneradosBase"), COL_IG.fecha);
+    const pendientes = (await this._pendientes()).filter((it) => it.tipo === "informe_generado");
+    const reemplazadas = new Set(pendientes.map((it) => claveVisita(it.datos)));
+    const conservadas = crudas.filter((f) => !reemplazadas.has(claveVisita({ cliente: f[COL_IG.cliente], finca: f[COL_IG.finca], fecha: f[COL_IG.fecha] })));
+    const nuevas = pendientes.map((it) => [it.datos.cliente, it.datos.finca, it.datos.fecha, it.datos.fechaInforme,
+      it.datos.tipoFumigacion, it.datos.volumenMezcla, it.datos.notas]);
+    return [...conservadas, ...this._normalizarFechas(nuevas, COL_IG.fecha)];
+  },
+
+  async informeGuardado(cliente, finca, fecha) {
+    const f = (await this.filasInformesGenerados()).find((x) => x[COL_IG.cliente] === cliente && x[COL_IG.finca] === finca && x[COL_IG.fecha] === fecha);
+    return f ? {
+      fechaInforme: f[COL_IG.fechaInforme] == null ? "" : normalizarFecha(f[COL_IG.fechaInforme]),
+      tipoFumigacion: f[COL_IG.tipoFumigacion] || "", volumenMezcla: f[COL_IG.volumenMezcla] ?? "", notas: f[COL_IG.notas] || "",
+    } : null;
+  },
+
+  // Visitas para el Historial: las que tienen puntos capturados y un informe generado. Las de antes
+  // de existir Informes_Generados se reconocen porque tienen productos recomendados guardados.
+  // `excluir` son las claves "cliente|finca|fecha" de las visitas que siguen en curso.
+  async visitasConInforme(excluir = new Set()) {
+    const filas = await this.filas();
+    const conPuntos = {};
+    filas.forEach((f) => {
+      const k = claveVisita({ cliente: f[COL.cliente], finca: f[COL.finca], fecha: f[COL.fecha] });
+      if (!conPuntos[k]) conPuntos[k] = { cliente: f[COL.cliente], finca: f[COL.finca], fecha: f[COL.fecha], lotes: new Set() };
+      conPuntos[k].lotes.add(String(f[COL.lote]));
+    });
+    const conInforme = new Set([
+      ...(await this.filasInformesGenerados()).map((f) => claveVisita({ cliente: f[COL_IG.cliente], finca: f[COL_IG.finca], fecha: f[COL_IG.fecha] })),
+      ...(await this.filasRecomendados()).map((f) => claveVisita({ cliente: f[COL_PR.cliente], finca: f[COL_PR.finca], fecha: f[COL_PR.fecha] })),
+    ]);
+    return Object.entries(conPuntos)
+      .filter(([k]) => conInforme.has(k) && !excluir.has(k))
+      .map(([, v]) => ({ cliente: v.cliente, finca: v.finca, fecha: v.fecha, numeroLotes: v.lotes.size }))
+      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : String(a.cliente).localeCompare(String(b.cliente), "es")));
+  },
+
+  // Todo lo guardado de una visita para mostrarlo en el Historial.
+  async detalleVisita(cliente, finca, fecha) {
+    const filas = (await this.filas()).filter((f) => f[COL.cliente] === cliente && f[COL.finca] === finca && f[COL.fecha] === fecha);
+    const lotesNumeros = [...new Set(filas.map((f) => f[COL.lote]))].sort((a, b) => a - b);
+    const lotes = [];
+    for (const lote of lotesNumeros) {
+      const sub = filas.filter((f) => f[COL.lote] === lote);
+      const { manejo, productos } = await this.manejoYProductosDeLote(cliente, finca, fecha, lote);
+      lotes.push({
+        lote, puntos: sub.length, potrero: [...new Set(sub.map((f) => f[COL.potrero]).filter(Boolean))].join(", "),
+        manejo, productos, observacion: await this.observacionDeLote(cliente, finca, fecha, lote),
+      });
+    }
+    return {
+      lotes,
+      recomendados: await this.recomendacionesGuardadas(cliente, finca, fecha),
+      informe: await this.informeGuardado(cliente, finca, fecha),
+      productividad: await this.productividadDeVisita(cliente, finca, fecha),
+    };
   },
 
   async observacionDeLote(cliente, finca, fecha, lote) {

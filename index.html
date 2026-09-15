@@ -27,6 +27,7 @@
 <nav id="nav-tabs" hidden>
   <button type="button" class="tab-boton activa" data-tab="capturar">Visitas</button>
   <button type="button" class="tab-boton" data-tab="informes">Informes</button>
+  <button type="button" class="tab-boton" data-tab="historial">Historial</button>
 </nav>
 
 <section id="pantalla-login" hidden>
@@ -194,6 +195,27 @@
   <h2>Visita guardada</h2>
   <p id="resumen-final"></p>
   <button id="btn-nueva-visita">Iniciar nueva visita</button>
+</section>
+
+<!-- Pestaña Historial de visitas -->
+<section id="pantalla-historial" hidden>
+  <h2>Historial de visitas</h2>
+  <p class="hint">Solo visitas terminadas y con informe generado, de la más reciente a la más antigua.</p>
+
+  <div id="historial-filtros">
+    <div class="fila">
+      <label>Desde <input type="date" id="historial-desde"></label>
+      <label>Hasta <input type="date" id="historial-hasta"></label>
+    </div>
+    <label>Cliente <select id="historial-cliente"></select></label>
+    <p id="historial-estado" class="hint"></p>
+    <div id="historial-lista"></div>
+  </div>
+
+  <div id="historial-detalle" hidden>
+    <button type="button" id="btn-historial-volver" class="secundario">← Volver al historial</button>
+    <div id="historial-detalle-contenido"></div>
+  </div>
 </section>
 
 <!-- Pestaña Informes -->

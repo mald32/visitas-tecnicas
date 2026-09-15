@@ -176,6 +176,20 @@ button.secundario {
   margin-top: 10px;
 }
 
+.historial-visita { cursor: pointer; }
+.historial-bloque {
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 0 0 12px;
+}
+.historial-bloque h4 { margin: 0 0 6px; font-size: 14px; color: var(--principal-oscuro); }
+.historial-bloque ul { margin: 4px 0 0; padding-left: 18px; }
+.historial-bloque li { margin-bottom: 3px; font-size: 14px; }
+.historial-dato { font-size: 13px; color: var(--gris); margin: 2px 0; }
+.historial-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+.historial-kpis div { background: var(--fondo-suave); border-radius: 8px; padding: 6px; text-align: center; font-size: 11px; color: var(--gris); }
+.historial-kpis strong { display: block; font-size: 17px; color: var(--principal-oscuro); }
 .visita-hoy {
   background: var(--fondo-suave);
   border: 1px solid var(--borde);
