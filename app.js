@@ -797,13 +797,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!navigator.onLine) { alert("No tienes conexión ahora mismo. Los datos quedan guardados y podrás sincronizar cuando recuperes señal."); return; }
     el("btn-sincronizar").disabled = true;
     el("btn-sincronizar").textContent = "Sincronizando...";
-    await sincronizar();
-    await cargarConfigYClientes();
-    poblarSelectCliente();
-    await renderResumenHoy();
-    await refrescarResumenCola();
-    el("btn-sincronizar").disabled = false;
-    el("btn-sincronizar").textContent = "Sincronizar";
+    try {
+      await sincronizar();
+      await cargarConfigYClientes();
+      poblarSelectCliente();
+      await renderResumenHoy();
+      await refrescarResumenCola();
+    } catch (e) {
+      alert("Ocurrió un error al sincronizar: " + e.message);
+    } finally {
+      el("btn-sincronizar").disabled = false;
+      el("btn-sincronizar").textContent = "Sincronizar";
+    }
   });
 
   el("btn-nueva-visita").addEventListener("click", async () => {
