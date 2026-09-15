@@ -7,7 +7,7 @@ const CONFIG = {
   EXCEL_FILENAME: "BASE_DE_DATOS_v2.xlsx",
   RUTA_ARCHIVO: "Documents/BASE_DE_DATOS_v2.xlsx",
   TABLE_NAME: "TablaBaseDatos",
-  TABLA_PRODUCTOS_APLICADOS: "TablaProductosAplicados",
+  TABLA_PRODUCTOS_APLICADOS: "Productos_Aplicados",
   TABLA_PRODUCTOS: "Tabla2",
   HOJA_CONFIG: "Configuracion",
   HOJA_CLIENTES: "Clientes_Fincas",
