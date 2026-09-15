@@ -84,6 +84,17 @@ input:disabled { background: var(--fondo-suave); color: var(--gris); }
 label { display: block; margin-bottom: 12px; font-size: 13px; color: var(--gris); }
 
 .asterisco { color: var(--rojo); font-weight: 700; }
+
+.aviso {
+  background: #fdf3e7;
+  border-left: 4px solid var(--rojo);
+  color: #7a3b12;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  margin: 0 0 14px;
+  border-radius: 0 8px 8px 0;
+}
 label.campo-invalido { color: var(--rojo); }
 input.campo-invalido, select.campo-invalido, textarea.campo-invalido { border-color: var(--rojo); background: #fbeae7; }
 

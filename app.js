@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "34";
+const APP_VERSION = "35";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -189,6 +189,7 @@ async function despuesDeLogin() {
   await renderResumenHoy();
   el("nav-tabs").hidden = false;
   mostrarPantalla("pantalla-visita");
+  if (navigator.onLine) verificarFormatoDelExcel(); // en segundo plano: no debe demorar la entrada
 }
 
 // Solo muestra lo que aún NO se ha subido a Excel; al sincronizar, desaparece de aquí.
@@ -209,7 +210,7 @@ async function renderResumenHoy() {
     const v = visitas[clave];
     if (!v.lotes[p.datos.lote]) v.lotes[p.datos.lote] = { cantidad: 0, potrero: null };
     v.lotes[p.datos.lote].cantidad += 1;
-    if (p.datos.fila[18] && !v.lotes[p.datos.lote].potrero) v.lotes[p.datos.lote].potrero = p.datos.fila[18];
+    if (p.datos.fila[ESQUEMA.BASE.potrero] && !v.lotes[p.datos.lote].potrero) v.lotes[p.datos.lote].potrero = p.datos.fila[ESQUEMA.BASE.potrero];
   }
 
   let html = "<h2>Visitas de hoy sin sincronizar</h2>";
@@ -249,6 +250,27 @@ async function onRetomarVisita(cliente, finca, fecha) {
   mostrarPantalla("pantalla-lotes");
   renderBotonesLotes();
   await precargarProductividad();
+}
+
+// Compara los encabezados reales de "Base de datos" contra los que espera el código. Si alguien
+// reordena o renombra una columna en el Excel, la app escribiría en la celda equivocada sin
+// avisar: esto lo detecta y lo muestra, en vez de dañar datos en silencio.
+async function verificarFormatoDelExcel() {
+  try {
+    const filas = await Graph.leerRango("Base de datos", "A1:X1");
+    const diferencias = verificarEncabezados(filas[0] || []);
+    const aviso = el("aviso-esquema");
+    if (diferencias.length > 0) {
+      console.warn("El formato del Excel cambió:", diferencias);
+      aviso.textContent = "Ojo: las columnas de la hoja 'Base de datos' no están como la app las espera (" +
+        diferencias.length + " diferencia(s)). Revisa el Excel antes de seguir capturando. Detalle: " + diferencias[0];
+      aviso.hidden = false;
+    } else {
+      aviso.hidden = true;
+    }
+  } catch (e) {
+    console.warn("No se pudo verificar el formato del Excel:", e.message);
+  }
 }
 
 async function cargarConfigYClientes() {
@@ -620,7 +642,7 @@ async function calcularSiguientePunto() {
 // Si se retoma un lote que ya tenia puntos guardados, se recupera el nombre de potrero ya usado.
 async function precargarPotreroLote() {
   const delLote = await puntosDelLoteActual();
-  const existente = delLote.map((it) => it.datos.fila[18]).find((v) => v);
+  const existente = delLote.map((it) => it.datos.fila[ESQUEMA.BASE.potrero]).find((v) => v);
   el("potrero-nombre-punto").value = existente || "";
 }
 
@@ -673,27 +695,29 @@ async function actualizarPuntoEditado() {
   const item = items.find((it) => it.id === editandoPuntoId);
   if (!item) return;
   const c = leerCamposComunes();
+  const B = ESQUEMA.BASE;
   const fila = [...item.datos.fila];
-  fila[5] = c.adultos; fila[6] = c.ninfas;
-  fila[7] = c.incidColl; fila[8] = c.sevColl; fila[9] = c.danoCollTotal;
-  fila[10] = c.loritos; fila[11] = c.lepidopteros;
-  fila[12] = c.hojasMoluscos; fila[13] = c.incidMoluscos; fila[14] = c.danoMoluscos;
-  fila[15] = c.incidHongos; fila[16] = c.sevHongos; fila[17] = c.danoHongos;
-  fila[18] = c.potrero; fila[19] = c.observaciones;
+  fila[B.adultos] = c.adultos; fila[B.ninfas] = c.ninfas;
+  fila[B.incidColl] = c.incidColl; fila[B.sevColl] = c.sevColl; fila[B.danoCollTotal] = c.danoCollTotal;
+  fila[B.loritos] = c.loritos; fila[B.lepidopteros] = c.lepidopteros;
+  fila[B.hojasMoluscos] = c.hojasMoluscos; fila[B.incidMoluscos] = c.incidMoluscos; fila[B.danoMoluscos] = c.danoMoluscos;
+  fila[B.incidHongos] = c.incidHongos; fila[B.sevHongos] = c.sevHongos; fila[B.danoHongos] = c.danoHongos;
+  fila[B.potrero] = c.potrero; fila[B.observaciones] = c.observaciones;
   await DB.actualizarDatosItem(editandoPuntoId, { fila });
 }
 
 function cargarPuntoEnFormulario(fila) {
-  el("adultos").value = fila[5];
-  el("ninfas").value = fila[6];
-  el("incid-coll").value = Math.round(fila[7] * 10000) / 100;
-  el("sev-coll").value = Math.round(fila[8] * 10000) / 100;
-  el("loritos").value = fila[10];
-  el("lepidopteros").value = fila[11];
-  el("hojas-moluscos").value = fila[12];
-  el("incid-hongos").value = Math.round(fila[15] * 10000) / 100;
-  el("sev-hongos").value = Math.round(fila[16] * 10000) / 100;
-  el("observaciones").value = fila[19] || "";
+  const B = ESQUEMA.BASE;
+  el("adultos").value = fila[B.adultos];
+  el("ninfas").value = fila[B.ninfas];
+  el("incid-coll").value = Math.round(fila[B.incidColl] * 10000) / 100;
+  el("sev-coll").value = Math.round(fila[B.sevColl] * 10000) / 100;
+  el("loritos").value = fila[B.loritos];
+  el("lepidopteros").value = fila[B.lepidopteros];
+  el("hojas-moluscos").value = fila[B.hojasMoluscos];
+  el("incid-hongos").value = Math.round(fila[B.incidHongos] * 10000) / 100;
+  el("sev-hongos").value = Math.round(fila[B.sevHongos] * 10000) / 100;
+  el("observaciones").value = fila[B.observaciones] || "";
 }
 
 async function onGuardarPunto(ev) {
@@ -719,7 +743,7 @@ async function onPuntoAnterior() {
   const objetivo = puntoMostrado - 1;
   if (objetivo < 1) { alert("No hay un punto anterior en este lote."); return; }
   const delLote = await puntosDelLoteActual();
-  const item = delLote.find((it) => it.datos.fila[4] === objetivo);
+  const item = delLote.find((it) => it.datos.fila[ESQUEMA.BASE.punto] === objetivo);
   if (!item) { alert("No se encontró ese punto."); return; }
   if (item.estado !== "pendiente") {
     alert("Ese punto ya se sincronizó con tu Excel y no se puede corregir desde aquí.");
@@ -737,9 +761,9 @@ async function onPuntoAnterior() {
 async function aplicarPotreroATodosLosPuntos(potrero) {
   const delLote = await puntosDelLoteActual();
   for (const it of delLote) {
-    if (it.estado === "pendiente" && it.datos.fila[18] !== potrero) {
+    if (it.estado === "pendiente" && it.datos.fila[ESQUEMA.BASE.potrero] !== potrero) {
       const fila = [...it.datos.fila];
-      fila[18] = potrero;
+      fila[ESQUEMA.BASE.potrero] = potrero;
       await DB.actualizarDatosItem(it.id, { fila });
     }
   }
@@ -776,7 +800,7 @@ async function onFinMuestreo() {
   const lotesVisitados = [...new Set(puntosVisita.map((p) => p.datos.lote))].sort((a, b) => a - b);
   const lineas = lotesVisitados.map((lote) => {
     const delLote = puntosVisita.filter((p) => p.datos.lote === lote);
-    const potrero = delLote.map((p) => p.datos.fila[18]).find((v) => v);
+    const potrero = delLote.map((p) => p.datos.fila[ESQUEMA.BASE.potrero]).find((v) => v);
     const etiqueta = potrero ? `Lote ${lote} (Potrero ${potrero})` : `Lote ${lote}`;
     return `${etiqueta}: ${delLote.length} punto(s) de muestreo`;
   });
@@ -1005,7 +1029,7 @@ async function sincronizarProductosRecomendadosPendientes() {
 // (Dano Collaria Total, Incidencia Moluscos, Dano Moluscos, Dano Hongos). Las calculamos tambien
 // aqui en JS para poder generar los informes antes de sincronizar, pero al subir a Excel se dejan
 // en blanco para que sea la formula de la hoja la que las calcule (y no un valor fijo nuestro).
-const COLUMNAS_CALCULADAS_EXCEL = [9, 13, 14, 17];
+const COLUMNAS_CALCULADAS_EXCEL = ESQUEMA.INDICES_BASE_CALCULADAS;
 
 let sincronizando = false;
 async function sincronizar() {

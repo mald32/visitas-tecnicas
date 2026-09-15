@@ -1,10 +1,11 @@
-const CACHE_NAME = "visitas-tecnicas-v34";
+const CACHE_NAME = "visitas-tecnicas-v35";
 const ARCHIVOS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./config.js",
+  "./esquema.js",
   "./db.js",
   "./graph.js",
   "./informes.js",

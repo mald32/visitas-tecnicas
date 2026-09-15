@@ -1,26 +1,11 @@
 // Genera el informe HTML de una visita (Cliente/Finca/Fecha) leyendo directo de la hoja de Excel.
 // Es la versión en el navegador de generar_informe.py + generar_informe_html.py.
 
-const COL = {
-  cliente: 0, finca: 1, fecha: 2, lote: 3, punto: 4,
-  adultos: 5, ninfas: 6, incidColl: 7, sevColl: 8, danoCollTotal: 9,
-  loritos: 10, lepidopteros: 11, hojasMoluscos: 12, incidMoluscos: 13, danoMoluscos: 14,
-  incidHongos: 15, sevHongos: 16, danoHongos: 17, potrero: 18, observaciones: 19,
-  tipoFumigacion: 20, litrosMezclaHa: 21, ordenMezclaCorrecto: 22, phFinalMezcla: 23,
-};
-
-// Columnas de la tabla Productos_Aplicados (un producto usado en un lote/visita, una fila por producto).
-const COL_PA = { cliente: 0, finca: 1, fecha: 2, lote: 3, producto: 4, tipo: 5, formulacion: 6, unidad: 7, dosis: 8 };
-
-// Columnas de la tabla Productos_Recomendados (mismos encabezados que Productos_Aplicados; el
-// campo Lote no aplica a una recomendacion y queda vacio).
-const COL_PR = { cliente: 0, finca: 1, fecha: 2, lote: 3, producto: 4, tipo: 5, formulacion: 6, unidad: 7, dosis: 8 };
-
-// Columnas de la tabla Productividad_Fincas. Las ultimas 3 son formulas calculadas por Excel.
-const COL_PF = {
-  cliente: 0, finca: 1, fecha: 2, lote: 3, area: 4, animales: 5, dias: 6, produccion: 7,
-  cargaAnimal: 8, areaDiaria: 9, productividadLecheria: 10,
-};
+// La posicion de cada columna sale de esquema.js (unica fuente de verdad del formato del Excel).
+const COL = ESQUEMA.BASE;
+const COL_PA = ESQUEMA.PRODUCTOS_APLICADOS;
+const COL_PR = ESQUEMA.PRODUCTOS_RECOMENDADOS;
+const COL_PF = ESQUEMA.PRODUCTIVIDAD;
 
 // El valor puede ser el indice de columna, o una funcion(fila) para variables calculadas (ej. Pasto Sano).
 const VARIABLES_HISTORIAL = {
@@ -80,6 +65,11 @@ const LOGO_DATA_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABVYAAAMACAM
 
 const ETIQUETAS_TORTA = ["Daño Collaria", "Daño Moluscos", "Daño Hongos", "Pasto Sano"];
 
+// Iconos en SVG en vez de emoji: los emoji se dibujan distinto en cada celular/PC (y en algunos
+// salen a color chillón), estos se ven igual en todas partes y toman el color del informe.
+const ICONO_CALENDARIO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>';
+const ICONO_LOTES = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>';
+
 function promedio(valores) {
   const usables = valores.filter((v) => v !== null && v !== undefined);
   if (usables.length === 0) return null;
@@ -96,6 +86,16 @@ function desviacion(valores) {
 
 function fmt(v, pct) {
   return v === null || v === undefined ? "-" : pct ? `${(v * 100).toFixed(1)}%` : v.toFixed(1);
+}
+
+// Escapa texto antes de meterlo en el HTML del informe. Nombres de cliente/finca/potrero,
+// observaciones y productos los escribe una persona: si alguno lleva < > & o comillas, sin esto
+// se rompe el informe (o peor, se interpreta como HTML).
+function esc(valor) {
+  if (valor === null || valor === undefined) return "";
+  return String(valor)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 function fmtFechaCorta(fechaISO) {
@@ -585,12 +585,12 @@ const Informes = {
         .map((p) => {
           const siglas = siglasFormulacion(p.formulacion);
           const dosis = p.dosis ? ` — ${p.dosis}${p.unidad || ""}${sufijoDosis}` : "";
-          return `<li><span class="manejo-etiqueta">${p.tipo || "Producto"}</span>${p.nombre}${siglas ? ` ${siglas}` : ""}${dosis}.</li>`;
+          return `<li><span class="manejo-etiqueta">${esc(p.tipo || "Producto")}</span>${esc(p.nombre)}${siglas ? ` ${esc(siglas)}` : ""}${esc(dosis)}.</li>`;
         })
         .join("");
       if (filasM.length === 0 && !productosLi) return "";
       const columnas = filasM.length
-        ? `<div class="manejo-columnas">${filasM.map(([k, v]) => `<div><span class="manejo-etiqueta">${k}</span>${v}</div>`).join("")}</div>`
+        ? `<div class="manejo-columnas">${filasM.map(([k, v]) => `<div><span class="manejo-etiqueta">${k}</span>${esc(v)}</div>`).join("")}</div>`
         : "";
       const listaProductos = productosLi
         ? `<span class="manejo-subtitulo">Productos aplicados</span><ul class="manejo-lista">${productosLi}</ul>`
@@ -641,7 +641,7 @@ const Informes = {
           <th>Lote</th><th>Área (ha)</th><th>Animales en ordeño</th><th>Días rotación</th>
           <th>Producción (L/vaca·día)</th><th>Carga animal</th><th>Área diaria/animal (m²)</th><th>Productividad (L/ha·día)</th>
         </tr></thead><tbody>${D.productividad.map((p) => `<tr>
-          <td>${p.lote ? "Lote " + p.lote : "General"}</td>
+          <td>${p.lote ? "Lote " + esc(p.lote) : "General"}</td>
           <td>${numero(p.area)}</td><td>${numero(p.animales)}</td><td>${numero(p.dias)}</td>
           <td>${numero(p.produccion)}</td><td>${numero(p.cargaAnimal)}</td>
           <td>${numero(p.areaDiaria)}</td><td>${numero(p.productividadLecheria)}</td>
@@ -653,7 +653,7 @@ const Informes = {
         `<li><span class="leg-swatch" style="background:${COLORES_TORTA[vi]}"></span>${ETIQUETAS_TORTA[vi]}: ${fmt(v, true)}</li>`
       ).join("");
       return `<div class="lote-bloque">
-        <h3>Lote ${t.lote}${t.potrero ? ` — Potrero ${t.potrero}` : ""}</h3>
+        <h3>Lote ${esc(t.lote)}${t.potrero ? ` — Potrero ${esc(t.potrero)}` : ""}</h3>
         <div class="lote-fila">
           <div class="chart-box chart-barras"><canvas id="barrasLote${t.lote}" width="480" height="220"></canvas></div>
           <div class="torta-box">
@@ -684,10 +684,10 @@ const Informes = {
       `<div class="chart-box historial-item"><h3>Lote ${lote}</h3><canvas id="historialLote${lote}" width="380" height="220"></canvas></div>`
     ).join("")}</div>`;
 
-    const observacionesTexto = D.tabla_lotes.map((t) => {
+    const observacionesTexto = esc(D.tabla_lotes.map((t) => {
       const etiqueta = `Lote ${t.lote}` + (t.potrero ? ` (Potrero ${t.potrero})` : "");
       return `${etiqueta}: ${t.observaciones || "Sin observaciones."}`;
-    }).join("\n\n");
+    }).join("\n\n"));
 
     const resultadosHtml = D.alertas.length
       ? D.alertas.map((a) => `• ${a}`).join("<br>")
@@ -708,7 +708,7 @@ const Informes = {
     const tipoFumigacionHtml = (tipoFumigacionTexto || manejoFumigacion.volumenMezcla)
       ? `<div class="manejo-columnas">
           ${tipoFumigacionTexto ? `<div><span class="manejo-etiqueta">Tipo de fumigación</span>${tipoFumigacionTexto}</div>` : ""}
-          ${manejoFumigacion.volumenMezcla ? `<div><span class="manejo-etiqueta">Volumen de mezcla/hectárea</span>${manejoFumigacion.volumenMezcla}L</div>` : ""}
+          ${manejoFumigacion.volumenMezcla ? `<div><span class="manejo-etiqueta">Volumen de mezcla/hectárea</span>${esc(manejoFumigacion.volumenMezcla)}L</div>` : ""}
         </div>`
       : "";
 
@@ -717,21 +717,23 @@ const Informes = {
           const dosis = formatearDosis(p);
           return `<li>
             <div class="reco-texto">
-              <strong>${p.nombre}</strong>${p.tipo ? `<span class="reco-detalle"> — ${p.tipo}</span>` : ""}
-              ${dosis ? `<div class="reco-dosis">${dosis}</div>` : ""}
+              <strong>${esc(p.nombre)}</strong>${p.tipo ? `<span class="reco-detalle"> — ${esc(p.tipo)}</span>` : ""}
+              ${dosis ? `<div class="reco-dosis">${esc(dosis)}</div>` : ""}
             </div>
           </li>`;
         }).join("")}</ol>`
       : `<p class="hint">Sin productos recomendados para esta visita.</p>`;
 
+    // Se escapa primero y solo despues se convierten los saltos de linea en <br>, para que el
+    // texto del asesor nunca se interprete como HTML pero si conserve sus parrafos.
     const notasHtml = notasAdicionales && notasAdicionales.trim()
-      ? notasAdicionales.trim().replace(/\n/g, "<br>")
+      ? esc(notasAdicionales.trim()).replace(/\n/g, "<br>")
       : "Sin observaciones adicionales.";
 
     const asesor = (typeof CONFIG !== "undefined" && CONFIG.ASESOR) || {};
 
     return `<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8"><title>Informe de Visita - ${D.cliente}</title>
+<html lang="es"><head><meta charset="UTF-8"><title>Informe de Visita - ${esc(D.cliente)}</title>
 <style>
 :root{
   --principal:#123a63; --principal-oscuro:#0d2846; --acento:#2f8fd1; --acento-verde:#3fa845;
@@ -751,7 +753,8 @@ header h1{margin:0 0 4px;font-family:system-ui,-apple-system,"Segoe UI",Arial,sa
 .asesor-detalle{margin-top:10px;font-size:12.5px;color:#cfe0f2;text-align:right;line-height:1.6;}
 .datos-grid{display:flex;gap:14px;margin-bottom:28px;font-size:16px;flex-wrap:wrap;}
 .datos-grid div{background:var(--fondo-suave);border-radius:10px;padding:12px 18px;flex:1;min-width:180px;display:flex;align-items:center;gap:12px;}
-.datos-grid div .icono{width:34px;height:34px;min-width:34px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;}
+.datos-grid div .icono{width:34px;height:34px;min-width:34px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;color:var(--principal);}
+.datos-grid div .icono svg{width:18px;height:18px;display:block;}
 .datos-grid div .etiqueta{color:var(--gris);display:block;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px;}
 h2{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;font-size:19px;font-weight:800;letter-spacing:.4px;color:#fff;margin:34px 0 16px;padding:14px 20px;border-radius:4px;background:var(--principal-oscuro);}
 h2.banner-azul, h2.banner-amarillo, h2.banner-naranja{background:var(--principal-oscuro);color:#fff;}
@@ -821,7 +824,7 @@ footer{margin-top:36px;font-size:12.5px;color:#a89c8c;text-align:center;}
     <div class="titulo-box">
       <img src="${LOGO_DATA_URI}" alt="Logo" class="logo">
       <div><h1>Informe de Visita Técnica</h1>
-      <p class="subtitulo">${D.cliente} - Finca ${D.finca} · Visita No. ${D.visita_numero}</p></div>
+      <p class="subtitulo">${esc(D.cliente)} - Finca ${esc(D.finca)} · Visita No. ${esc(D.visita_numero)}</p></div>
     </div>
     ${asesor.nombre ? `<div class="asesor-nombre">${asesor.nombre}</div>` : ""}
   </div>
@@ -833,10 +836,10 @@ footer{margin-top:36px;font-size:12.5px;color:#a89c8c;text-align:center;}
 </header>
 
 <div class="datos-grid">
-  <div><span class="icono">📅</span><div><span class="etiqueta">Fecha de visita</span>${D.fecha}</div></div>
-  <div><span class="icono">📋</span><div><span class="etiqueta">Lotes revisados</span>${D.lotes_reales.map((l) => {
+  <div><span class="icono">${ICONO_CALENDARIO}</span><div><span class="etiqueta">Fecha de visita</span>${D.fecha}</div></div>
+  <div><span class="icono">${ICONO_LOTES}</span><div><span class="etiqueta">Lotes revisados</span>${D.lotes_reales.map((l) => {
     const t = D.tabla_lotes.find((x) => x.lote === l);
-    return t && t.potrero ? `Lote ${l} (Potrero ${t.potrero})` : `Lote ${l}`;
+    return t && t.potrero ? `Lote ${esc(l)} (Potrero ${esc(t.potrero)})` : `Lote ${esc(l)}`;
   }).join(", ")}</div></div>
 </div>
 
@@ -914,13 +917,47 @@ function calcularEscalaEjeY(maxCrudo, esPorcentaje) {
   return { max, paso, numTicks: Math.round(max / paso) };
 }
 
+// Tipografia y colores de las graficas, tomados de la misma paleta del informe para que no se
+// vean como un pedazo pegado de otra aplicacion.
+const FUENTE_GRAFICA = 'system-ui, -apple-system, "Segoe UI", Arial, sans-serif';
+const TINTA = { ejes: "#c9d2db", grilla: "#edf1f5", texto: "#5b6472", titulo: "#123a63", umbral: "#c0392b", error: "#1c2430" };
+
+// Ajusta el canvas a la densidad real de la pantalla (un celular suele ser 2x o 3x). Sin esto el
+// navegador estira un dibujo de baja resolucion y las graficas se ven borrosas al lado del texto.
+// Es idempotente: se puede llamar muchas veces sobre el mismo canvas (el historial se redibuja).
+function prepararCanvas(canvas) {
+  if (!canvas.dataset.anchoLogico) {
+    canvas.dataset.anchoLogico = canvas.width;
+    canvas.dataset.altoLogico = canvas.height;
+  }
+  const w = Number(canvas.dataset.anchoLogico);
+  const h = Number(canvas.dataset.altoLogico);
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  if (canvas.width !== Math.round(w * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return { ctx, w, h };
+}
+
+function barraRedondeada(ctx, x, y, ancho, alto, radio) {
+  const r = Math.max(0, Math.min(radio, ancho / 2, alto));
+  if (typeof ctx.roundRect === "function") {
+    ctx.beginPath(); ctx.roundRect(x, y, ancho, alto, [r, r, 0, 0]); ctx.fill();
+  } else {
+    ctx.fillRect(x, y, ancho, alto);
+  }
+}
+
 function drawGroupedBars(canvasId, categorias, seriesByKey, keys, umbrales, errores, colorOffset, opciones) {
   opciones = opciones || {};
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  const w = canvas.width, h = canvas.height, padL = 58, padR = 20, padT = 20, padB = 74;
-  ctx.clearRect(0,0,w,h);
+  const { ctx, w, h } = prepararCanvas(canvas);
+  const padL = 58, padR = 20, padT = 20, padB = 74;
   let maxVal = 0;
   keys.forEach(k => (seriesByKey[k]||[]).forEach(v => { if (v!=null && v>maxVal) maxVal=v; }));
   if (umbrales) umbrales.forEach(u => { if (u!=null && u>maxVal) maxVal=u; });
@@ -938,15 +975,15 @@ function drawGroupedBars(canvasId, categorias, seriesByKey, keys, umbrales, erro
     return Number.isInteger(redondeado) ? String(redondeado) : redondeado.toFixed(1);
   };
 
-  ctx.font="10px sans-serif"; ctx.textAlign="right";
+  ctx.font="11px " + FUENTE_GRAFICA; ctx.textAlign="right";
   for (let i=0;i<=escala.numTicks;i++) {
     const val = escala.paso*i;
     const y = h-padB-(val/maxVal)*(h-padT-padB);
-    ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w-padR, y); ctx.stroke();
-    ctx.fillStyle="#888"; ctx.fillText(fmtTick(val), padL-6, y+3);
+    ctx.strokeStyle=TINTA.grilla; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w-padR, y); ctx.stroke();
+    ctx.fillStyle=TINTA.texto; ctx.fillText(fmtTick(val), padL-8, y+4);
   }
 
-  ctx.strokeStyle="#ccc"; ctx.beginPath();
+  ctx.strokeStyle=TINTA.ejes; ctx.lineWidth=1.2; ctx.beginPath();
   ctx.moveTo(padL,padT); ctx.lineTo(padL,h-padB); ctx.lineTo(w-padR,h-padB); ctx.stroke();
   categorias.forEach((cat,ci) => {
     const gx = padL + ci*groupW + groupW/2 - (keys.length*barW)/2;
@@ -957,62 +994,72 @@ function drawGroupedBars(canvasId, categorias, seriesByKey, keys, umbrales, erro
       const x = gx + ki*barW;
       const topY = h-padB-bh;
       ctx.fillStyle = COLORES[(ki+(colorOffset||0))%COLORES.length];
-      ctx.fillRect(x, topY, barW-4, bh);
+      barraRedondeada(ctx, x, topY, barW-4, bh, 3);
 
+      // Barra de error (+-1/2 desviacion estandar). Solo existe si el lote tuvo 2 o mas puntos
+      // de muestreo: con un solo punto no hay dispersion que dibujar.
       const err = errores && (errores[k]||[])[ci];
       if (err!=null && err>0) {
         const halfPx = Math.max((err/2/maxVal)*(h-padT-padB), 3);
         const cx = x + (barW-4)/2;
-        ctx.strokeStyle="#1a1208"; ctx.lineWidth=1.6; ctx.beginPath();
-        ctx.moveTo(cx, topY-halfPx); ctx.lineTo(cx, topY+halfPx);
-        ctx.moveTo(cx-5, topY-halfPx); ctx.lineTo(cx+5, topY-halfPx);
-        ctx.moveTo(cx-5, topY+halfPx); ctx.lineTo(cx+5, topY+halfPx);
-        ctx.stroke();
+        const trazo = () => {
+          ctx.beginPath();
+          ctx.moveTo(cx, topY-halfPx); ctx.lineTo(cx, topY+halfPx);
+          ctx.moveTo(cx-5, topY-halfPx); ctx.lineTo(cx+5, topY-halfPx);
+          ctx.moveTo(cx-5, topY+halfPx); ctx.lineTo(cx+5, topY+halfPx);
+          ctx.stroke();
+        };
+        ctx.strokeStyle="#fff"; ctx.lineWidth=3.4; trazo();   // halo, para que se vea sobre la barra
+        ctx.strokeStyle=TINTA.error; ctx.lineWidth=1.6; trazo();
         ctx.lineWidth=1;
       }
     });
-    ctx.fillStyle="#555"; ctx.font="11px sans-serif"; ctx.textAlign="center";
-    ctx.save(); ctx.translate(padL+ci*groupW+groupW/2, h-padB+14);
+    ctx.fillStyle=TINTA.texto; ctx.font="11.5px " + FUENTE_GRAFICA; ctx.textAlign="center";
+    ctx.save(); ctx.translate(padL+ci*groupW+groupW/2, h-padB+16);
     const words = cat.split(' '); ctx.fillText(words.slice(0,3).join(' '), 0, 0);
-    if (words.length>3) ctx.fillText(words.slice(3).join(' '), 0, 12);
+    if (words.length>3) ctx.fillText(words.slice(3).join(' '), 0, 13);
     ctx.restore();
     if (umbrales && umbrales[ci]!=null) {
       const uy = h-padB-(umbrales[ci]/maxVal)*(h-padT-padB);
-      ctx.strokeStyle="#d33"; ctx.setLineDash([4,3]);
+      ctx.strokeStyle=TINTA.umbral; ctx.lineWidth=1.4; ctx.setLineDash([5,4]);
       ctx.beginPath(); ctx.moveTo(padL+ci*groupW, uy); ctx.lineTo(padL+(ci+1)*groupW, uy); ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.setLineDash([]); ctx.lineWidth=1;
     }
   });
 
   if (opciones.tituloY) {
     ctx.save();
-    ctx.translate(12, (padT+(h-padB))/2);
+    ctx.translate(13, (padT+(h-padB))/2);
     ctx.rotate(-Math.PI/2);
-    ctx.textAlign="center"; ctx.fillStyle="#555"; ctx.font="10px sans-serif";
+    ctx.textAlign="center"; ctx.fillStyle=TINTA.titulo; ctx.font="600 11px " + FUENTE_GRAFICA;
     ctx.fillText(opciones.tituloY, 0, 0);
     ctx.restore();
   }
   if (opciones.tituloX) {
-    ctx.textAlign="center"; ctx.fillStyle="#555"; ctx.font="10px sans-serif";
+    ctx.textAlign="center"; ctx.fillStyle=TINTA.titulo; ctx.font="600 11px " + FUENTE_GRAFICA;
     ctx.fillText(opciones.tituloX, padL+(w-padL-padR)/2, h-8);
   }
 }
 
 function drawPie(canvasId, valores) {
   const canvas = document.getElementById(canvasId);
-  const ctx = canvas.getContext("2d");
+  if (!canvas) return;
+  const { ctx, w, h } = prepararCanvas(canvas);
   const colors = ${JSON.stringify(COLORES_TORTA)};
   const total = valores.reduce((a,b)=>a+b,0) || 1;
   let start = -Math.PI/2;
-  const cx=100, cy=90, r=78;
-  ctx.clearRect(0,0,200,200);
+  const cx = w/2, cy = h/2 - 8, r = Math.min(w, h)/2 - 12;
   valores.forEach((v,i) => {
     const angle = (v/total)*Math.PI*2;
     ctx.beginPath(); ctx.moveTo(cx,cy);
     ctx.arc(cx,cy,r,start,start+angle);
     ctx.closePath(); ctx.fillStyle=colors[i]; ctx.fill();
+    // Separacion fina entre porciones: se lee mejor que los colores pegados.
+    ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.stroke();
     start += angle;
   });
+  // Centro blanco: la vuelve un anillo, mas limpio y con menos "peso" visual que la torta llena.
+  ctx.beginPath(); ctx.arc(cx, cy, r*0.52, 0, Math.PI*2); ctx.fillStyle="#fff"; ctx.fill();
 }
 
 lotesFinca.forEach((lote, i) => {
