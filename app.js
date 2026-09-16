@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "50";
+const APP_VERSION = "51";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -375,6 +375,7 @@ function mostrarCajaObservacionesLote(mostrar) {
   el("caja-observaciones-lote").hidden = !mostrar;
   el("form-punto").hidden = mostrar;
   document.querySelector(".botones-punto").hidden = mostrar;
+  if (mostrar) ajustarAltoTexto(el("observaciones-lote"));
 }
 
 // new Date().toISOString() da la fecha en UTC: en Colombia (UTC-5), pasadas las 7pm ya muestra
@@ -578,6 +579,7 @@ function visitaYaExiste(filas, cliente, finca, fecha) {
 // No se crean dos visitas del mismo cliente, finca y fecha: si ya existe una, "Iniciar monitoreo" se
 // bloquea y se habilita "Modificar datos de visita", que abre la que ya está con todo lo capturado.
 let revisionVisita = 0;
+let visitaSeleccionadaExiste = false;
 async function revisarVisitaSeleccionada() {
   const turno = ++revisionVisita;
   const cliente = el("cliente").value;
@@ -599,11 +601,11 @@ async function revisarVisitaSeleccionada() {
   }
   if (turno !== revisionVisita) return; // llegó una revisión más nueva
 
-  el("btn-iniciar-monitoreo").disabled = existe;
-  el("btn-modificar-visita").disabled = !existe;
+  visitaSeleccionadaExiste = existe;
+  el("btn-iniciar-monitoreo").textContent = existe ? "Modificar datos de visita" : "Iniciar monitoreo";
   el("aviso-visita-existente").hidden = !existe;
   el("aviso-visita-existente").textContent = existe
-    ? "Ya hay una visita de este cliente y finca en esta fecha. Dale a \"Modificar datos de visita\" para abrirla y cambiar lo que necesites."
+    ? "Ya hay una visita de este cliente y finca en esta fecha: se abre la que está, con todo lo capturado."
     : "";
 }
 
@@ -624,22 +626,6 @@ async function abrirVisitaExistente(cliente, finca, fecha) {
     console.warn("No se pudieron leer los lotes de la visita:", e.message);
   }
   await abrirVisita({ cliente, finca, fecha, numeroLotes });
-}
-
-async function onModificarVisita() {
-  const cliente = el("cliente").value;
-  const finca = el("finca").value;
-  const fecha = el("fecha").value;
-  if (!cliente || !finca || !fecha) return;
-  el("btn-modificar-visita").disabled = true;
-  el("btn-modificar-visita").textContent = "Abriendo...";
-  try {
-    await abrirVisitaExistente(cliente, finca, fecha);
-  } catch (e) {
-    alert("No se pudo abrir la visita: " + e.message);
-  } finally {
-    el("btn-modificar-visita").textContent = "Modificar datos de visita";
-  }
 }
 
 async function onIniciarMonitoreo() {
@@ -679,7 +665,7 @@ async function onIniciarMonitoreo() {
     }
   }
   if (existe) {
-    await revisarVisitaSeleccionada();
+    await abrirVisitaExistente(cliente, finca, el("fecha").value);
     return;
   }
 
@@ -1736,6 +1722,7 @@ async function cargarDatosInforme() {
     const preview = el("informe-preview");
     preview.onload = ajustarAlturaPreview;
     el("informe-datos").hidden = false; // visible ANTES de cargar el informe, para medirlo bien
+    ajustarAltoTexto(el("informe-recomendaciones"));
     preview.srcdoc = Informes.generarHtml(datos, [], "");
     el("datos-estado").textContent = "";
   } catch (e) {
@@ -1782,9 +1769,10 @@ async function agregarProductosNuevosAlCatalogo(productos) {
 // Ajusta la altura de un cuadro de texto a lo que tenga escrito, para no tener que scrollear dentro
 // de él (una recomendación de 50 líneas se ve completa).
 function ajustarAltoTexto(campo) {
-  if (!campo) return;
+  // Medirlo escondido da la altura de una sola línea (se veía aplastado y no dejaba escribir).
+  if (!campo || !campo.offsetParent) return;
   campo.style.height = "auto";
-  campo.style.height = campo.scrollHeight + "px";
+  campo.style.height = Math.max(campo.scrollHeight, 90) + "px";
 }
 
 // Orden de mezcla de un producto, segun la columna "Orden" del catalogo (hoja Productos). Los
@@ -2045,6 +2033,24 @@ async function verDetalleHistorial(v) {
 // en blanco para que sea la formula de la hoja la que las calcule (y no un valor fijo nuestro).
 const COLUMNAS_CALCULADAS_EXCEL = ESQUEMA.INDICES_BASE_CALCULADAS;
 
+// Cómo se le dice al usuario qué dato falló al subir (antes solo salía el error de Microsoft).
+const NOMBRE_TIPO_ITEM = {
+  punto: "punto de muestreo", cliente_finca: "cliente/finca nueva", actualizar_lotes: "número de lotes de la finca",
+  producto_nuevo: "producto nuevo del catálogo", producto_aplicado: "producto aplicado",
+  eliminar_producto_aplicado: "borrado de un producto aplicado", producto_recomendado: "producto recomendado",
+  recomendaciones_visita: "recomendación del informe", eliminar_producto_recomendado: "borrado de un producto recomendado",
+  productividad: "productividad", productividad_visita: "productividad", observacion_lote: "observaciones del lote",
+  informe_generado: "registro del informe", eliminar_visita: "borrado de la visita", eliminar_lote: "borrado de un lote",
+};
+
+function descripcionItem(it) {
+  const d = it.datos || {};
+  const nombre = NOMBRE_TIPO_ITEM[it.tipo] || it.tipo;
+  const donde = [d.cliente, d.finca, d.fecha].filter(Boolean).join(" · ");
+  const lote = d.lote === "" || d.lote == null ? "" : ` (Lote ${d.lote})`;
+  return `${nombre}${lote}${donde ? " — " + donde : ""}`;
+}
+
 // Qué filas del Excel pertenecen a la misma visita (y lote) que un dato de la cola.
 function coincideVisitaExcel(fila, columnas, d, conLote) {
   return fila[columnas.cliente] === d.cliente && fila[columnas.finca] === d.finca &&
@@ -2182,7 +2188,7 @@ async function sincronizar() {
         subidos += 1;
       } catch (e) {
         await DB.marcarError(it.id, e.message);
-        errores.push(e.message);
+        errores.push(`${descripcionItem(it)}: ${e.message}`);
         if (grupo) gruposDetenidos.add(grupo);
         if (it.tipo === "eliminar_visita") gruposDetenidos.add(visitaDelItem);
         if (it.tipo === "eliminar_lote") gruposDetenidos.add(loteDelItem);
@@ -2195,7 +2201,7 @@ async function sincronizar() {
     if (errores.length > 0) {
       alert(
         (subidos > 0 ? `${subidos} dato(s) subido(s) correctamente.\n\n` : "") +
-        "No se pudieron subir " + errores.length + " dato(s) a Excel.\n\nDetalle: " + errores[0]
+        "No se pudieron subir " + errores.length + " dato(s) a Excel.\n\n" + errores.slice(0, 3).join("\n\n")
       );
     } else if (subidos > 0) {
       alert(`${subidos} dato(s) subido(s) correctamente a tu Excel.`);
@@ -2229,7 +2235,6 @@ document.addEventListener("DOMContentLoaded", () => {
   el("cliente").addEventListener("change", poblarSelectFinca);
   el("finca").addEventListener("change", onCambioFinca);
   el("btn-iniciar-monitoreo").addEventListener("click", onIniciarMonitoreo);
-  el("btn-modificar-visita").addEventListener("click", onModificarVisita);
   el("fecha").addEventListener("change", revisarVisitaSeleccionada);
   el("nuevo-cliente").addEventListener("input", revisarVisitaSeleccionada);
   el("nueva-finca").addEventListener("input", revisarVisitaSeleccionada);

@@ -391,6 +391,26 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   });
 
   // -------------------------------------------------------------------------
+  await pruebaAsync("el historial trae las 13 gráficas en 3 grupos más la opción Todas", async () => {
+    const { Informes } = cargarInformes({ filas: filasDosLotes });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
+    const html = Informes.generarHtml(D, [], "");
+    igual(html.split("<canvas id=\"hist").length - 1, 13, "una gráfica por variable");
+    ["conteos", "epidemiologia", "pasturas", "todas"].forEach((g) => contiene(html, `<option value="${g}"`));
+    contiene(html, "Hojas atacadas por Moluscos", "va en el grupo Conteos");
+  });
+
+  await pruebaAsync("el informe se imprime en 3 páginas, con el encabezado repetido y sin la firma", async () => {
+    const { Informes } = cargarInformes({ filas: filasDosLotes });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
+    const html = Informes.generarHtml(D, [], "");
+    igual(html.split("<div class=\"salto-pagina\">").length - 1, 2, "2 cortes = 3 páginas");
+    igual(html.split("<div class=\"solo-impresion\">").length - 1, 2, "el encabezado se repite en las páginas 2 y 3");
+    noContiene(html, "class=\"firma\"", "el pie con el nombre del asesor ya no va");
+    contiene(html, "@media print", "hay estilos de impresión");
+  });
+
+  // ---------------------------------------------------------------------------
   // 4. Filas que se suben a Excel: las columnas con fórmula deben ir vacías
   // -------------------------------------------------------------------------
   console.log("\nFilas para Excel");

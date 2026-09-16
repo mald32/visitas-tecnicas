@@ -26,6 +26,18 @@ const VARIABLES_HISTORIAL = {
   "Pasto Sano (%)": (fila) => 1 - (fila[COL.danoCollTotal] || 0) - (fila[COL.danoMoluscos] || 0) - (fila[COL.danoHongos] || 0),
 };
 
+// Las 13 variables del historial, repartidas en los 3 grupos que se muestran en el informe.
+const GRUPOS_HISTORIAL = [
+  { id: "conteos", nombre: "Conteos", variables: [
+    "Individuos Adultos de Collaria", "Ninfas de Collaria", "Individuos de Lorito",
+    "Número de Lepidópteros", "Hojas atacadas por Moluscos"] },
+  { id: "epidemiologia", nombre: "Epidemiología", variables: [
+    "Incidencia daño Collaria (%)", "Severidad daño Collaria (%)",
+    "Incidencia mancha fúngica (%)", "Severidad mancha fúngica (%)"] },
+  { id: "pasturas", nombre: "Estado de las pasturas", variables: [
+    "Daño Moluscos (%)", "Daño Collaria (%)", "Daño Hongos (%)", "Pasto Sano (%)"] },
+];
+
 // Nombre del umbral en Configuracion para cada variable del historial (null = no tiene umbral comparable).
 // Estos textos deben coincidir letra por letra con la columna A de la hoja Configuracion del Excel.
 const UMBRAL_POR_VARIABLE_HISTORIAL = {
@@ -640,9 +652,6 @@ const Informes = {
       <td${claseAlerta(t.ninfas, um("ninfas"))}>${fmt(t.ninfas)}</td>
       <td${claseAlerta(t.loritos, um("loritos"))}>${fmt(t.loritos)}</td>
       <td${claseAlerta(t.lepidopteros, um("lepidopteros"))}>${fmt(t.lepidopteros)}</td>
-      <td${claseAlerta(t.dano_mol, um("dano_mol"))}>${fmt(t.dano_mol, true)}</td>
-      <td${claseAlerta(t.dano_coll, um("dano_coll"))}>${fmt(t.dano_coll, true)}</td>
-      <td${claseAlerta(t.dano_hongos, um("dano_hongos"))}>${fmt(t.dano_hongos, true)}</td>
     </tr>`).join("") + (D.tabla_lotes.length > 1 ? `<tr class="fila-promedio">
       <td>Promedio general</td>
       <td${claseAlerta(D.promedio_finca.incid_coll, um("incid_coll"))}>${fmt(D.promedio_finca.incid_coll, true)}</td>
@@ -653,9 +662,6 @@ const Informes = {
       <td${claseAlerta(D.promedio_finca.ninfas, um("ninfas"))}>${fmt(D.promedio_finca.ninfas)}</td>
       <td${claseAlerta(D.promedio_finca.loritos, um("loritos"))}>${fmt(D.promedio_finca.loritos)}</td>
       <td${claseAlerta(D.promedio_finca.lepidopteros, um("lepidopteros"))}>${fmt(D.promedio_finca.lepidopteros)}</td>
-      <td${claseAlerta(D.promedio_finca.dano_mol, um("dano_mol"))}>${fmt(D.promedio_finca.dano_mol, true)}</td>
-      <td${claseAlerta(D.promedio_finca.dano_coll, um("dano_coll"))}>${fmt(D.promedio_finca.dano_coll, true)}</td>
-      <td${claseAlerta(D.promedio_finca.dano_hongos, um("dano_hongos"))}>${fmt(D.promedio_finca.dano_hongos, true)}</td>
     </tr>` : "");
 
     // Solo las siglas de la formulacion (ej: "SC" de "SC (Suspension Concentrada)"), sin el nombre completo.
@@ -848,11 +854,17 @@ const Informes = {
         <p class="nota-puntos">Promedio de los ${D.tabla_lotes.length} lotes.</p>
       </div>`);
 
-    const opcionesVariable = Object.keys(D.historial).map((v) => `<option value="${v}">${v}</option>`).join("");
+    const opcionesVariable = GRUPOS_HISTORIAL.map((g) => `<option value="${g.id}">${g.nombre}</option>`).join("") +
+      `<option value="todas">Todas (versión para imprimir)</option>`;
 
-    const historialCanvasHtml = `<div class="historial-fila">${D.lotes_finca.map((lote) =>
-      `<div class="chart-box historial-item"><h3>Lote ${lote}</h3><canvas id="historialLote${lote}" width="380" height="220"></canvas></div>`
-    ).join("")}</div>`;
+    // Una gráfica por variable, con una línea por lote: así se comparan los lotes entre sí en cada
+    // visita. Se dibujan todas al abrir el informe; el desplegable solo muestra u oculta grupos.
+    const variablesHistorial = GRUPOS_HISTORIAL.flatMap((g) => g.variables.map((v) => ({ grupo: g.id, variable: v })));
+    const historialCanvasHtml = `<div class="leyenda-lotes">${D.lotes_finca.map((lote, i) =>
+      `<span><i style="background:${COLORES_LOTE[i % COLORES_LOTE.length]}"></i>Lote ${esc(lote)}</span>`).join("")}</div>
+      <div id="historialGrid" class="historial-grid">${variablesHistorial.map((v, i) =>
+        `<div class="chart-box historial-item" data-grupo="${v.grupo}"><h3>${esc(v.variable)}</h3>
+          <canvas id="hist${i}" data-variable="${esc(v.variable)}" width="330" height="200"></canvas></div>`).join("")}</div>`;
 
     const observacionesTexto = esc(D.tabla_lotes.map((t) => {
       const etiqueta = `Lote ${t.lote}` + (t.potrero ? ` (Potrero ${t.potrero})` : "");
@@ -914,6 +926,30 @@ const Informes = {
       : "Sin observaciones adicionales.";
 
     const asesor = (typeof CONFIG !== "undefined" && CONFIG.ASESOR) || {};
+
+    // El encabezado se repite arriba de cada página al imprimir el informe en PDF.
+    const encabezadoHtml = `<header>
+  <div class="enc-visita">
+    <div class="enc-marca">
+      <img src="${LOGO_DATA_URI}" alt="Galagro" class="logo">
+      <h1>Informe de Visita Técnica</h1>
+    </div>
+    <dl class="enc-datos">
+      <dt>Cliente:</dt><dd>${esc(D.cliente)}</dd>
+      <dt>Finca:</dt><dd>${esc(D.finca)}</dd>
+      <dt>Visita No:</dt><dd>${esc(D.visita_numero)}</dd>
+    </dl>
+  </div>
+  ${asesor.nombre ? `<div class="enc-asesor">
+    <span class="enc-rotulo">Asesor técnico</span>
+    <div class="asesor-nombre">${esc(asesor.nombre)}</div>
+    <div class="asesor-detalle">
+      ${asesor.profesion ? `${esc(asesor.profesion)}<br>` : ""}
+      ${asesor.cargo ? `${esc(asesor.cargo)}<br>` : ""}
+      ${asesor.telefono ? `Tel: ${esc(asesor.telefono)}` : ""}
+    </div>
+  </div>` : ""}
+</header>`;
 
     return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"><title>Informe de Visita - ${esc(D.cliente)}</title>
@@ -995,11 +1031,10 @@ h3{font-family:var(--serif);font-size:var(--t-med);font-weight:400;color:var(--t
 
 /* --- Tablas: sin cuadrícula pesada, solo líneas horizontales --- */
 table{width:100%;border-collapse:collapse;font-size:var(--t-peq);margin-top:var(--e2);}
-/* Cabe completa en el ancho de la hoja (antes tocaba arrastrarla de lado en el celular). */
-.tabla-lotes{table-layout:fixed;font-size:var(--t-micro);}
-.tabla-lotes th,.tabla-lotes td{padding:var(--e2) 2px;overflow-wrap:anywhere;}
+/* Cabe completa en el ancho de la hoja, sin partir los títulos en varias líneas. */
+.tabla-lotes{font-size:var(--t-micro);}
+.tabla-lotes th,.tabla-lotes td{padding:var(--e2) 3px;white-space:nowrap;}
 .tabla-lotes th{letter-spacing:0;}
-.tabla-lotes th:first-child,.tabla-lotes td:first-child{width:12%;}
 th,td{text-align:right;padding:var(--e2) var(--e2);border-bottom:1px solid var(--linea);}
 th{color:var(--tinta-suave);font-weight:600;font-size:var(--t-micro);text-transform:uppercase;letter-spacing:.6px;
   border-bottom:1px solid var(--tinta);text-align:right;}
@@ -1059,8 +1094,13 @@ td.alerta{color:var(--alerta);font-weight:700;}
 .leg-swatch{width:8px;height:8px;display:inline-block;flex:0 0 auto;}
 
 /* --- Historial --- */
-.historial-fila{display:flex;gap:var(--e4);flex-wrap:wrap;}
-.historial-item{flex:1;min-width:280px;margin-top:var(--e3);}
+.historial-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--e4);}
+.historial-grid.todas{grid-template-columns:repeat(3,1fr);}
+.historial-item{margin-top:var(--e3);min-width:0;}
+.historial-item h3{margin:0 0 var(--e1);font-size:var(--t-micro);color:var(--tinta-media);text-align:center;}
+.historial-item canvas{width:100%;height:auto;display:block;}
+.leyenda-lotes{display:flex;flex-wrap:wrap;gap:var(--e3);font-size:var(--t-micro);color:var(--tinta-media);margin:var(--e2) 0;}
+.leyenda-lotes i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px;}
 .chart-box{margin-top:var(--e2);}
 .chart-box canvas{max-width:100%;height:auto;}
 
@@ -1094,6 +1134,24 @@ textarea{width:100%;min-height:72px;border:1px solid var(--linea);border-radius:
 .hint{font-size:var(--t-peq);color:var(--tinta-suave);}
 footer{margin-top:var(--e8);font-size:var(--t-micro);color:var(--tinta-suave);text-align:center;letter-spacing:.3px;}
 .tabla-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.solo-impresion{display:none;}
+.historial-cab{display:flex;align-items:center;gap:var(--e2);margin:var(--e3) 0;font-size:var(--t-peq);color:var(--tinta-media);}
+.boton-imprimir{position:sticky;top:var(--e2);float:right;background:var(--marca);color:#fff;border:none;border-radius:20px;
+  padding:var(--e2) var(--e4);font-family:var(--sans);font-size:var(--t-peq);cursor:pointer;z-index:5;}
+
+/* --- Versión para imprimir / PDF: 3 páginas, cada una con el encabezado --- */
+@page{margin:12mm;}
+@media print{
+  body{max-width:none;padding:0;background:#fff;}
+  .no-imprimir{display:none !important;}
+  .solo-impresion{display:block;}
+  .salto-pagina{break-before:page;page-break-before:always;height:0;}
+  /* En el PDF salen las 13 gráficas, tres por hilera, sin importar el grupo elegido en pantalla. */
+  .historial-grid{grid-template-columns:repeat(3,1fr) !important;}
+  .historial-item{display:block !important;}
+  .lote-bloque,.kpi-bloque,.historial-item,.manejo-bloque,table,.caja-fija,.reco-lista li{break-inside:avoid;}
+  h2,h3{break-after:avoid;}
+}
 
 @media (max-width:640px){
   body{padding:var(--e4) var(--e4) var(--e8);}
@@ -1112,28 +1170,8 @@ footer{margin-top:var(--e8);font-size:var(--t-micro);color:var(--tinta-suave);te
 </style></head>
 <body>
 
-<header>
-  <div class="enc-visita">
-    <div class="enc-marca">
-      <img src="${LOGO_DATA_URI}" alt="Galagro" class="logo">
-      <h1>Informe de Visita Técnica</h1>
-    </div>
-    <dl class="enc-datos">
-      <dt>Cliente:</dt><dd>${esc(D.cliente)}</dd>
-      <dt>Finca:</dt><dd>${esc(D.finca)}</dd>
-      <dt>Visita No:</dt><dd>${esc(D.visita_numero)}</dd>
-    </dl>
-  </div>
-  ${asesor.nombre ? `<div class="enc-asesor">
-    <span class="enc-rotulo">Asesor técnico</span>
-    <div class="asesor-nombre">${esc(asesor.nombre)}</div>
-    <div class="asesor-detalle">
-      ${asesor.profesion ? `${esc(asesor.profesion)}<br>` : ""}
-      ${asesor.cargo ? `${esc(asesor.cargo)}<br>` : ""}
-      ${asesor.telefono ? `Tel: ${esc(asesor.telefono)}` : ""}
-    </div>
-  </div>` : ""}
-</header>
+<button type="button" class="no-imprimir boton-imprimir" onclick="window.print()">Guardar como PDF / Imprimir</button>
+${encabezadoHtml}
 
 <div class="datos-grid">
   <div><span class="icono">${ICONO_CALENDARIO}</span><span class="etiqueta">Fecha de visita</span><span class="valor">${esc(D.fecha)}</span></div>
@@ -1153,18 +1191,21 @@ ${manejoTodosHtml || '<p class="hint">Sin manejo agronómico registrado en esta 
 <table class="tabla-lotes"><thead><tr>
 <th>Lote</th><th>Incid. Collaria</th><th>Sev. Collaria</th><th>Incid. hongos</th><th>Sev. hongos</th>
 <th>Adultos</th><th>Ninfas</th><th>Loritos</th><th>Lepidópteros</th>
-<th>Daño moluscos</th><th>Daño collaria</th><th>Daño hongos</th>
 </tr></thead><tbody>${filasTabla}</tbody></table>
 
 <h2 class="banner-amarillo">Plagas y estado por lote (vs. umbral)</h2>
 <p class="hint">La marca negra en cada barra es el umbral; en rojo, lo que lo supera. La línea fina muestra la dispersión entre puntos de muestreo.</p>
 <div class="lotes-grid">${porLoteHtml}</div>
 
+<div class="salto-pagina"></div>
+<div class="solo-impresion">${encabezadoHtml}</div>
 <h2 class="banner-naranja">Historial de la variable (evolucion por visita)</h2>
-<div style="margin:10px 0;"><label style="font-size:13px;color:var(--gris);">Variable: </label>
+<div class="historial-cab no-imprimir"><label for="varSelect">Grupo de variables:</label>
 <select id="varSelect">${opcionesVariable}</select></div>
 ${historialCanvasHtml}
 
+<div class="salto-pagina"></div>
+<div class="solo-impresion">${encabezadoHtml}</div>
 <h2 class="banner-azul">Observaciones</h2>
 <div class="caja-fija">${observacionesTexto}</div>
 
@@ -1176,10 +1217,6 @@ ${productosRecomendadosHtml}
 
 <h3>Observaciones adicionales</h3>
 <div class="caja-fija">${notasHtml}</div>
-
-<div class="firma">
-  ${asesor.nombre || ""}${asesor.profesion ? " — " + asesor.profesion : ""}${asesor.cargo ? " — " + asesor.cargo : ""}
-</div>
 
 <footer>Informe generado automáticamente a partir del registro de visitas técnicas.</footer>
 
@@ -1237,25 +1274,26 @@ function calcularEscalaEjeY(maxCrudo, esPorcentaje) {
 
 // Línea de evolución por visita. Una serie de tiempo se lee como línea: muestra la tendencia
 // (subiendo o bajando), que es justo lo que se quiere saber entre una visita y la siguiente.
-function drawLineChart(canvasId, etiquetas, valores, umbral, opciones) {
+function drawLineChart(canvasId, etiquetas, series, umbral, opciones) {
   opciones = opciones || {};
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   const { ctx, w, h } = prepararCanvas(canvas);
-  const padL = 44, padR = 14, padT = 16, padB = 40;
+  const padL = 40, padR = 10, padT = 12, padB = 28;
 
   let maxVal = 0;
-  valores.forEach((v) => { if (v != null && v > maxVal) maxVal = v; });
+  series.forEach((s) => s.valores.forEach((v) => { if (v != null && v > maxVal) maxVal = v; }));
   if (umbral != null && umbral > maxVal) maxVal = umbral;
   const escala = calcularEscalaEjeY(maxVal, !!opciones.pct);
   maxVal = escala.max;
 
-  const x = (i) => padL + (valores.length <= 1 ? (w - padL - padR) / 2 : (i * (w - padL - padR)) / (valores.length - 1));
+  const puntosEje = (series[0] && series[0].valores.length) || 1;
+  const x = (i) => padL + (puntosEje <= 1 ? (w - padL - padR) / 2 : (i * (w - padL - padR)) / (puntosEje - 1));
   const y = (v) => h - padB - (v / maxVal) * (h - padT - padB);
   const fmtTick = (val) => opciones.pct ? Math.round(val * 100) + "%"
     : (Number.isInteger(Math.round(val * 10) / 10) ? String(Math.round(val * 10) / 10) : (Math.round(val * 10) / 10).toFixed(1));
 
-  ctx.font = "11px " + FUENTE_GRAFICA;
+  ctx.font = "9.5px " + FUENTE_GRAFICA;
   ctx.textAlign = "right";
   for (let i = 0; i <= escala.numTicks; i++) {
     const val = escala.paso * i;
@@ -1273,40 +1311,48 @@ function drawLineChart(canvasId, etiquetas, valores, umbral, opciones) {
     ctx.setLineDash([]);
   }
 
-  const color = opciones.color || COLORES[0];
-  const puntos = valores.map((v, i) => (v == null ? null : { x: x(i), y: y(v) })).filter(Boolean);
-  if (puntos.length > 1) {
-    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = "round";
-    ctx.beginPath(); puntos.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke();
-  }
-  puntos.forEach((p) => {
-    ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
-    ctx.fillStyle = "#fff"; ctx.fill();
-    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+  series.forEach((serie) => {
+    const color = serie.color || COLORES[0];
+    const puntos = serie.valores.map((v, i) => (v == null ? null : { x: x(i), y: y(v) })).filter(Boolean);
+    if (puntos.length > 1) {
+      ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.lineJoin = "round";
+      ctx.beginPath(); puntos.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke();
+    }
+    puntos.forEach((p) => {
+      ctx.beginPath(); ctx.arc(p.x, p.y, 2.8, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff"; ctx.fill();
+      ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.stroke();
+    });
   });
 
-  ctx.fillStyle = TINTA.texto; ctx.font = "10.5px " + FUENTE_GRAFICA; ctx.textAlign = "center";
-  etiquetas.forEach((et, i) => { ctx.fillText(et, x(i), h - padB + 15); });
-  if (opciones.titulo) {
-    ctx.fillStyle = TINTA.titulo; ctx.font = "600 10.5px " + FUENTE_GRAFICA;
-    ctx.fillText(opciones.titulo, padL + (w - padL - padR) / 2, h - 6);
-  }
+  ctx.fillStyle = TINTA.texto; ctx.font = "9.5px " + FUENTE_GRAFICA; ctx.textAlign = "center";
+  etiquetas.forEach((et, i) => { ctx.fillText(et, x(i), h - padB + 13); });
 }
 
 const varSelect = document.getElementById("varSelect");
-function redrawHistorial() {
-  const v = varSelect.value;
-  const h = historial[v];
-  const umbralVal = umbralesHistorial[v];
-  const esPorcentaje = v.indexOf("(%)") !== -1;
-  lotesFinca.forEach((lote, i) => {
-    drawLineChart("historialLote" + lote, h.fechas, h.lotes[lote], umbralVal, {
-      pct: esPorcentaje, color: COLORES[i % COLORES.length], titulo: "Fecha de la visita",
-    });
+const grid = document.getElementById("historialGrid");
+
+function dibujarHistorial() {
+  grid.querySelectorAll("canvas").forEach((canvas) => {
+    const v = canvas.dataset.variable;
+    const h = historial[v];
+    if (!h) return;
+    const series = lotesFinca.map((lote, i) => ({ valores: h.lotes[lote], color: COLORES[i % COLORES.length] }));
+    drawLineChart(canvas.id, h.fechas, series, umbralesHistorial[v], { pct: v.indexOf("(%)") !== -1 });
   });
 }
-varSelect.addEventListener("change", redrawHistorial);
-redrawHistorial();
+
+function filtrarHistorial() {
+  const elegido = varSelect.value;
+  grid.classList.toggle("todas", elegido === "todas");
+  grid.querySelectorAll(".historial-item").forEach((item) => {
+    item.hidden = elegido !== "todas" && item.dataset.grupo !== elegido;
+  });
+}
+
+varSelect.addEventListener("change", filtrarHistorial);
+dibujarHistorial();
+filtrarHistorial();
 </script>
 </body></html>`;
   },
