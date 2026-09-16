@@ -9,7 +9,6 @@ const msalApp = new msal.PublicClientApplication({
 });
 
 let cuentaActiva = null;
-const tablasListas = new Set(); // tablas ya verificadas/creadas en esta sesión
 let msalListo = false;
 
 const Graph = {
@@ -189,41 +188,6 @@ const Graph = {
       const path = `/me/drive/items/${id}/workbook/tables('${CONFIG.TABLA_PRODUCTOS_RECOMENDADOS}')/rows/add`;
       return this.llamar(path, { method: "POST", body: JSON.stringify({ values: [valores] }) });
     });
-  },
-
-  // Si una tabla todavía no existe en el Excel (por ejemplo Observaciones_Lotes en archivos
-  // viejos), la crea: agrega una hoja con ese nombre, escribe los encabezados y la convierte en
-  // tabla. Así no hay que armarla a mano para que sincronicen esos datos.
-  async asegurarTabla(nombreTabla, encabezados) {
-    if (tablasListas.has(nombreTabla)) return;
-    try {
-      await this.conReintento((id) => this.llamar(`/me/drive/items/${id}/workbook/tables('${nombreTabla}')`));
-      tablasListas.add(nombreTabla);
-      return;
-    } catch (e) {
-      if (!/itemnotfound/i.test(e.message)) throw e;
-    }
-
-    try {
-      await this.conReintento((id) => this.llamar(`/me/drive/items/${id}/workbook/worksheets/add`, {
-        method: "POST", body: JSON.stringify({ name: nombreTabla }),
-      }));
-    } catch (e) {
-      if (!/itemalreadyexists/i.test(e.message)) throw e; // la hoja ya estaba, solo falta la tabla
-    }
-
-    const ultimaColumna = String.fromCharCode(64 + encabezados.length); // A, B, C...
-    const rango = `A1:${ultimaColumna}1`;
-    await this.escribirRango(nombreTabla, rango, [encabezados]);
-    const tabla = await this.conReintento((id) => this.llamar(`/me/drive/items/${id}/workbook/tables/add`, {
-      method: "POST", body: JSON.stringify({ address: `${nombreTabla}!${rango}`, hasHeaders: true }),
-    }));
-    if (tabla && tabla.name !== nombreTabla) {
-      await this.conReintento((id) => this.llamar(`/me/drive/items/${id}/workbook/tables('${tabla.id}')`, {
-        method: "PATCH", body: JSON.stringify({ name: nombreTabla }),
-      }));
-    }
-    tablasListas.add(nombreTabla);
   },
 
   // Borra de una tabla todas las filas para las que coincide(valores) sea verdadero. Se borra de la

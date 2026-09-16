@@ -37,11 +37,6 @@ const ESQUEMA = {
   // escribió en Recomendaciones además de los productos). Es lo que alimenta el Historial.
   INFORMES_GENERADOS: { cliente: 0, finca: 1, fecha: 2, fechaInforme: 3, tipoFumigacion: 4, volumenMezcla: 5, notas: 6 },
 
-  // Encabezados de las tablas que la app crea sola en el Excel si no existen (el orden es el mismo
-  // de OBSERVACIONES_LOTES e INFORMES_GENERADOS de arriba).
-  ENCABEZADOS_OBSERVACIONES_LOTES: ["Cliente", "Finca", "Fecha visita", "Lote", "Potrero", "Observaciones"],
-  ENCABEZADOS_INFORMES_GENERADOS: ["Cliente", "Finca", "Fecha visita", "Fecha informe", "Tipo de fumigacion", "Volumen de mezcla", "Observaciones adicionales"],
-
   // Encabezados reales de la fila 1 de "Base de datos", tal como están hoy en el Excel.
   // Sirven para detectar si algún día se reordenan o renombran columnas.
   ENCABEZADOS_BASE: [
