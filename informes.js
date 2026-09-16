@@ -148,6 +148,115 @@ const claveVisitaLote = (d) => `${claveVisita(d)}|${d.lote === "" || d.lote == n
 const claveProducto = (nombre, formulacion, dosis) =>
   [nombre, formulacion, dosis].map((v) => String(v == null ? "" : v).trim().toLowerCase()).join("|");
 
+// Promedios y dispersión de un conjunto de puntos de muestreo. La "unidad" puede ser un lote (informe
+// de una visita) o una finca completa (informe de un cliente): el cálculo es el mismo.
+function metricasDeUnidad(sub) {
+  const danoColl = promedio(sub.map((s) => s[COL.danoCollTotal]));
+  const danoMol = promedio(sub.map((s) => s[COL.danoMoluscos]));
+  const danoHongos = promedio(sub.map((s) => s[COL.danoHongos]));
+  return {
+    n_puntos: sub.length, // cuántos puntos se promediaron (con 1 no hay dispersión posible)
+    incid_coll: promedio(sub.map((s) => s[COL.incidColl])),
+    sev_coll: promedio(sub.map((s) => s[COL.sevColl])),
+    incid_hongos: promedio(sub.map((s) => s[COL.incidHongos])),
+    sev_hongos: promedio(sub.map((s) => s[COL.sevHongos])),
+    adultos: promedio(sub.map((s) => s[COL.adultos])),
+    ninfas: promedio(sub.map((s) => s[COL.ninfas])),
+    loritos: promedio(sub.map((s) => s[COL.loritos])),
+    lepidopteros: promedio(sub.map((s) => s[COL.lepidopteros])),
+    hojas_moluscos: promedio(sub.map((s) => s[COL.hojasMoluscos])),
+    adultos_sd: desviacion(sub.map((s) => s[COL.adultos])),
+    ninfas_sd: desviacion(sub.map((s) => s[COL.ninfas])),
+    loritos_sd: desviacion(sub.map((s) => s[COL.loritos])),
+    lepidopteros_sd: desviacion(sub.map((s) => s[COL.lepidopteros])),
+    dano_coll: danoColl, dano_mol: danoMol, dano_hongos: danoHongos,
+    pasto_sano: 1 - (danoColl || 0) - (danoMol || 0) - (danoHongos || 0),
+  };
+}
+
+// Barras contra umbral, anillos, promedio general y alertas: todo se arma igual, sea la tabla por
+// lotes de una finca o por fincas de un cliente.
+function resumenDeTabla(tabla, umbrales) {
+  const barrasEstatica = {
+    categorias: ["Adultos de Collaria", "Ninfas de Collaria", "Loritos", "Lepidópteros"],
+    umbrales: [
+      umbrales["Umbral de Adultos de Collaria"] ?? 5,
+      umbrales["Umbral de Ninfas de Collaria"] ?? 5,
+      umbrales["Umbral de Individuos de Lorito"] ?? 5,
+      umbrales["Umbral de Numero de Lepidopteros"] ?? 5,
+    ],
+    lotes: Object.fromEntries(tabla.map((t) => [String(t.lote), [t.adultos, t.ninfas, t.loritos, t.lepidopteros]])),
+    errores: Object.fromEntries(tabla.map((t) => [String(t.lote), [t.adultos_sd, t.ninfas_sd, t.loritos_sd, t.lepidopteros_sd]])),
+  };
+
+  const tortas = tabla.map((t) => ({
+    lote: t.lote, valores: [t.dano_coll || 0, t.dano_mol || 0, t.dano_hongos || 0, Math.max(t.pasto_sano || 0, 0)],
+  }));
+
+  const promedioFinca = {};
+  ["incid_coll", "sev_coll", "incid_hongos", "sev_hongos", "adultos", "ninfas", "loritos",
+    "lepidopteros", "dano_mol", "dano_coll", "dano_hongos", "pasto_sano"].forEach((campo) => {
+    promedioFinca[campo] = promedio(tabla.map((t) => t[campo]));
+  });
+  const promedioBarras = {
+    valores: [promedioFinca.adultos, promedioFinca.ninfas, promedioFinca.loritos, promedioFinca.lepidopteros],
+    errores: [
+      promedio(tabla.map((t) => t.adultos_sd)), promedio(tabla.map((t) => t.ninfas_sd)),
+      promedio(tabla.map((t) => t.loritos_sd)), promedio(tabla.map((t) => t.lepidopteros_sd)),
+    ],
+  };
+  const promedioTorta = [
+    promedioFinca.dano_coll || 0, promedioFinca.dano_mol || 0, promedioFinca.dano_hongos || 0,
+    Math.max(promedioFinca.pasto_sano || 0, 0),
+  ];
+
+  // Alertas de la sección Resultados: se evalúa el estado general (el promedio) o, si solo hay una
+  // unidad, esa. El detalle ya está en la tabla y en las gráficas.
+  const referencia = tabla.length === 1 ? tabla[0] : promedioFinca;
+  const alertas = [];
+  if (tabla.length > 0) {
+    for (const def of DEFINICIONES_UMBRAL) {
+      const valor = referencia[def.campo];
+      const umbral = umbrales[def.umbral];
+      if (valor == null || umbral == null) continue;
+      const excede = def.esMinimo ? valor < umbral : valor > umbral;
+      if (excede) {
+        alertas.push(
+          `${def.nombre} (${fmt(valor, def.pct)}) ${def.esMinimo ? "por debajo del mínimo" : "supera el umbral"} (${fmt(umbral, def.pct)}).`
+        );
+      }
+    }
+  }
+
+  return { barras_estatica: barrasEstatica, tortas, promedio_finca: promedioFinca, promedio_barras: promedioBarras, promedio_torta: promedioTorta, alertas };
+}
+
+// Historial: una línea por serie (lote o finca) sobre las fechas indicadas.
+function historialDeSeries(filas, fechas, series, umbrales) {
+  const historial = {};
+  for (const [nombreVar, colOFn] of Object.entries(VARIABLES_HISTORIAL)) {
+    const extraer = typeof colOFn === "function" ? colOFn : (fila) => fila[colOFn];
+    const porSerie = {}, erroresPorSerie = {};
+    for (const serie of series) {
+      const promedios = [], errores = [];
+      for (const f of fechas) {
+        const sub = filas.filter((fila) => fila[COL.fecha] === f && serie.filtro(fila));
+        promedios.push(promedio(sub.map(extraer)));
+        errores.push(desviacion(sub.map(extraer)));
+      }
+      porSerie[String(serie.clave)] = promedios;
+      erroresPorSerie[String(serie.clave)] = errores;
+    }
+    historial[nombreVar] = { fechas: fechas.map(fmtFechaCorta), lotes: porSerie, errores: erroresPorSerie };
+  }
+  const umbralesHistorial = {};
+  for (const nombreVar of Object.keys(VARIABLES_HISTORIAL)) {
+    const nombreUmbral = UMBRAL_POR_VARIABLE_HISTORIAL[nombreVar];
+    umbralesHistorial[nombreVar] = nombreUmbral ? (umbrales[nombreUmbral] ?? null) : null;
+  }
+  return { historial, umbrales_historial: umbralesHistorial };
+}
+
 const Informes = {
   _remoto: {},
   _umbralesCache: null,
@@ -480,9 +589,6 @@ const Informes = {
 
     const tablaLotes = lotesReales.map((lote) => {
       const sub = visita.filter((f) => f[COL.lote] === lote);
-      const danoColl = promedio(sub.map((s) => s[COL.danoCollTotal]));
-      const danoMol = promedio(sub.map((s) => s[COL.danoMoluscos]));
-      const danoHongos = promedio(sub.map((s) => s[COL.danoHongos]));
       const potreros = [...new Set(sub.map((s) => s[COL.potrero]).filter(Boolean))];
       const observaciones = sub.map((s) => s[COL.observaciones]).filter((o) => o && String(o).trim()).join(" · ");
       const primero = sub[0] || [];
@@ -496,23 +602,9 @@ const Informes = {
           unidad: p[COL_PA.unidad], dosis: p[COL_PA.dosis],
         }));
       return {
-        lote, potrero: potreros.join(", "), observaciones, observacion_lote: observacionLote, productos: productosLote,
-        n_puntos: sub.length, // cuántos puntos se promediaron (con 1 no hay dispersión posible)
-        incid_coll: promedio(sub.map((s) => s[COL.incidColl])),
-        sev_coll: promedio(sub.map((s) => s[COL.sevColl])),
-        incid_hongos: promedio(sub.map((s) => s[COL.incidHongos])),
-        sev_hongos: promedio(sub.map((s) => s[COL.sevHongos])),
-        adultos: promedio(sub.map((s) => s[COL.adultos])),
-        ninfas: promedio(sub.map((s) => s[COL.ninfas])),
-        loritos: promedio(sub.map((s) => s[COL.loritos])),
-        lepidopteros: promedio(sub.map((s) => s[COL.lepidopteros])),
-        hojas_moluscos: promedio(sub.map((s) => s[COL.hojasMoluscos])),
-        adultos_sd: desviacion(sub.map((s) => s[COL.adultos])),
-        ninfas_sd: desviacion(sub.map((s) => s[COL.ninfas])),
-        loritos_sd: desviacion(sub.map((s) => s[COL.loritos])),
-        lepidopteros_sd: desviacion(sub.map((s) => s[COL.lepidopteros])),
-        dano_coll: danoColl, dano_mol: danoMol, dano_hongos: danoHongos,
-        pasto_sano: 1 - (danoColl || 0) - (danoMol || 0) - (danoHongos || 0),
+        lote, potrero: potreros.join(", "), subtitulo: potreros.length ? "Potrero " + potreros.join(", ") : "",
+        observaciones, observacion_lote: observacionLote, productos: productosLote,
+        ...metricasDeUnidad(sub),
         manejo: {
           tipoFumigacion: primero[COL.tipoFumigacion] || "",
           litrosMezclaHa: primero[COL.litrosMezclaHa] || "",
@@ -522,24 +614,6 @@ const Informes = {
       };
     });
 
-    // Solo variables en "numero promedio de individuos" (se excluye Hojas por Moluscos, que es otra unidad).
-    // Umbrales leidos en vivo de Configuracion (si falta alguno, se usa 5 como respaldo). Barras de error = +-1 desv. estandar / 2.
-    const barrasEstatica = {
-      categorias: ["Adultos de Collaria", "Ninfas de Collaria", "Loritos", "Lepidópteros"],
-      umbrales: [
-        umbrales["Umbral de Adultos de Collaria"] ?? 5,
-        umbrales["Umbral de Ninfas de Collaria"] ?? 5,
-        umbrales["Umbral de Individuos de Lorito"] ?? 5,
-        umbrales["Umbral de Numero de Lepidopteros"] ?? 5,
-      ],
-      lotes: Object.fromEntries(tablaLotes.map((t) => [
-        String(t.lote), [t.adultos, t.ninfas, t.loritos, t.lepidopteros],
-      ])),
-      errores: Object.fromEntries(tablaLotes.map((t) => [
-        String(t.lote), [t.adultos_sd, t.ninfas_sd, t.loritos_sd, t.lepidopteros_sd],
-      ])),
-    };
-
     const fechasFinca = [...new Set(
       filas.filter((f) => f[COL.cliente] === cliente && f[COL.finca] === finca).map((f) => f[COL.fecha])
     )].sort();
@@ -548,92 +622,121 @@ const Informes = {
       filas.filter((f) => f[COL.cliente] === cliente && f[COL.finca] === finca).map((f) => f[COL.lote])
     )].sort((a, b) => a - b);
 
-    const historial = {};
-    for (const [nombreVar, colOFn] of Object.entries(VARIABLES_HISTORIAL)) {
-      const extraer = typeof colOFn === "function" ? colOFn : (fila) => fila[colOFn];
-      const porLote = {}, erroresPorLote = {};
-      for (const lote of lotesFinca) {
-        const promedios = [], errores = [];
-        for (const f of ultimas6) {
-          const sub = filas.filter(
-            (r) => r[COL.cliente] === cliente && r[COL.finca] === finca && r[COL.lote] === lote && r[COL.fecha] === f
-          );
-          promedios.push(promedio(sub.map(extraer)));
-          errores.push(desviacion(sub.map(extraer)));
-        }
-        porLote[String(lote)] = promedios;
-        erroresPorLote[String(lote)] = errores;
-      }
-      historial[nombreVar] = { fechas: ultimas6.map(fmtFechaCorta), lotes: porLote, errores: erroresPorLote };
-    }
-
-    const umbralesHistorial = {};
-    for (const nombreVar of Object.keys(VARIABLES_HISTORIAL)) {
-      const nombreUmbral = UMBRAL_POR_VARIABLE_HISTORIAL[nombreVar];
-      umbralesHistorial[nombreVar] = nombreUmbral ? (umbrales[nombreUmbral] ?? null) : null;
-    }
-
-    const tortas = tablaLotes.map((t) => ({
-      lote: t.lote, valores: [t.dano_coll || 0, t.dano_mol || 0, t.dano_hongos || 0, Math.max(t.pasto_sano || 0, 0)],
+    const series = lotesFinca.map((lote) => ({
+      clave: lote,
+      filtro: (f) => f[COL.cliente] === cliente && f[COL.finca] === finca && f[COL.lote] === lote,
     }));
-
-    // Fila y graficas extra con el promedio de todos los lotes: el estado general de la finca en esta visita.
-    const promedioFinca = {
-      incid_coll: promedio(tablaLotes.map((t) => t.incid_coll)),
-      sev_coll: promedio(tablaLotes.map((t) => t.sev_coll)),
-      incid_hongos: promedio(tablaLotes.map((t) => t.incid_hongos)),
-      sev_hongos: promedio(tablaLotes.map((t) => t.sev_hongos)),
-      adultos: promedio(tablaLotes.map((t) => t.adultos)),
-      ninfas: promedio(tablaLotes.map((t) => t.ninfas)),
-      loritos: promedio(tablaLotes.map((t) => t.loritos)),
-      lepidopteros: promedio(tablaLotes.map((t) => t.lepidopteros)),
-      dano_mol: promedio(tablaLotes.map((t) => t.dano_mol)),
-      dano_coll: promedio(tablaLotes.map((t) => t.dano_coll)),
-      dano_hongos: promedio(tablaLotes.map((t) => t.dano_hongos)),
-      pasto_sano: promedio(tablaLotes.map((t) => t.pasto_sano)),
-    };
-    const promedioBarras = {
-      valores: [promedioFinca.adultos, promedioFinca.ninfas, promedioFinca.loritos, promedioFinca.lepidopteros],
-      errores: [
-        promedio(tablaLotes.map((t) => t.adultos_sd)), promedio(tablaLotes.map((t) => t.ninfas_sd)),
-        promedio(tablaLotes.map((t) => t.loritos_sd)), promedio(tablaLotes.map((t) => t.lepidopteros_sd)),
-      ],
-    };
-    const promedioTorta = [
-      promedioFinca.dano_coll || 0, promedioFinca.dano_mol || 0, promedioFinca.dano_hongos || 0,
-      Math.max(promedioFinca.pasto_sano || 0, 0),
-    ];
-
-    // Alertas de la sección Resultados: se evalúa el estado general de la finca (el promedio de los
-    // lotes) o, si solo se muestreó un lote, ese lote. El detalle por lote ya está en la tabla y en
-    // las gráficas; aquí se resume una sola vez para no repetir lo mismo lote por lote.
-    const referencia = tablaLotes.length === 1 ? tablaLotes[0] : promedioFinca;
-    const alertas = [];
-    if (tablaLotes.length > 0) {
-      for (const def of DEFINICIONES_UMBRAL) {
-        const valor = referencia[def.campo];
-        const umbral = umbrales[def.umbral];
-        if (valor == null || umbral == null) continue;
-        const excede = def.esMinimo ? valor < umbral : valor > umbral;
-        if (excede) {
-          alertas.push(
-            `${def.nombre} (${fmt(valor, def.pct)}) ${def.esMinimo ? "por debajo del mínimo" : "supera el umbral"} (${fmt(umbral, def.pct)}).`
-          );
-        }
-      }
-    }
-
     const visitaNumero = fechasFinca.indexOf(fecha) + 1;
 
     return {
       cliente, finca, fecha, visita_numero: visitaNumero, lotes_reales: lotesReales, lotes_finca: lotesFinca,
-      tabla_lotes: tablaLotes, barras_estatica: barrasEstatica, historial, umbrales_historial: umbralesHistorial, tortas, alertas, umbrales,
-      promedio_finca: promedioFinca, promedio_barras: promedioBarras, promedio_torta: promedioTorta,
+      etiqueta_unidad: "Lote", plural_unidad: "lotes",
+      tabla_lotes: tablaLotes, umbrales,
+      ...resumenDeTabla(tablaLotes, umbrales),
+      ...historialDeSeries(filas, ultimas6, series, umbrales),
+      productividad, orden_productos: ordenProductos,
+    };
+  },
+
+  // ---------- Informe por fincas de un cliente ----------
+  // Misma estructura que el informe de una visita, pero la unidad que se compara es la finca: se
+  // promedian todos los puntos de todos sus lotes en la visita elegida. `seleccion` es la lista
+  // [{finca, fecha}] que arma el asesor: él decide qué visita de cada finca entra.
+  async calcularDatosCliente(cliente, seleccion) {
+    const filas = await this.filas();
+    const umbrales = await this.umbrales();
+    const productosAplicados = await this.filasProductos();
+    const observacionesLotes = await this.filasObservacionesLotes();
+    const catalogoProductos = await this.filasCatalogoProductos();
+    const ordenProductos = {};
+    catalogoProductos.forEach((f) => { if (f[0]) ordenProductos[String(f[0]).trim().toLowerCase()] = f[4]; });
+
+    const productividad = [];
+    const tablaFincas = [];
+    for (const { finca, fecha } of seleccion) {
+      const sub = filas.filter((f) => f[COL.cliente] === cliente && f[COL.finca] === finca && f[COL.fecha] === fecha);
+      if (sub.length === 0) continue;
+      const lotes = [...new Set(sub.map((f) => f[COL.lote]))].sort((a, b) => a - b);
+      const primero = sub[0];
+
+      const productos = [];
+      const vistos = new Set();
+      productosAplicados
+        .filter((p) => p[COL_PA.cliente] === cliente && p[COL_PA.finca] === finca && p[COL_PA.fecha] === fecha)
+        .forEach((p) => {
+          const clave = claveProducto(p[COL_PA.producto], p[COL_PA.formulacion], p[COL_PA.dosis]);
+          if (vistos.has(clave)) return;
+          vistos.add(clave);
+          productos.push({ tipo: p[COL_PA.tipo], nombre: p[COL_PA.producto], formulacion: p[COL_PA.formulacion], unidad: p[COL_PA.unidad], dosis: p[COL_PA.dosis] });
+        });
+
+      const observacionesDeLotes = observacionesLotes
+        .filter((o) => o[COL_OL.cliente] === cliente && o[COL_OL.finca] === finca && o[COL_OL.fecha] === fecha)
+        .map((o) => `Lote ${o[COL_OL.lote]}: ${String(o[COL_OL.observaciones] || "").trim()}`)
+        .filter((t) => !t.endsWith(": "));
+
+      tablaFincas.push({
+        lote: finca, fecha,
+        potrero: "",
+        subtitulo: `${formatoFechaVisible(fecha)} · ${lotes.length > 1 ? "Lotes" : "Lote"} ${lotes.join(", ")}`,
+        lotes_muestreados: lotes,
+        observaciones: sub.map((f) => f[COL.observaciones]).filter((o) => o && String(o).trim()).join(" · "),
+        observacion_lote: observacionesDeLotes.join(" · "),
+        productos,
+        recomendados: await this.recomendacionesGuardadas(cliente, finca, fecha),
+        informe: await this.informeGuardado(cliente, finca, fecha),
+        ...metricasDeUnidad(sub),
+        manejo: {
+          tipoFumigacion: primero[COL.tipoFumigacion] || "",
+          litrosMezclaHa: primero[COL.litrosMezclaHa] || "",
+          ordenMezclaCorrecto: primero[COL.ordenMezclaCorrecto] || "",
+          phFinalMezcla: primero[COL.phFinalMezcla] || "",
+        },
+      });
+
+      // Productividad de la finca: se suman áreas y animales de sus lotes y se recalculan los
+      // indicadores con las mismas fórmulas del Excel (si la visita la trae "en general", se usa tal cual).
+      const filasPf = await this.productividadDeVisita(cliente, finca, fecha);
+      if (filasPf.length) {
+        const area = filasPf.reduce((t, p) => t + (Number(p.area) || 0), 0);
+        const animales = filasPf.reduce((t, p) => t + (Number(p.animales) || 0), 0);
+        const dias = promedio(filasPf.map((p) => Number(p.dias) || null));
+        const produccionDiaria = promedio(filasPf.map((p) => Number(p.produccion) || null));
+        productividad.push({
+          lote: finca, area, animales, dias, produccion: produccionDiaria,
+          cargaAnimal: area > 0 ? animales / area : null,
+          areaDiaria: (animales > 0 && dias > 0) ? ((area * 10000) / animales) / dias : null,
+          productividadLecheria: area > 0 ? (produccionDiaria * animales) / area : null,
+        });
+      }
+    }
+
+    const fincas = tablaFincas.map((t) => t.lote);
+    const fechasVisitas = tablaFincas.map((t) => t.fecha);
+    // Historial: el eje son las últimas 8 fechas en las que se visitó alguna de estas fincas.
+    const fechasHistorial = [...new Set(filas
+      .filter((f) => f[COL.cliente] === cliente && fincas.includes(f[COL.finca]))
+      .map((f) => f[COL.fecha]))].sort().slice(-8);
+    const series = fincas.map((finca) => ({
+      clave: finca,
+      filtro: (f) => f[COL.cliente] === cliente && f[COL.finca] === finca,
+    }));
+
+    return {
+      cliente, finca: "", fecha: fechasVisitas.map(formatoFechaVisible).join(", "),
+      es_cliente: true, etiqueta_unidad: "Finca", plural_unidad: "fincas",
+      lotes_reales: fincas, lotes_finca: fincas, fechas_visitas: fechasVisitas,
+      tabla_lotes: tablaFincas, umbrales,
+      ...resumenDeTabla(tablaFincas, umbrales),
+      ...historialDeSeries(filas, fechasHistorial, series, umbrales),
       productividad, orden_productos: ordenProductos,
     };
   },
 
   generarHtml(D, productosRecomendados, notasAdicionales, manejoFumigacion = {}) {
+    const U = D.etiqueta_unidad || "Lote";              // Lote (informe de visita) o Finca (informe de cliente)
+    const UP = D.plural_unidad || "lotes";
+    const nombreUnidad = (valor) => `${U} ${valor}`;
     const claseAlerta = (valor, umbral, esMinimo) => {
       if (valor == null || umbral == null) return "";
       const excede = esMinimo ? valor < umbral : valor > umbral;
@@ -643,7 +746,7 @@ const Informes = {
     const um = (nombreDef) => u[DEFINICIONES_UMBRAL.find((d) => d.campo === nombreDef).umbral];
 
     const filasTabla = D.tabla_lotes.map((t) => `<tr>
-      <td>Lote ${t.lote}</td>
+      <td>${esc(nombreUnidad(t.lote))}</td>
       <td${claseAlerta(t.incid_coll, um("incid_coll"))}>${fmt(t.incid_coll, true)}</td>
       <td${claseAlerta(t.sev_coll, um("sev_coll"))}>${fmt(t.sev_coll, true)}</td>
       <td${claseAlerta(t.incid_hongos, um("incid_hongos"))}>${fmt(t.incid_hongos, true)}</td>
@@ -740,7 +843,7 @@ const Informes = {
       const manejo = manejoHtml(g.manejo, g.productos);
       if (!manejo) return "";
       const subtitulo = gruposManejo.length > 1
-        ? `<strong>${g.lotes.length > 1 ? "Lotes " : "Lote "}${g.lotes.join(", ")}</strong>`
+        ? `<strong>${g.lotes.length > 1 ? U + "s " : U + " "}${g.lotes.join(", ")}</strong>`
         : "";
       return `<div class="manejo-box">${subtitulo}${manejo}</div>`;
     }).join("");
@@ -750,7 +853,7 @@ const Informes = {
     const numero = (v, dec = 1) => (v == null || Number.isNaN(Number(v)) ? "-" : Number(v).toFixed(dec));
     const productividadHtml = (D.productividad || []).length
       ? D.productividad.map((p) => `<div class="kpi-bloque">
-          <span class="rotulo">${p.lote ? "Lote " + esc(p.lote) : "Finca en general"}</span>
+          <span class="rotulo">${p.lote ? esc(nombreUnidad(p.lote)) : "Finca en general"}</span>
           <div class="kpi-grid">
             <div class="kpi"><span class="kpi-num">${numero(p.productividadLecheria)}</span><span class="kpi-unidad">L leche/ha·día</span><span class="kpi-nombre">Productividad de la lechería</span></div>
             <div class="kpi"><span class="kpi-num">${numero(p.cargaAnimal, 2)}</span><span class="kpi-unidad">animales/ha</span><span class="kpi-nombre">Carga animal</span></div>
@@ -844,7 +947,7 @@ const Informes = {
         ? "1 punto de muestreo (sin dispersión)."
         : `Promedio de ${t.n_puntos} puntos de muestreo.`;
       return `<div class="lote-bloque">
-        <h3>Lote ${esc(t.lote)}${t.potrero ? ` — Potrero ${esc(t.potrero)}` : ""}</h3>
+        <h3>${esc(nombreUnidad(t.lote))}${t.subtitulo ? ` — ${esc(t.subtitulo)}` : ""}</h3>
         ${panelesHtml(valores, errores, D.tortas[i].valores)}
         <p class="nota-puntos">${nota}</p>
       </div>`;
@@ -861,20 +964,20 @@ const Informes = {
     // visita. Se dibujan todas al abrir el informe; el desplegable solo muestra u oculta grupos.
     const variablesHistorial = GRUPOS_HISTORIAL.flatMap((g) => g.variables.map((v) => ({ grupo: g.id, variable: v })));
     const historialCanvasHtml = `<div class="leyenda-lotes">${D.lotes_finca.map((lote, i) =>
-      `<span><i style="background:${COLORES_LOTE[i % COLORES_LOTE.length]}"></i>Lote ${esc(lote)}</span>`).join("")}</div>
+      `<span><i style="background:${COLORES_LOTE[i % COLORES_LOTE.length]}"></i>${esc(nombreUnidad(lote))}</span>`).join("")}</div>
       <div id="historialGrid" class="historial-grid">${variablesHistorial.map((v, i) =>
         `<div class="chart-box historial-item" data-grupo="${v.grupo}"><h3>${esc(v.variable)}</h3>
           <canvas id="hist${i}" data-variable="${esc(v.variable)}" width="330" height="200"></canvas></div>`).join("")}</div>`;
 
     const observacionesTexto = esc(D.tabla_lotes.map((t) => {
-      const etiqueta = `Lote ${t.lote}` + (t.potrero ? ` (Potrero ${t.potrero})` : "");
+      const etiqueta = nombreUnidad(t.lote) + (t.subtitulo ? ` (${t.subtitulo})` : "");
       const texto = [t.observacion_lote, t.observaciones].filter(Boolean).join(" · ");
       return `${etiqueta}: ${texto || "Sin observaciones."}`;
     }).join("\n\n"));
 
     const baseResultados = D.tabla_lotes.length === 1
-      ? `Lote ${esc(D.tabla_lotes[0].lote)}`
-      : `Promedio de los ${D.tabla_lotes.length} lotes`;
+      ? esc(nombreUnidad(D.tabla_lotes[0].lote))
+      : `Promedio de ${U === "Finca" ? "las" : "los"} ${D.tabla_lotes.length} ${UP}`;
     const resultadosHtml = `<strong>${baseResultados}:</strong><br>` + (D.alertas.length
       ? D.alertas.map((a) => `• ${esc(a)}`).join("<br>")
       : "Ningún indicador superó su umbral en esta visita.");
@@ -907,7 +1010,27 @@ const Informes = {
         </div>`
       : "";
 
-    const productosRecomendadosHtml = (productosRecomendados || []).length
+    // En el informe por fincas se muestra lo que ya se recomendó en la visita de cada finca.
+    const recomendacionesPorFinca = () => D.tabla_lotes.map((t) => {
+      const informe = t.informe || {};
+      const productos = (t.recomendados || []).map((p) => ({ ...p, tipoFumigacion: informe.tipoFumigacion }));
+      const encabezado = [
+        informe.tipoFumigacion ? `Fumigación: ${TIPOS_FUMIGACION_TEXTO[informe.tipoFumigacion] || esc(informe.tipoFumigacion)}` : "",
+        informe.volumenMezcla ? `Volumen de mezcla: ${esc(informe.volumenMezcla)}L/ha` : "",
+      ].filter(Boolean).join(" · ");
+      const lista = productos.length
+        ? `<ol class="reco-lista">${productos.map((p) => {
+            const dosis = formatearDosis(p);
+            return `<li><div class="reco-texto"><strong>${esc(p.nombre)}</strong>${p.tipo ? `<span class="reco-detalle"> — ${esc(p.tipo)}</span>` : ""}
+              ${dosis ? `<div class="reco-dosis">${esc(dosis)}</div>` : ""}</div></li>`;
+          }).join("")}</ol>`
+        : `<p class="hint">Sin productos recomendados en esta visita.</p>`;
+      return `<div class="manejo-box"><strong>${esc(nombreUnidad(t.lote))}</strong>
+        ${encabezado ? `<p class="hint">${encabezado}</p>` : ""}${lista}
+        ${informe.notas ? `<p class="nota-puntos">${esc(informe.notas).replace(/\n/g, "<br>")}</p>` : ""}</div>`;
+    }).join("");
+
+    const productosRecomendadosHtml = D.es_cliente ? recomendacionesPorFinca() : (productosRecomendados || []).length
       ? tipoFumigacionHtml + `<ol class="reco-lista">${productosRecomendados.map((p) => {
           const dosis = formatearDosis(p);
           return `<li>
@@ -932,12 +1055,13 @@ const Informes = {
   <div class="enc-visita">
     <div class="enc-marca">
       <img src="${LOGO_DATA_URI}" alt="Galagro" class="logo">
-      <h1>Informe de Visita Técnica</h1>
+      <h1>${D.es_cliente ? "Informe Técnico por Fincas" : "Informe de Visita Técnica"}</h1>
     </div>
     <dl class="enc-datos">
       <dt>Cliente:</dt><dd>${esc(D.cliente)}</dd>
-      <dt>Finca:</dt><dd>${esc(D.finca)}</dd>
-      <dt>Visita No:</dt><dd>${esc(D.visita_numero)}</dd>
+      ${D.es_cliente
+        ? `<dt>Fincas:</dt><dd>${D.tabla_lotes.length}</dd>`
+        : `<dt>Finca:</dt><dd>${esc(D.finca)}</dd><dt>Visita No:</dt><dd>${esc(D.visita_numero)}</dd>`}
     </dl>
   </div>
   ${asesor.nombre ? `<div class="enc-asesor">
@@ -1174,10 +1298,10 @@ footer{margin-top:var(--e8);font-size:var(--t-micro);color:var(--tinta-suave);te
 ${encabezadoHtml}
 
 <div class="datos-grid">
-  <div><span class="icono">${ICONO_CALENDARIO}</span><span class="etiqueta">Fecha de visita</span><span class="valor">${esc(D.fecha)}</span></div>
-  <div><span class="icono">${ICONO_LOTES}</span><span class="etiqueta">Lotes revisados</span><span class="valor">${D.lotes_reales.map((l) => {
+  <div><span class="icono">${ICONO_CALENDARIO}</span><span class="etiqueta">${D.es_cliente ? "Fechas de visita" : "Fecha de visita"}</span><span class="valor">${esc(D.fecha)}</span></div>
+  <div><span class="icono">${ICONO_LOTES}</span><span class="etiqueta">${D.es_cliente ? "Fincas revisadas" : "Lotes revisados"}</span><span class="valor">${D.lotes_reales.map((l) => {
     const t = D.tabla_lotes.find((x) => x.lote === l);
-    return t && t.potrero ? `Lote ${esc(l)} (Potrero ${esc(t.potrero)})` : `Lote ${esc(l)}`;
+    return esc(nombreUnidad(l)) + (t && t.subtitulo ? ` (${esc(t.subtitulo)})` : "");
   }).join(", ")}</span></div>
 </div>
 

@@ -218,15 +218,31 @@
 <section id="pantalla-informes" hidden>
   <h2>Generar informe</h2>
 
+  <label>Tipo de informe
+    <select id="informe-tipo">
+      <option value="visita">Por lotes de una finca (una visita)</option>
+      <option value="cliente">Por fincas de un cliente</option>
+    </select>
+  </label>
+
   <label>Cliente <span class="asterisco">*</span> <select id="informe-cliente"></select></label>
-  <label>Finca <span class="asterisco">*</span> <select id="informe-finca"></select></label>
-  <label>Fecha de la visita <span class="asterisco">*</span> <select id="informe-fecha"></select></label>
+
+  <div id="informe-campos-visita">
+    <label>Finca <span class="asterisco">*</span> <select id="informe-finca"></select></label>
+    <label>Fecha de la visita <span class="asterisco">*</span> <select id="informe-fecha"></select></label>
+  </div>
+
+  <div id="informe-campos-cliente" hidden>
+    <p class="hint">Elige qué fincas entran y de qué visita se toman los datos de cada una.</p>
+    <div id="informe-fincas-lista"></div>
+  </div>
 
   <p id="datos-estado" class="hint"></p>
 
   <div id="informe-datos" hidden>
     <iframe id="informe-preview"></iframe>
 
+    <div id="informe-bloque-recomendaciones">
     <h2>Recomendaciones</h2>
     <h3>Tipo de fumigación</h3>
     <p class="hint">Con qué equipo se recomienda aplicar estos productos.</p>
@@ -248,7 +264,9 @@
     <div id="lista-productos-informe"></div>
     <button type="button" id="btn-agregar-producto-informe" class="secundario">+ Agregar producto</button>
 
-    <label>Observaciones adicionales para el cliente (quedan fijas en el informe, no editables)
+    </div>
+
+    <label id="informe-notas-caja">Observaciones adicionales para el cliente (quedan fijas en el informe, no editables)
       <textarea id="informe-recomendaciones" rows="4" placeholder="Escribe aquí observaciones adicionales..."></textarea>
     </label>
 

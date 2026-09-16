@@ -45,13 +45,17 @@ vacías a propósito, para que las calcule la propia hoja y no un valor fijo de 
 ## Antes de publicar un cambio
 
 ```bash
-node pruebas/correr.js   # 32 pruebas: cálculos, informe, escape de HTML, formato de filas
+node pruebas/correr.js   # 42 pruebas: cálculos, informe, escape de HTML, formato de filas
 node publicar.js         # corre las pruebas y sube la versión en app.js y sw.js a la vez
 git add -A && git commit -m "..." && git push
 ```
 
 El número de versión se ve arriba en la app (ej. `v35`), al lado del título: sirve para confirmar
 que el celular ya tiene la última versión y no una cacheada.
+
+El informe tiene dos modos: **por lotes de una finca** (una visita) y **por fincas de un cliente**
+(el asesor elige qué finca entra y de qué visita). El segundo promedia todos los puntos de la finca
+y usa la finca como unidad de comparación. Ambos se imprimen en 3 páginas desde el propio informe.
 
 ## Si algún día cambia el Excel
 

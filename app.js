@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "51";
+const APP_VERSION = "52";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -1679,6 +1679,65 @@ async function poblarSelectInformeFecha() {
   }
 }
 
+// ---------- Informe por fincas de un cliente ----------
+
+const informePorCliente = () => el("informe-tipo").value === "cliente";
+
+async function onCambioTipoInforme() {
+  const porCliente = informePorCliente();
+  el("informe-campos-visita").hidden = porCliente;
+  el("informe-campos-cliente").hidden = !porCliente;
+  el("informe-bloque-recomendaciones").hidden = porCliente;
+  el("informe-notas-caja").firstChild.textContent = porCliente
+    ? "Nota general para el cliente (opcional, va al final del informe) "
+    : "Observaciones adicionales para el cliente (quedan fijas en el informe, no editables) ";
+  ocultarDatosInforme();
+  if (porCliente) await renderFincasDelCliente();
+  else poblarSelectInformeFinca();
+}
+
+// Una línea por finca del cliente: se marca si entra en el informe y de qué visita se toman sus datos.
+async function renderFincasDelCliente() {
+  const cliente = el("informe-cliente").value;
+  const lista = el("informe-fincas-lista");
+  if (!cliente) {
+    lista.innerHTML = `<p class="hint">Elige primero el cliente.</p>`;
+    return;
+  }
+  lista.innerHTML = `<p class="hint">Cargando fincas...</p>`;
+  const fincas = clientesFincas.filter((c) => c.cliente === cliente).map((f) => f.finca).sort(porNombre);
+  const bloques = [];
+  for (const finca of fincas) {
+    let fechas = [];
+    try {
+      fechas = await Informes.fechasDisponibles(cliente, finca);
+    } catch (e) {
+      console.warn("No se pudieron leer las fechas de la finca:", e.message);
+    }
+    if (fechas.length === 0) continue;
+    bloques.push(`<div class="finca-informe">
+      <input type="checkbox" class="finca-incluir" data-finca="${esc(finca)}" checked>
+      <span class="finca-nombre">${esc(finca)}</span>
+      <select class="finca-fecha" data-finca="${esc(finca)}">
+        ${fechas.map((f) => `<option value="${f}">${Informes.formatoFechaVisible(f)}</option>`).join("")}
+      </select>
+    </div>`);
+  }
+  lista.innerHTML = bloques.length ? bloques.join("") : `<p class="hint">Este cliente todavía no tiene visitas registradas.</p>`;
+  lista.querySelectorAll("input, select").forEach((campo) => campo.addEventListener("change", cargarDatosInforme));
+  await cargarDatosInforme();
+}
+
+function seleccionDeFincas() {
+  return [...el("informe-fincas-lista").querySelectorAll(".finca-incluir")]
+    .filter((c) => c.checked)
+    .map((c) => ({
+      finca: c.dataset.finca,
+      fecha: el("informe-fincas-lista").querySelector(`.finca-fecha[data-finca="${CSS.escape(c.dataset.finca)}"]`).value,
+    }))
+    .filter((x) => x.fecha);
+}
+
 function ocultarDatosInforme() {
   el("informe-datos").hidden = true;
   el("informe-resultado").hidden = true;
@@ -1707,16 +1766,20 @@ async function cargarDatosInforme() {
   const cliente = el("informe-cliente").value;
   const finca = el("informe-finca").value;
   const fecha = el("informe-fecha").value;
+  const porCliente = informePorCliente();
+  const seleccion = porCliente ? seleccionDeFincas() : [];
   ocultarDatosInforme();
-  if (!cliente || !finca || !fecha) {
-    el("datos-estado").textContent = "";
+  if (!cliente || (porCliente ? seleccion.length === 0 : !finca || !fecha)) {
+    el("datos-estado").textContent = porCliente && cliente ? "Marca al menos una finca." : "";
     return;
   }
 
   el("datos-estado").textContent = "Cargando datos...";
   try {
-    const datos = await Informes.calcularDatos(cliente, finca, fecha);
-    await precargarRecomendacionesGuardadas(cliente, finca, fecha);
+    const datos = porCliente
+      ? await Informes.calcularDatosCliente(cliente, seleccion)
+      : await Informes.calcularDatos(cliente, finca, fecha);
+    if (!porCliente) await precargarRecomendacionesGuardadas(cliente, finca, fecha);
     if (turno !== cargaInforme) return; // se cambió de visita mientras cargaba
 
     const preview = el("informe-preview");
@@ -1815,7 +1878,34 @@ async function guardarProductosRecomendados(cliente, finca, fecha, productos) {
   else await DB.agregarItem("recomendaciones_visita", datos);
 }
 
+async function onGenerarInformeCliente() {
+  const cliente = el("informe-cliente").value;
+  const seleccion = seleccionDeFincas();
+  if (!cliente) { marcarCampoInvalido(el("informe-cliente")); return; }
+  if (seleccion.length === 0) { el("informe-estado").textContent = "Marca al menos una finca."; return; }
+
+  el("btn-generar-informe").disabled = true;
+  el("informe-estado").textContent = "Generando informe...";
+  el("informe-resultado").hidden = true;
+  try {
+    const datos = await Informes.calcularDatosCliente(cliente, seleccion);
+    const html = Informes.generarHtml(datos, [], el("informe-recomendaciones").value.trim());
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    el("btn-ver-informe").onclick = () => window.open(url, "_blank");
+    const link = el("link-descargar-informe");
+    link.href = url;
+    link.download = `informe_${cliente}_${fechaLocalHoy()}.html`.replace(/\s+/g, "_");
+    el("informe-estado").textContent = "";
+    el("informe-resultado").hidden = false;
+  } catch (e) {
+    el("informe-estado").textContent = "No se pudo generar el informe: " + e.message;
+  } finally {
+    el("btn-generar-informe").disabled = false;
+  }
+}
+
 async function onGenerarInforme() {
+  if (informePorCliente()) return onGenerarInformeCliente();
   const cliente = el("informe-cliente").value;
   const finca = el("informe-finca").value;
   const fecha = el("informe-fecha").value;
@@ -2296,7 +2386,11 @@ document.addEventListener("DOMContentLoaded", () => {
     await mostrarInicioVisitas();
   });
 
-  el("informe-cliente").addEventListener("change", poblarSelectInformeFinca);
+  el("informe-tipo").addEventListener("change", onCambioTipoInforme);
+  el("informe-cliente").addEventListener("change", () => {
+    if (informePorCliente()) renderFincasDelCliente();
+    else poblarSelectInformeFinca();
+  });
   el("informe-finca").addEventListener("change", poblarSelectInformeFecha);
   el("informe-fecha").addEventListener("change", cargarDatosInforme);
   window.addEventListener("resize", ajustarAlturaPreview);
@@ -2322,6 +2416,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (btn.dataset.tab === "informes") {
           Informes.invalidarCache();
           poblarSelectInformeCliente();
+          await onCambioTipoInforme();
           mostrarPantalla("pantalla-informes");
         } else if (btn.dataset.tab === "historial") {
           Informes.invalidarCache();

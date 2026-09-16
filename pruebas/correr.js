@@ -411,6 +411,53 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   });
 
   // ---------------------------------------------------------------------------
+  console.log("\nInforme por fincas de un cliente");
+
+  const filasDosFincas = [
+    filaPunto({ finca: "AMAZONAS", lote: 1, punto: 1, fecha: "2026-09-14", adultos: 10 }),
+    filaPunto({ finca: "AMAZONAS", lote: 1, punto: 2, fecha: "2026-09-14", adultos: 20 }),
+    filaPunto({ finca: "AMAZONAS", lote: 2, punto: 1, fecha: "2026-09-14", adultos: 6 }),
+    filaPunto({ finca: "SOLEDAD", lote: 1, punto: 1, fecha: "2026-09-10", adultos: 4 }),
+    filaPunto({ finca: "SOLEDAD", lote: 1, punto: 2, fecha: "2026-09-10", adultos: 2 }),
+  ];
+  const seleccionDosFincas = [{ finca: "AMAZONAS", fecha: "2026-09-14" }, { finca: "SOLEDAD", fecha: "2026-09-10" }];
+
+  await pruebaAsync("cada finca promedia todos los puntos de todos sus lotes", async () => {
+    const { Informes } = cargarInformes({ filas: filasDosFincas });
+    const D = await Informes.calcularDatosCliente("CLIENTE", seleccionDosFincas);
+    igual(D.tabla_lotes.map((t) => t.lote).join(","), "AMAZONAS,SOLEDAD");
+    cerca(D.tabla_lotes[0].adultos, 12, 1e-9, "promedio de los 3 puntos de AMAZONAS");
+    igual(D.tabla_lotes[0].n_puntos, 3, "cuenta los puntos de los 2 lotes");
+    cierto(D.tabla_lotes[0].adultos_sd > 0, "hay desviación para las barras de error");
+    cerca(D.promedio_finca.adultos, 7.5, 1e-9, "el promedio general es entre fincas");
+  });
+
+  await pruebaAsync("el informe por fincas usa Finca como unidad y trae las recomendaciones de cada visita", async () => {
+    const { Informes } = cargarInformes({
+      filas: filasDosFincas,
+      recomendados: [["CLIENTE", "AMAZONAS", "2026-09-14", "", "LORSBAN", "INSECTICIDA", "EC", "cc", 150]],
+      informesGenerados: [["CLIENTE", "AMAZONAS", "2026-09-14", "2026-09-15", "Aerea (Dron)", "20", "Repetir en 15 días"]],
+    });
+    const D = await Informes.calcularDatosCliente("CLIENTE", seleccionDosFincas);
+    const html = Informes.generarHtml(D, [], "Nota general");
+    contiene(html, "Informe Técnico por Fincas");
+    contiene(html, "Finca AMAZONAS");
+    contiene(html, "Fincas revisadas");
+    contiene(html, "LORSBAN", "la recomendación guardada de esa visita");
+    contiene(html, "Repetir en 15 días", "y sus observaciones");
+    contiene(html, "Nota general", "más la nota general del cliente");
+    noContiene(html, "Visita No:", "en el informe del cliente no hay número de visita");
+  });
+
+  await pruebaAsync("el historial del cliente lleva una línea por finca", async () => {
+    const { Informes } = cargarInformes({ filas: filasDosFincas });
+    const D = await Informes.calcularDatosCliente("CLIENTE", seleccionDosFincas);
+    const h = D.historial["Individuos Adultos de Collaria"];
+    igual(Object.keys(h.lotes).join(","), "AMAZONAS,SOLEDAD");
+    igual(h.fechas.length, 2, "las 2 fechas en que se visitó alguna de las fincas");
+  });
+
+  // ---------------------------------------------------------------------------
   // 4. Filas que se suben a Excel: las columnas con fórmula deben ir vacías
   // -------------------------------------------------------------------------
   console.log("\nFilas para Excel");

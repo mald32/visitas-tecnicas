@@ -176,6 +176,10 @@ button.secundario {
   margin-top: 10px;
 }
 
+.finca-informe { display: flex; align-items: center; gap: 10px; border: 1px solid var(--borde); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
+.finca-informe input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; }
+.finca-informe .finca-nombre { flex: 1; font-size: 14px; color: #1a1614; }
+.finca-informe select { width: auto; max-width: 48%; padding: 6px 8px; font-size: 13px; }
 .historial-visita { cursor: pointer; }
 .historial-faltantes { display: block; font-size: 11px; color: var(--rojo); margin-top: 2px; }
 .historial-completa { display: block; font-size: 11px; color: var(--principal); margin-top: 2px; }
