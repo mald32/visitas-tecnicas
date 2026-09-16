@@ -1047,7 +1047,8 @@ const Informes = {
       : "";
 
     // En el informe por fincas se muestra lo que ya se recomendó en la visita de cada finca.
-    const recomendacionesPorFinca = () => D.tabla_lotes.map((t) => {
+    const fincaConRecomendacion = (t) => (t.recomendados || []).length > 0 || (t.informe && (t.informe.notas || t.informe.tipoFumigacion));
+    const recomendacionesPorFinca = () => D.tabla_lotes.filter(fincaConRecomendacion).map((t) => {
       const informe = t.informe || {};
       const productos = (t.recomendados || []).map((p) => ({ ...p, tipoFumigacion: informe.tipoFumigacion }));
       const encabezado = [
@@ -1077,8 +1078,9 @@ const Informes = {
     }).join("")}</ol>`;
 
     const productosRecomendadosHtml = D.es_cliente
-      ? ((productosRecomendados || []).length ? tipoFumigacionHtml + listaProductosHtml(productosRecomendados) : "")
-        + `<h3>Lo recomendado en cada finca</h3>` + recomendacionesPorFinca()
+      ? (((productosRecomendados || []).length ? tipoFumigacionHtml + listaProductosHtml(productosRecomendados) : "")
+        + (D.tabla_lotes.some(fincaConRecomendacion) ? `<h3>Lo recomendado en cada finca</h3>` + recomendacionesPorFinca() : "")
+        || `<p class="hint">Sin productos recomendados para este informe.</p>`)
       : (productosRecomendados || []).length
       ? tipoFumigacionHtml + `<ol class="reco-lista">${productosRecomendados.map((p) => {
           const dosis = formatearDosis(p);

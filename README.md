@@ -45,7 +45,7 @@ vacías a propósito, para que las calcule la propia hoja y no un valor fijo de 
 ## Antes de publicar un cambio
 
 ```bash
-node pruebas/correr.js   # 43 pruebas: cálculos, informe, escape de HTML, formato de filas
+node pruebas/correr.js   # 44 pruebas: cálculos, informe, escape de HTML, formato de filas
 node publicar.js         # corre las pruebas y sube la versión en app.js y sw.js a la vez
 git add -A && git commit -m "..." && git push
 ```

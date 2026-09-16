@@ -461,6 +461,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   await pruebaAsync("la recomendación del informe por fincas se guarda y se vuelve a leer", async () => {
     const { Informes } = cargarInformes({
       filas: filasDosFincas,
+      recomendados: [["CLIENTE", "AMAZONAS", "2026-09-14", "", "ORTHENE", "INSECTICIDA", "SC", "g", 200]],
       cola: [{ tipo: "recomendaciones_cliente", datos: { cliente: "CLIENTE", fechaInforme: "2026-09-16",
         tipoFumigacion: "Terrestre (Estacionaria)", volumenMezcla: "400", nota: "Nota general",
         productos: [{ producto: "LORSBAN", tipo: "INSECTICIDA", formulacion: "EC", unidad: "cc", dosis: "150" }] } }],
@@ -474,6 +475,14 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
       { tipo: rec.tipoFumigacion, volumenMezcla: rec.volumenMezcla });
     contiene(html, "LORSBAN", "la recomendación del cliente va en el informe");
     contiene(html, "Lo recomendado en cada finca", "y debajo lo de cada visita");
+  });
+
+  await pruebaAsync("si ninguna finca tiene recomendación guardada, no sale el título vacío", async () => {
+    const { Informes } = cargarInformes({ filas: filasDosFincas });
+    const D = await Informes.calcularDatosCliente("CLIENTE", seleccionDosFincas);
+    const html = Informes.generarHtml(D, [], "");
+    noContiene(html, "Lo recomendado en cada finca", "no debe quedar un encabezado colgando");
+    contiene(html, "Sin productos recomendados para este informe.");
   });
 
   // ---------------------------------------------------------------------------

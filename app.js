@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "53";
+const APP_VERSION = "54";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -1925,6 +1925,9 @@ async function onGenerarInformeCliente() {
     if (!el("informe-tipo-fumigacion").value) { marcarCampoInvalido(el("informe-tipo-fumigacion")); return; }
     if (!el("informe-volumen-mezcla").value.trim()) { marcarCampoInvalido(el("informe-volumen-mezcla")); return; }
   }
+  const bloqueSinDosis = [...el("lista-productos-informe").querySelectorAll(".producto-bloque")]
+    .find((div) => div.querySelector(".p-nombre").value.trim() && !div.querySelector(".p-dosis-reco").value.trim());
+  if (bloqueSinDosis) { marcarCampoInvalido(bloqueSinDosis.querySelector(".p-dosis-reco")); return; }
 
   el("btn-generar-informe").disabled = true;
   el("informe-estado").textContent = "Generando informe...";
@@ -2041,6 +2044,7 @@ async function sincronizarProductosRecomendadosPendientes() {
   const items = await DB.listarItems();
   const pendientes = items.filter((it) => ["producto_nuevo", "producto_recomendado", "eliminar_producto_recomendado", "recomendaciones_visita", "recomendaciones_cliente", "informe_generado"].includes(it.tipo) &&
     it.estado === "pendiente");
+  let subidos = 0;
   for (const it of pendientes) {
     try {
       if (it.tipo === "producto_nuevo") {
@@ -2054,10 +2058,13 @@ async function sincronizarProductosRecomendadosPendientes() {
         ]);
       }
       await DB.marcarSincronizado(it.id);
+      subidos += 1;
     } catch (e) {
       await DB.marcarError(it.id, e.message);
     }
   }
+  // Lo recién subido ya no es "pendiente": hay que releer el Excel para que se siga viendo.
+  if (subidos > 0) Informes.invalidarCache();
 }
 
 // ---------- Historial de visitas ----------
@@ -2458,9 +2465,13 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   el("informe-tipo").addEventListener("change", onCambioTipoInforme);
-  el("informe-cliente").addEventListener("change", () => {
-    if (informePorCliente()) renderFincasDelCliente();
-    else poblarSelectInformeFinca();
+  el("informe-cliente").addEventListener("change", async () => {
+    if (informePorCliente()) {
+      await precargarRecomendacionCliente();
+      await renderFincasDelCliente();
+    } else {
+      poblarSelectInformeFinca();
+    }
   });
   el("informe-finca").addEventListener("change", poblarSelectInformeFecha);
   el("informe-fecha").addEventListener("change", cargarDatosInforme);
