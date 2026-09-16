@@ -293,6 +293,19 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     igual(productos.length, 1);
   });
 
+  await pruebaAsync("un producto recomendado que se quitó del informe deja de aparecer", async () => {
+    const { Informes } = cargarInformes({
+      filas: filasDosLotes,
+      recomendados: [
+        ["CLIENTE", "FINCA", "2026-09-14", "", "ORTHENE", "INSECTICIDA", "SC", "g", 200],
+        ["CLIENTE", "FINCA", "2026-09-14", "", "SILICROP", "ADYUVANTE", "SL", "cc", 40],
+      ],
+      cola: [{ tipo: "eliminar_producto_recomendado", datos: { cliente: "CLIENTE", finca: "FINCA", fecha: "2026-09-14", producto: "ORTHENE", formulacion: "SC", dosis: "200" } }],
+    });
+    const r = await Informes.recomendacionesGuardadas("CLIENTE", "FINCA", "2026-09-14");
+    igual(r.map((p) => p.nombre).join(","), "SILICROP");
+  });
+
   await pruebaAsync("la productividad guardada en el celular reemplaza la de esa visita en el Excel", async () => {
     const { Informes } = cargarInformes({
       filas: filasDosLotes,

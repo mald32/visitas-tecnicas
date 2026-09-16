@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "44";
+const APP_VERSION = "45";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -1697,37 +1697,48 @@ function ocultarDatosInforme() {
   el("informe-resultado").hidden = true;
 }
 
-async function onVerDatos() {
+// Ajusta la altura del recuadro a la del informe, para que solo haya un scroll (el de la página) y
+// no quede un espacio vacío debajo. Se mide varias veces porque la letra y las gráficas terminan de
+// acomodarse después de cargar, y solo mientras el recuadro está visible: midiéndolo escondido da
+// una altura enorme (el bug del espacio larguísimo en el celular).
+function ajustarAlturaPreview() {
+  const preview = el("informe-preview");
+  const medir = () => {
+    if (el("informe-datos").hidden || !preview.offsetWidth) return;
+    try {
+      const doc = preview.contentDocument;
+      const alto = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight);
+      if (alto > 0) preview.style.height = alto + "px";
+    } catch (e) { /* si por algo no se puede leer, se queda con la altura por defecto */ }
+  };
+  [0, 300, 1200].forEach((ms) => setTimeout(medir, ms));
+}
+
+let cargaInforme = 0;
+async function cargarDatosInforme() {
+  const turno = ++cargaInforme;
   const cliente = el("informe-cliente").value;
   const finca = el("informe-finca").value;
   const fecha = el("informe-fecha").value;
-  if (!cliente) { marcarCampoInvalido(el("informe-cliente")); return; }
-  if (!finca) { marcarCampoInvalido(el("informe-finca")); return; }
-  if (!fecha) { marcarCampoInvalido(el("informe-fecha")); return; }
-
-  el("btn-ver-datos").disabled = true;
-  el("datos-estado").textContent = "Cargando datos...";
   ocultarDatosInforme();
+  if (!cliente || !finca || !fecha) {
+    el("datos-estado").textContent = "";
+    return;
+  }
+
+  el("datos-estado").textContent = "Cargando datos...";
   try {
     const datos = await Informes.calcularDatos(cliente, finca, fecha);
-    const html = Informes.generarHtml(datos, [], "");
-    const preview = el("informe-preview");
-    preview.srcdoc = html;
-    // Ajusta la altura del iframe al contenido real, para que solo haya un scroll (el de la pagina)
-    // en vez de un scroll interno del recuadro que se ve mal en el celular.
-    preview.onload = () => {
-      try {
-        preview.style.height = preview.contentDocument.documentElement.scrollHeight + "px";
-      } catch (e) { /* si por algo no se puede leer, se queda con la altura por defecto */ }
-    };
     await precargarRecomendacionesGuardadas(cliente, finca, fecha);
+    if (turno !== cargaInforme) return; // se cambió de visita mientras cargaba
 
+    const preview = el("informe-preview");
+    preview.onload = ajustarAlturaPreview;
+    el("informe-datos").hidden = false; // visible ANTES de cargar el informe, para medirlo bien
+    preview.srcdoc = Informes.generarHtml(datos, [], "");
     el("datos-estado").textContent = "";
-    el("informe-datos").hidden = false;
   } catch (e) {
-    el("datos-estado").textContent = "No se pudieron cargar los datos: " + e.message;
-  } finally {
-    el("btn-ver-datos").disabled = false;
+    if (turno === cargaInforme) el("datos-estado").textContent = "No se pudieron cargar los datos: " + e.message;
   }
 }
 
@@ -1763,19 +1774,36 @@ function productosRecomendadosOrdenados() {
     .sort((a, b) => ordenDeMezcla(a.nombre) - ordenDeMezcla(b.nombre));
 }
 
-// Guarda en la cola (para subir a Productos_Recomendados) los productos recomendados en esta
-// visita, sin duplicar si ya estaba exactamente esa misma fila guardada de antes.
+// Deja los productos recomendados de esta visita (en la cola y, al sincronizar, en el Excel)
+// exactamente como quedaron en pantalla: agrega los nuevos y borra los que se quitaron o cambiaron
+// de dosis. Antes solo agregaba, y al regenerar un informe se acumulaban recomendaciones viejas.
 async function guardarProductosRecomendados(cliente, finca, fecha, productos) {
-  const itemsPendientes = await DB.listarItems();
-  const yaGuardado = (p) => itemsPendientes.some((it) =>
-    it.tipo === "producto_recomendado" &&
-    it.datos.cliente === cliente && it.datos.finca === finca && it.datos.fecha === fecha &&
-    it.datos.producto.toLowerCase() === p.nombre.toLowerCase() &&
-    (it.datos.formulacion || "").toLowerCase() === (p.formulacion || "").toLowerCase() &&
-    String(it.datos.dosis) === String(p.dosis)
-  );
+  let existentes = [];
+  try {
+    existentes = await Informes.recomendacionesGuardadas(cliente, finca, fecha);
+  } catch (e) {
+    console.warn("No se pudieron leer las recomendaciones guardadas:", e.message);
+  }
+  const clave = (p) => claveProducto(p.nombre, p.formulacion, p.dosis);
+  const enPantalla = new Set(productos.map(clave));
+  const yaGuardados = new Set(existentes.map(clave));
+  const items = await DB.listarItems();
+  const deLaVisita = (it) => it.datos.cliente === cliente && it.datos.finca === finca && it.datos.fecha === fecha;
+
+  for (const p of existentes.filter((x) => !enPantalla.has(clave(x)))) {
+    const enCola = items.filter((it) => it.tipo === "producto_recomendado" && deLaVisita(it) &&
+      claveProducto(it.datos.producto, it.datos.formulacion, it.datos.dosis) === clave(p));
+    for (const it of enCola) await DB.eliminarItem(it.id);
+    const soloEnCelular = enCola.length > 0 && enCola.every((it) => it.estado === "pendiente");
+    if (!soloEnCelular) {
+      await DB.agregarItem("eliminar_producto_recomendado", {
+        cliente, finca, fecha, producto: p.nombre, formulacion: p.formulacion, dosis: p.dosis,
+      });
+    }
+  }
+
   for (const p of productos) {
-    if (!yaGuardado(p)) {
+    if (!yaGuardados.has(clave(p))) {
       await DB.agregarItem("producto_recomendado", {
         cliente, finca, fecha, producto: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad, dosis: p.dosis,
       });
@@ -1857,10 +1885,11 @@ async function registrarInformeGenerado(datos) {
 // Excel de una vez si hay conexión, sin esperar a "Sincronizar").
 async function sincronizarProductosRecomendadosPendientes() {
   const items = await DB.listarItems();
-  const pendientes = items.filter((it) => (it.tipo === "producto_recomendado" || it.tipo === "informe_generado") && it.estado === "pendiente");
+  const pendientes = items.filter((it) => ["producto_recomendado", "eliminar_producto_recomendado", "informe_generado"].includes(it.tipo) &&
+    it.estado === "pendiente");
   for (const it of pendientes) {
     try {
-      if (it.tipo === "informe_generado") {
+      if (it.tipo !== "producto_recomendado") {
         await subirItem(it);
       } else {
         await Graph.agregarProductoRecomendado([
@@ -2012,6 +2041,7 @@ function grupoDeOrden(it) {
   if (it.tipo === "productividad_visita") return `pf|${d.cliente}|${d.finca}|${d.fecha}`;
   if (it.tipo === "observacion_lote") return `ol|${d.cliente}|${d.finca}|${d.fecha}|${d.lote}`;
   if (it.tipo === "informe_generado") return `ig|${d.cliente}|${d.finca}|${d.fecha}`;
+  if (it.tipo === "producto_recomendado" || it.tipo === "eliminar_producto_recomendado") return `pr|${d.cliente}|${d.finca}|${d.fecha}`;
   return null;
 }
 
@@ -2045,6 +2075,10 @@ async function subirItem(it) {
         if (!/itemnotfound/i.test(e.message)) throw e;
       }
     }
+  } else if (it.tipo === "eliminar_producto_recomendado") {
+    const C = ESQUEMA.PRODUCTOS_RECOMENDADOS;
+    await Graph.eliminarFilasDonde(CONFIG.TABLA_PRODUCTOS_RECOMENDADOS, (f) => coincideVisitaExcel(f, C, d, false) &&
+      claveProducto(f[C.producto], f[C.formulacion], f[C.dosis]) === claveProducto(d.producto, d.formulacion, d.dosis));
   } else if (it.tipo === "eliminar_producto_aplicado") {
     const C = ESQUEMA.PRODUCTOS_APLICADOS;
     await Graph.eliminarFilasDonde(CONFIG.TABLA_PRODUCTOS_APLICADOS, (f) => coincideVisitaExcel(f, C, d, true) &&
@@ -2235,8 +2269,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("informe-cliente").addEventListener("change", poblarSelectInformeFinca);
   el("informe-finca").addEventListener("change", poblarSelectInformeFecha);
-  el("informe-fecha").addEventListener("change", ocultarDatosInforme);
-  el("btn-ver-datos").addEventListener("click", onVerDatos);
+  el("informe-fecha").addEventListener("change", cargarDatosInforme);
+  window.addEventListener("resize", ajustarAlturaPreview);
 
   ["historial-desde", "historial-hasta", "historial-cliente"].forEach((id) => el(id).addEventListener("change", renderListaHistorial));
   el("btn-historial-volver").addEventListener("click", () => {

@@ -212,14 +212,19 @@ const Informes = {
     return [...crudas.filter((f) => !quitados.has(clave(f))), ...this._normalizarFechas(agregados, COL_PA.fecha)];
   },
 
-  // Productos_Recomendados (lo que se recomendó en el informe de una visita).
+  // Productos_Recomendados: lo del Excel, menos lo que se quitó de la recomendación y aún no se
+  // borra allá, más lo agregado en la app y aún no se sube.
   async filasRecomendados() {
     const crudas = await this._remota(CONFIG.TABLA_PRODUCTOS_RECOMENDADOS, "productosRecomendadosBase", COL_PR);
+    const quitados = new Set((await this._pendientes()).filter((it) => it.tipo === "eliminar_producto_recomendado")
+      .map((it) => claveVisita(it.datos) + "|" + claveProducto(it.datos.producto, it.datos.formulacion, it.datos.dosis)));
+    const conservadas = crudas.filter((f) => !quitados.has(claveVisita({ cliente: f[COL_PR.cliente], finca: f[COL_PR.finca], fecha: f[COL_PR.fecha] }) +
+      "|" + claveProducto(f[COL_PR.producto], f[COL_PR.formulacion], f[COL_PR.dosis])));
     const pendientes = (await this._pendientes()).filter((it) => it.tipo === "producto_recomendado").map((it) => [
       it.datos.cliente, it.datos.finca, it.datos.fecha, "",
       it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
     ]);
-    return [...crudas, ...this._normalizarFechas(pendientes, COL_PR.fecha)];
+    return [...conservadas, ...this._normalizarFechas(pendientes, COL_PR.fecha)];
   },
 
   // Productos recomendados guardados para una visita exacta (mismo cliente+finca+fecha), para
