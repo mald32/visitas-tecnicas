@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "52";
+const APP_VERSION = "53";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -1687,13 +1687,16 @@ async function onCambioTipoInforme() {
   const porCliente = informePorCliente();
   el("informe-campos-visita").hidden = porCliente;
   el("informe-campos-cliente").hidden = !porCliente;
-  el("informe-bloque-recomendaciones").hidden = porCliente;
   el("informe-notas-caja").firstChild.textContent = porCliente
     ? "Nota general para el cliente (opcional, va al final del informe) "
     : "Observaciones adicionales para el cliente (quedan fijas en el informe, no editables) ";
   ocultarDatosInforme();
-  if (porCliente) await renderFincasDelCliente();
-  else poblarSelectInformeFinca();
+  if (porCliente) {
+    await precargarRecomendacionCliente();
+    await renderFincasDelCliente();
+  } else {
+    poblarSelectInformeFinca();
+  }
 }
 
 // Una línea por finca del cliente: se marca si entra en el informe y de qué visita se toman sus datos.
@@ -1726,6 +1729,38 @@ async function renderFincasDelCliente() {
   lista.innerHTML = bloques.length ? bloques.join("") : `<p class="hint">Este cliente todavía no tiene visitas registradas.</p>`;
   lista.querySelectorAll("input, select").forEach((campo) => campo.addEventListener("change", cargarDatosInforme));
   await cargarDatosInforme();
+}
+
+// Recomendación guardada para este cliente (la del informe por fincas más reciente).
+async function precargarRecomendacionCliente() {
+  const cliente = el("informe-cliente").value;
+  let guardada = null;
+  if (cliente) {
+    try {
+      guardada = await Informes.recomendacionCliente(cliente);
+    } catch (e) {
+      console.warn("No se pudo leer la recomendación del cliente:", e.message);
+    }
+  }
+  el("informe-tipo-fumigacion").value = (guardada && guardada.tipoFumigacion) || "";
+  el("informe-volumen-mezcla").value = (guardada && guardada.volumenMezcla) || "";
+  el("informe-recomendaciones").value = (guardada && guardada.nota) || "";
+  ajustarAltoTexto(el("informe-recomendaciones"));
+  mostrarCanecas(el("informe-canecas"), el("informe-tipo-fumigacion").value, el("informe-volumen-mezcla").value);
+  el("lista-productos-informe").innerHTML = "";
+  const productos = (guardada && guardada.productos) || [];
+  if (productos.length) productos.forEach((p) => agregarBloqueProducto("lista-productos-informe", p));
+  else agregarBloqueProducto("lista-productos-informe");
+}
+
+// Guarda en la cola la recomendación del informe por fincas: al sincronizar reemplaza las filas de
+// ese cliente y esa fecha de informe en Recomendaciones_Cliente.
+async function guardarRecomendacionCliente(datos) {
+  const items = await DB.listarItems();
+  const pendiente = items.find((it) => it.tipo === "recomendaciones_cliente" && it.estado === "pendiente" &&
+    it.datos.cliente === datos.cliente && it.datos.fechaInforme === datos.fechaInforme);
+  if (pendiente) await DB.actualizarDatosItem(pendiente.id, datos);
+  else await DB.agregarItem("recomendaciones_cliente", datos);
 }
 
 function seleccionDeFincas() {
@@ -1884,12 +1919,29 @@ async function onGenerarInformeCliente() {
   if (!cliente) { marcarCampoInvalido(el("informe-cliente")); return; }
   if (seleccion.length === 0) { el("informe-estado").textContent = "Marca al menos una finca."; return; }
 
+  const hayProductos = [...el("lista-productos-informe").querySelectorAll(".producto-bloque")]
+    .some((div) => div.querySelector(".p-nombre").value.trim());
+  if (hayProductos) {
+    if (!el("informe-tipo-fumigacion").value) { marcarCampoInvalido(el("informe-tipo-fumigacion")); return; }
+    if (!el("informe-volumen-mezcla").value.trim()) { marcarCampoInvalido(el("informe-volumen-mezcla")); return; }
+  }
+
   el("btn-generar-informe").disabled = true;
   el("informe-estado").textContent = "Generando informe...";
   el("informe-resultado").hidden = true;
   try {
+    const tipoFumigacion = el("informe-tipo-fumigacion").value;
+    const volumenMezcla = el("informe-volumen-mezcla").value.trim();
+    const nota = el("informe-recomendaciones").value.trim();
+    const productos = productosRecomendadosOrdenados().map((p) => ({ ...p, tipoFumigacion }));
+    await agregarProductosNuevosAlCatalogo(productos);
+    await guardarRecomendacionCliente({
+      cliente, fechaInforme: fechaLocalHoy(), tipoFumigacion, volumenMezcla, nota,
+      productos: productos.map((p) => ({ producto: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad, dosis: p.dosis })),
+    });
+
     const datos = await Informes.calcularDatosCliente(cliente, seleccion);
-    const html = Informes.generarHtml(datos, [], el("informe-recomendaciones").value.trim());
+    const html = Informes.generarHtml(datos, productos, nota, { tipo: tipoFumigacion, volumenMezcla });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     el("btn-ver-informe").onclick = () => window.open(url, "_blank");
     const link = el("link-descargar-informe");
@@ -1897,6 +1949,13 @@ async function onGenerarInformeCliente() {
     link.download = `informe_${cliente}_${fechaLocalHoy()}.html`.replace(/\s+/g, "_");
     el("informe-estado").textContent = "";
     el("informe-resultado").hidden = false;
+
+    if (navigator.onLine) {
+      el("informe-estado").textContent = "Sincronizando la recomendación con tu Excel...";
+      await sincronizarProductosRecomendadosPendientes();
+      await refrescarResumenCola();
+      el("informe-estado").textContent = "";
+    }
   } catch (e) {
     el("informe-estado").textContent = "No se pudo generar el informe: " + e.message;
   } finally {
@@ -1980,7 +2039,7 @@ async function registrarInformeGenerado(datos) {
 // Excel de una vez si hay conexión, sin esperar a "Sincronizar").
 async function sincronizarProductosRecomendadosPendientes() {
   const items = await DB.listarItems();
-  const pendientes = items.filter((it) => ["producto_nuevo", "producto_recomendado", "eliminar_producto_recomendado", "recomendaciones_visita", "informe_generado"].includes(it.tipo) &&
+  const pendientes = items.filter((it) => ["producto_nuevo", "producto_recomendado", "eliminar_producto_recomendado", "recomendaciones_visita", "recomendaciones_cliente", "informe_generado"].includes(it.tipo) &&
     it.estado === "pendiente");
   for (const it of pendientes) {
     try {
@@ -2130,7 +2189,7 @@ const NOMBRE_TIPO_ITEM = {
   eliminar_producto_aplicado: "borrado de un producto aplicado", producto_recomendado: "producto recomendado",
   recomendaciones_visita: "recomendación del informe", eliminar_producto_recomendado: "borrado de un producto recomendado",
   productividad: "productividad", productividad_visita: "productividad", observacion_lote: "observaciones del lote",
-  informe_generado: "registro del informe", eliminar_visita: "borrado de la visita", eliminar_lote: "borrado de un lote",
+  informe_generado: "registro del informe", recomendaciones_cliente: "recomendación del informe por fincas", eliminar_visita: "borrado de la visita", eliminar_lote: "borrado de un lote",
 };
 
 function descripcionItem(it) {
@@ -2156,6 +2215,7 @@ function grupoDeOrden(it) {
   if (it.tipo === "productividad_visita") return `pf|${d.cliente}|${d.finca}|${d.fecha}`;
   if (it.tipo === "observacion_lote") return `ol|${d.cliente}|${d.finca}|${d.fecha}|${d.lote}`;
   if (it.tipo === "informe_generado") return `ig|${d.cliente}|${d.finca}|${d.fecha}`;
+  if (it.tipo === "recomendaciones_cliente") return `rc|${d.cliente}|${d.fechaInforme}`;
   if (["producto_recomendado", "eliminar_producto_recomendado", "recomendaciones_visita"].includes(it.tipo)) return `pr|${d.cliente}|${d.finca}|${d.fecha}`;
   return null;
 }
@@ -2216,6 +2276,17 @@ async function subirItem(it) {
     await Graph.eliminarFilasDonde(CONFIG.TABLA_OBSERVACIONES_LOTES, (f) => coincideVisitaExcel(f, ESQUEMA.OBSERVACIONES_LOTES, d, true));
     if (d.observaciones) {
       await Graph.agregarFilaEnTabla(CONFIG.TABLA_OBSERVACIONES_LOTES, [d.cliente, d.finca, d.fecha, d.lote, d.potrero || "", d.observaciones]);
+    }
+  } else if (it.tipo === "recomendaciones_cliente") {
+    const C = ESQUEMA.RECOMENDACIONES_CLIENTE;
+    await Graph.eliminarFilasDonde(CONFIG.TABLA_RECOMENDACIONES_CLIENTE, (f) => f[C.cliente] === d.cliente &&
+      normalizarFecha(f[C.fechaInforme]) === normalizarFecha(d.fechaInforme));
+    const productos = (d.productos || []).length ? d.productos : [{}];
+    for (const p of productos) {
+      await Graph.agregarFilaEnTabla(CONFIG.TABLA_RECOMENDACIONES_CLIENTE, [
+        d.cliente, d.fechaInforme, p.producto || "", p.tipo || "", p.formulacion || "", p.unidad || "",
+        p.dosis == null ? "" : p.dosis, d.tipoFumigacion || "", d.volumenMezcla || "", d.nota || "",
+      ]);
     }
   } else if (it.tipo === "informe_generado") {
     await Graph.eliminarFilasDonde(CONFIG.TABLA_INFORMES_GENERADOS, (f) => coincideVisitaExcel(f, ESQUEMA.INFORMES_GENERADOS, d, false));

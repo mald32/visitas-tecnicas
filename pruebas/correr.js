@@ -458,6 +458,25 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   });
 
   // ---------------------------------------------------------------------------
+  await pruebaAsync("la recomendación del informe por fincas se guarda y se vuelve a leer", async () => {
+    const { Informes } = cargarInformes({
+      filas: filasDosFincas,
+      cola: [{ tipo: "recomendaciones_cliente", datos: { cliente: "CLIENTE", fechaInforme: "2026-09-16",
+        tipoFumigacion: "Terrestre (Estacionaria)", volumenMezcla: "400", nota: "Nota general",
+        productos: [{ producto: "LORSBAN", tipo: "INSECTICIDA", formulacion: "EC", unidad: "cc", dosis: "150" }] } }],
+    });
+    const rec = await Informes.recomendacionCliente("CLIENTE");
+    igual(rec.productos.map((p) => p.nombre).join(","), "LORSBAN");
+    igual(rec.volumenMezcla, "400");
+    igual(rec.nota, "Nota general");
+    const D = await Informes.calcularDatosCliente("CLIENTE", seleccionDosFincas);
+    const html = Informes.generarHtml(D, rec.productos.map((p) => ({ ...p, tipoFumigacion: rec.tipoFumigacion })), rec.nota,
+      { tipo: rec.tipoFumigacion, volumenMezcla: rec.volumenMezcla });
+    contiene(html, "LORSBAN", "la recomendación del cliente va en el informe");
+    contiene(html, "Lo recomendado en cada finca", "y debajo lo de cada visita");
+  });
+
+  // ---------------------------------------------------------------------------
   // 4. Filas que se suben a Excel: las columnas con fórmula deben ir vacías
   // -------------------------------------------------------------------------
   console.log("\nFilas para Excel");

@@ -37,6 +37,13 @@ const ESQUEMA = {
   // escribió en Recomendaciones además de los productos). Es lo que alimenta el Historial.
   INFORMES_GENERADOS: { cliente: 0, finca: 1, fecha: 2, fechaInforme: 3, tipoFumigacion: 4, volumenMezcla: 5, notas: 6 },
 
+  // Tabla Recomendaciones_Cliente: la recomendación del informe por fincas (una fila por producto;
+  // el tipo de fumigación, el volumen y la nota general se repiten en cada fila del mismo informe).
+  RECOMENDACIONES_CLIENTE: {
+    cliente: 0, fechaInforme: 1, producto: 2, tipo: 3, formulacion: 4, unidad: 5, dosis: 6,
+    tipoFumigacion: 7, volumenMezcla: 8, nota: 9,
+  },
+
   // Encabezados reales de la fila 1 de "Base de datos", tal como están hoy en el Excel.
   // Sirven para detectar si algún día se reordenan o renombran columnas.
   ENCABEZADOS_BASE: [

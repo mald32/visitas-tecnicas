@@ -8,6 +8,7 @@ const COL_PR = ESQUEMA.PRODUCTOS_RECOMENDADOS;
 const COL_PF = ESQUEMA.PRODUCTIVIDAD;
 const COL_OL = ESQUEMA.OBSERVACIONES_LOTES;
 const COL_IG = ESQUEMA.INFORMES_GENERADOS;
+const COL_RC = ESQUEMA.RECOMENDACIONES_CLIENTE;
 
 // El valor puede ser el indice de columna, o una funcion(fila) para variables calculadas (ej. Pasto Sano).
 const VARIABLES_HISTORIAL = {
@@ -511,6 +512,41 @@ const Informes = {
       recomendados: await this.recomendacionesGuardadas(cliente, finca, fecha),
       informe: await this.informeGuardado(cliente, finca, fecha),
       productividad: await this.productividadDeVisita(cliente, finca, fecha),
+    };
+  },
+
+  // Recomendaciones_Cliente: lo recomendado en un informe por fincas. Un pendiente reemplaza todas
+  // las filas de ese cliente en esa fecha de informe.
+  async filasRecomendacionesCliente() {
+    const crudas = this._normalizarFechas(await this._tablaRemota(CONFIG.TABLA_RECOMENDACIONES_CLIENTE, "recomendacionesClienteBase"), COL_RC.fechaInforme);
+    const pendientes = (await this._pendientes()).filter((it) => it.tipo === "recomendaciones_cliente");
+    const clave = (cliente, fecha) => `${cliente}|${normalizarFecha(fecha)}`;
+    const reemplazadas = new Set(pendientes.map((it) => clave(it.datos.cliente, it.datos.fechaInforme)));
+    const conservadas = crudas.filter((f) => !reemplazadas.has(clave(f[COL_RC.cliente], f[COL_RC.fechaInforme])));
+    const nuevas = pendientes.flatMap((it) => {
+      const d = it.datos;
+      const productos = (d.productos || []).length ? d.productos : [{}];
+      return productos.map((p) => [d.cliente, d.fechaInforme, p.producto || "", p.tipo || "", p.formulacion || "",
+        p.unidad || "", p.dosis == null ? "" : p.dosis, d.tipoFumigacion || "", d.volumenMezcla || "", d.nota || ""]);
+    });
+    return [...conservadas, ...this._normalizarFechas(nuevas, COL_RC.fechaInforme)];
+  },
+
+  // La recomendación más reciente guardada para un cliente (para precargarla en el formulario).
+  async recomendacionCliente(cliente) {
+    const filas = (await this.filasRecomendacionesCliente()).filter((f) => f[COL_RC.cliente] === cliente);
+    if (filas.length === 0) return null;
+    const ultima = filas.map((f) => f[COL_RC.fechaInforme]).sort().pop();
+    const delInforme = filas.filter((f) => f[COL_RC.fechaInforme] === ultima);
+    return {
+      fechaInforme: ultima,
+      tipoFumigacion: delInforme[0][COL_RC.tipoFumigacion] || "",
+      volumenMezcla: delInforme[0][COL_RC.volumenMezcla] ?? "",
+      nota: delInforme[0][COL_RC.nota] || "",
+      productos: delInforme.filter((f) => f[COL_RC.producto]).map((f) => ({
+        nombre: f[COL_RC.producto], tipo: f[COL_RC.tipo], formulacion: f[COL_RC.formulacion],
+        unidad: f[COL_RC.unidad], dosis: f[COL_RC.dosis],
+      })),
     };
   },
 
@@ -1030,7 +1066,20 @@ const Informes = {
         ${informe.notas ? `<p class="nota-puntos">${esc(informe.notas).replace(/\n/g, "<br>")}</p>` : ""}</div>`;
     }).join("");
 
-    const productosRecomendadosHtml = D.es_cliente ? recomendacionesPorFinca() : (productosRecomendados || []).length
+    const listaProductosHtml = (productos) => `<ol class="reco-lista">${productos.map((p) => {
+      const dosis = formatearDosis(p);
+      return `<li>
+        <div class="reco-texto">
+          <strong>${esc(p.nombre)}</strong>${p.tipo ? `<span class="reco-detalle"> — ${esc(p.tipo)}</span>` : ""}
+          ${dosis ? `<div class="reco-dosis">${esc(dosis)}</div>` : ""}
+        </div>
+      </li>`;
+    }).join("")}</ol>`;
+
+    const productosRecomendadosHtml = D.es_cliente
+      ? ((productosRecomendados || []).length ? tipoFumigacionHtml + listaProductosHtml(productosRecomendados) : "")
+        + `<h3>Lo recomendado en cada finca</h3>` + recomendacionesPorFinca()
+      : (productosRecomendados || []).length
       ? tipoFumigacionHtml + `<ol class="reco-lista">${productosRecomendados.map((p) => {
           const dosis = formatearDosis(p);
           return `<li>
