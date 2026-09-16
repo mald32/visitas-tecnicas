@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "46";
+const APP_VERSION = "47";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -1560,6 +1560,7 @@ async function onTerminarLote() {
   }
   const escrita = sinGuardar.obs[String(loteActual)];
   el("observaciones-lote").value = escrita != null ? escrita : existente;
+  ajustarAltoTexto(el("observaciones-lote"));
   el("observaciones-lote").dataset.inicial = existente;
   delete sinGuardar.punto[String(loteActual)];
   mostrarCajaObservacionesLote(true);
@@ -1751,6 +1752,7 @@ async function precargarRecomendacionesGuardadas(cliente, finca, fecha) {
   el("informe-tipo-fumigacion").value = (informe && informe.tipoFumigacion) || "";
   el("informe-volumen-mezcla").value = (informe && informe.volumenMezcla) || "";
   el("informe-recomendaciones").value = (informe && informe.notas) || "";
+  ajustarAltoTexto(el("informe-recomendaciones"));
   mostrarCanecas(el("informe-canecas"), el("informe-tipo-fumigacion").value, el("informe-volumen-mezcla").value);
   el("lista-productos-informe").innerHTML = "";
   if (guardadas.length > 0) {
@@ -1758,6 +1760,31 @@ async function precargarRecomendacionesGuardadas(cliente, finca, fecha) {
   } else {
     agregarBloqueProducto("lista-productos-informe");
   }
+}
+
+// Un producto que no esté en la hoja Productos se agrega al catálogo (igual que los aplicados):
+// de esa hoja sale el orden de mezcla con el que se ordenan los productos en la recomendación.
+async function agregarProductosNuevosAlCatalogo(productos) {
+  const items = await DB.listarItems();
+  for (const p of productos) {
+    const nombre = (p.nombre || "").trim();
+    if (!nombre) continue;
+    const yaExiste = catalogoProductos.some((c) => c.nombre.toLowerCase() === nombre.toLowerCase())
+      || items.some((it) => it.tipo === "producto_nuevo" && it.datos.nombre.toLowerCase() === nombre.toLowerCase());
+    if (yaExiste) continue;
+    catalogoProductos.push({ nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad });
+    await DB.guardarCache("catalogoProductos", catalogoProductos);
+    await DB.agregarItem("producto_nuevo", { nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad });
+    actualizarOpcionesCatalogo();
+  }
+}
+
+// Ajusta la altura de un cuadro de texto a lo que tenga escrito, para no tener que scrollear dentro
+// de él (una recomendación de 50 líneas se ve completa).
+function ajustarAltoTexto(campo) {
+  if (!campo) return;
+  campo.style.height = "auto";
+  campo.style.height = campo.scrollHeight + "px";
 }
 
 // Orden de mezcla de un producto, segun la columna "Orden" del catalogo (hoja Productos). Los
@@ -1834,6 +1861,7 @@ async function onGenerarInforme() {
     const volumenMezcla = el("informe-volumen-mezcla").value.trim();
     const productos = productosRecomendadosOrdenados().map((p) => ({ ...p, tipoFumigacion }));
     const notas = el("informe-recomendaciones").value.trim();
+    await agregarProductosNuevosAlCatalogo(productos);
     await guardarProductosRecomendados(cliente, finca, fecha, productos);
     await registrarInformeGenerado({ cliente, finca, fecha, fechaInforme: fechaLocalHoy(), tipoFumigacion, volumenMezcla, notas });
     const html = await Informes.generar(cliente, finca, fecha, productos, notas, { tipo: tipoFumigacion, volumenMezcla });
@@ -1874,11 +1902,13 @@ async function registrarInformeGenerado(datos) {
 // Excel de una vez si hay conexión, sin esperar a "Sincronizar").
 async function sincronizarProductosRecomendadosPendientes() {
   const items = await DB.listarItems();
-  const pendientes = items.filter((it) => ["producto_recomendado", "eliminar_producto_recomendado", "recomendaciones_visita", "informe_generado"].includes(it.tipo) &&
+  const pendientes = items.filter((it) => ["producto_nuevo", "producto_recomendado", "eliminar_producto_recomendado", "recomendaciones_visita", "informe_generado"].includes(it.tipo) &&
     it.estado === "pendiente");
   for (const it of pendientes) {
     try {
-      if (it.tipo !== "producto_recomendado") {
+      if (it.tipo === "producto_nuevo") {
+        await Graph.agregarProductoCatalogo(it.datos.nombre, it.datos.tipo, it.datos.formulacion, it.datos.unidad);
+      } else if (it.tipo !== "producto_recomendado") {
         await subirItem(it);
       } else {
         await Graph.agregarProductoRecomendado([
@@ -2265,6 +2295,11 @@ document.addEventListener("DOMContentLoaded", () => {
   el("informe-finca").addEventListener("change", poblarSelectInformeFecha);
   el("informe-fecha").addEventListener("change", cargarDatosInforme);
   window.addEventListener("resize", ajustarAlturaPreview);
+
+  // Los cuadros de texto crecen con lo que se escriba, en vez de quedar con scroll adentro.
+  document.querySelectorAll("textarea").forEach((campo) => {
+    campo.addEventListener("input", () => ajustarAltoTexto(campo));
+  });
 
   ["historial-desde", "historial-hasta", "historial-cliente"].forEach((id) => el(id).addEventListener("change", renderListaHistorial));
   el("btn-historial-volver").addEventListener("click", () => {

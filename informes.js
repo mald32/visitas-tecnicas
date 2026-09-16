@@ -1020,8 +1020,11 @@ td.alerta{color:var(--alerta);font-weight:700;}
 /* Dos lotes por fila: cada bloque ocupa media página, así las barras no quedan estiradas. */
 .lotes-grid{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--e4);}
 .lote-bloque{border:1px solid var(--linea);padding:var(--e3) var(--e4);min-width:0;box-sizing:border-box;flex:0 1 calc(50% - var(--e4) / 2);}
+/* Si el último bloque queda solo en su fila (un solo lote, o un número impar), se ensancha un poco
+   para que no se vea perdido en la mitad de la hoja. */
+.lote-bloque:last-child:nth-child(odd){flex-basis:64%;}
 .lote-bloque h3{margin:0 0 var(--e2);font-size:var(--t-base);}
-.lote-fila{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:var(--e3);align-items:center;}
+.lote-fila{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1.1fr);gap:var(--e3);align-items:center;}
 .panel-barras,.panel-anillo{min-width:0;}
 .panel-anillo{text-align:center;}
 .lote-bloque-promedio{background:var(--marca-tenue);border-color:var(--marca);}
@@ -1162,7 +1165,7 @@ ${manejoTodosHtml || '<p class="hint">Sin manejo agronómico registrado en esta 
 ${historialCanvasHtml}
 
 <h2 class="banner-azul">Observaciones</h2>
-<textarea>${observacionesTexto}</textarea>
+<div class="caja-fija">${observacionesTexto}</div>
 
 <h2>Resultados</h2>
 <div class="caja-fija">${resultadosHtml}</div>
