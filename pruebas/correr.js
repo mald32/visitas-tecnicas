@@ -431,6 +431,13 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     igual(app.textoCanecas("Terrestre (Estacionaria)", ""), "", "sin volumen no se muestra nada");
   });
 
+  prueba("reconoce una visita ya muestreada del mismo cliente, finca y fecha", () => {
+    const filas = [filaPunto({ cliente: "AVENDAÑOS", finca: "AMAZONAS", fecha: "2026-09-14" })];
+    cierto(app.visitaYaExiste(filas, "AVENDAÑOS", "AMAZONAS", "2026-09-14"), "debería encontrarla");
+    cierto(!app.visitaYaExiste(filas, "AVENDAÑOS", "AMAZONAS", "2026-09-15"), "otra fecha es otra visita");
+    cierto(!app.visitaYaExiste(filas, "AVENDAÑOS", "SOLEDAD", "2026-09-14"), "otra finca es otra visita");
+  });
+
   // -------------------------------------------------------------------------
   // 6. Fecha local (bug real: usar UTC adelantaba el día en Colombia de noche)
   // -------------------------------------------------------------------------

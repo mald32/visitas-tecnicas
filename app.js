@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "43";
+const APP_VERSION = "44";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -368,6 +368,7 @@ async function mostrarInicioVisitas() {
   el("fecha").value = fechaLocalHoy();
   await renderVisitasEnCurso();
   mostrarPantalla("pantalla-visita");
+  revisarVisitaSeleccionada();
 }
 
 function mostrarCajaObservacionesLote(mostrar) {
@@ -564,6 +565,81 @@ function poblarSelectFinca() {
 
 function onCambioFinca() {
   el("nueva-finca-caja").hidden = el("finca").value !== OPCION_NUEVA_FINCA;
+  revisarVisitaSeleccionada();
+}
+
+// ¿Ya se muestreó este cliente + finca + fecha? Se mira en la base de datos (incluido lo capturado
+// y aún sin subir) y en las visitas en curso guardadas en el celular.
+function visitaYaExiste(filas, cliente, finca, fecha) {
+  const B = ESQUEMA.BASE;
+  return filas.some((f) => f[B.cliente] === cliente && f[B.finca] === finca && f[B.fecha] === fecha);
+}
+
+// No se crean dos visitas del mismo cliente, finca y fecha: si ya existe una, "Iniciar monitoreo" se
+// bloquea y se habilita "Modificar datos de visita", que abre la que ya está con todo lo capturado.
+let revisionVisita = 0;
+async function revisarVisitaSeleccionada() {
+  const turno = ++revisionVisita;
+  const cliente = el("cliente").value;
+  const finca = el("finca").value;
+  const fecha = el("fecha").value;
+  const esNueva = !cliente || !finca || !fecha || cliente === OPCION_NUEVO_CLIENTE || finca === OPCION_NUEVA_FINCA;
+
+  let existe = false;
+  if (!esNueva) {
+    if (borradores[`${cliente}|${finca}|${fecha}`]) {
+      existe = true;
+    } else {
+      try {
+        existe = visitaYaExiste(await Informes.filas(), cliente, finca, fecha);
+      } catch (e) {
+        console.warn("No se pudo revisar si la visita ya existe:", e.message);
+      }
+    }
+  }
+  if (turno !== revisionVisita) return; // llegó una revisión más nueva
+
+  el("btn-iniciar-monitoreo").disabled = existe;
+  el("btn-modificar-visita").disabled = !existe;
+  el("aviso-visita-existente").hidden = !existe;
+  el("aviso-visita-existente").textContent = existe
+    ? "Ya hay una visita de este cliente y finca en esta fecha. Dale a \"Modificar datos de visita\" para abrirla y cambiar lo que necesites."
+    : "";
+}
+
+// Abre una visita que ya existe (del historial, de la base de datos o en curso), con todos sus lotes.
+async function abrirVisitaExistente(cliente, finca, fecha) {
+  const f = clientesFincas.find((c) => c.cliente === cliente && c.finca === finca);
+  let numeroLotes = f ? f.numeroLotes : 1;
+  const borrador = borradores[`${cliente}|${finca}|${fecha}`];
+  if (borrador && borrador.visita) numeroLotes = Math.max(numeroLotes, borrador.visita.numeroLotes || 1);
+  try {
+    const B = ESQUEMA.BASE;
+    const lotes = (await Informes.filas())
+      .filter((x) => x[B.cliente] === cliente && x[B.finca] === finca && x[B.fecha] === fecha)
+      .map((x) => Number(x[B.lote]))
+      .filter((n) => Number.isFinite(n));
+    if (lotes.length) numeroLotes = Math.max(numeroLotes, ...lotes);
+  } catch (e) {
+    console.warn("No se pudieron leer los lotes de la visita:", e.message);
+  }
+  await abrirVisita({ cliente, finca, fecha, numeroLotes });
+}
+
+async function onModificarVisita() {
+  const cliente = el("cliente").value;
+  const finca = el("finca").value;
+  const fecha = el("fecha").value;
+  if (!cliente || !finca || !fecha) return;
+  el("btn-modificar-visita").disabled = true;
+  el("btn-modificar-visita").textContent = "Abriendo...";
+  try {
+    await abrirVisitaExistente(cliente, finca, fecha);
+  } catch (e) {
+    alert("No se pudo abrir la visita: " + e.message);
+  } finally {
+    el("btn-modificar-visita").textContent = "Modificar datos de visita";
+  }
 }
 
 async function onIniciarMonitoreo() {
@@ -592,6 +668,20 @@ async function onIniciarMonitoreo() {
     numeroLotes = f.numeroLotes;
   }
   if (!el("fecha").value) { marcarCampoInvalido(el("fecha")); return; }
+
+  // Por si acaso: si ya existe una visita con estos datos, se abre esa en vez de crear otra.
+  let existe = !!borradores[`${cliente}|${finca}|${el("fecha").value}`];
+  if (!existe) {
+    try {
+      existe = visitaYaExiste(await Informes.filas(), cliente, finca, el("fecha").value);
+    } catch (e) {
+      console.warn("No se pudo revisar si la visita ya existe:", e.message);
+    }
+  }
+  if (existe) {
+    await revisarVisitaSeleccionada();
+    return;
+  }
 
   await abrirVisita({ cliente, finca, fecha: el("fecha").value, numeroLotes });
 }
@@ -2081,6 +2171,10 @@ document.addEventListener("DOMContentLoaded", () => {
   el("cliente").addEventListener("change", poblarSelectFinca);
   el("finca").addEventListener("change", onCambioFinca);
   el("btn-iniciar-monitoreo").addEventListener("click", onIniciarMonitoreo);
+  el("btn-modificar-visita").addEventListener("click", onModificarVisita);
+  el("fecha").addEventListener("change", revisarVisitaSeleccionada);
+  el("nuevo-cliente").addEventListener("input", revisarVisitaSeleccionada);
+  el("nueva-finca").addEventListener("input", revisarVisitaSeleccionada);
 
   el("productividad-modo").addEventListener("change", onCambioModoProductividad);
   ["pv-g-area", "pv-g-animales", "pv-g-dias", "pv-g-produccion"].forEach((id) => {
