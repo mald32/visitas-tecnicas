@@ -643,7 +643,6 @@ const Informes = {
       <td${claseAlerta(t.dano_mol, um("dano_mol"))}>${fmt(t.dano_mol, true)}</td>
       <td${claseAlerta(t.dano_coll, um("dano_coll"))}>${fmt(t.dano_coll, true)}</td>
       <td${claseAlerta(t.dano_hongos, um("dano_hongos"))}>${fmt(t.dano_hongos, true)}</td>
-      <td${claseAlerta(t.pasto_sano, um("pasto_sano"), true)}>${fmt(t.pasto_sano, true)}</td>
     </tr>`).join("") + (D.tabla_lotes.length > 1 ? `<tr class="fila-promedio">
       <td>Promedio general</td>
       <td${claseAlerta(D.promedio_finca.incid_coll, um("incid_coll"))}>${fmt(D.promedio_finca.incid_coll, true)}</td>
@@ -657,7 +656,6 @@ const Informes = {
       <td${claseAlerta(D.promedio_finca.dano_mol, um("dano_mol"))}>${fmt(D.promedio_finca.dano_mol, true)}</td>
       <td${claseAlerta(D.promedio_finca.dano_coll, um("dano_coll"))}>${fmt(D.promedio_finca.dano_coll, true)}</td>
       <td${claseAlerta(D.promedio_finca.dano_hongos, um("dano_hongos"))}>${fmt(D.promedio_finca.dano_hongos, true)}</td>
-      <td${claseAlerta(D.promedio_finca.pasto_sano, um("pasto_sano"), true)}>${fmt(D.promedio_finca.pasto_sano, true)}</td>
     </tr>` : "");
 
     // Solo las siglas de la formulacion (ej: "SC" de "SC (Suspension Concentrada)"), sin el nombre completo.
@@ -997,6 +995,11 @@ h3{font-family:var(--serif);font-size:var(--t-med);font-weight:400;color:var(--t
 
 /* --- Tablas: sin cuadrícula pesada, solo líneas horizontales --- */
 table{width:100%;border-collapse:collapse;font-size:var(--t-peq);margin-top:var(--e2);}
+/* Cabe completa en el ancho de la hoja (antes tocaba arrastrarla de lado en el celular). */
+.tabla-lotes{table-layout:fixed;font-size:var(--t-micro);}
+.tabla-lotes th,.tabla-lotes td{padding:var(--e2) 2px;overflow-wrap:anywhere;}
+.tabla-lotes th{letter-spacing:0;}
+.tabla-lotes th:first-child,.tabla-lotes td:first-child{width:12%;}
 th,td{text-align:right;padding:var(--e2) var(--e2);border-bottom:1px solid var(--linea);}
 th{color:var(--tinta-suave);font-weight:600;font-size:var(--t-micro);text-transform:uppercase;letter-spacing:.6px;
   border-bottom:1px solid var(--tinta);text-align:right;}
@@ -1147,13 +1150,11 @@ ${productividadHtml}
 ${manejoTodosHtml || '<p class="hint">Sin manejo agronómico registrado en esta visita.</p>'}
 
 <h2>Tabla de resultados por lote</h2>
-<div class="tabla-scroll">
-<table><thead><tr>
+<table class="tabla-lotes"><thead><tr>
 <th>Lote</th><th>Incid. Collaria</th><th>Sev. Collaria</th><th>Incid. hongos</th><th>Sev. hongos</th>
 <th>Adultos</th><th>Ninfas</th><th>Loritos</th><th>Lepidópteros</th>
-<th>Daño moluscos</th><th>Daño collaria</th><th>Daño hongos</th><th>Pasto sano</th>
+<th>Daño moluscos</th><th>Daño collaria</th><th>Daño hongos</th>
 </tr></thead><tbody>${filasTabla}</tbody></table>
-</div>
 
 <h2 class="banner-amarillo">Plagas y estado por lote (vs. umbral)</h2>
 <p class="hint">La marca negra en cada barra es el umbral; en rojo, lo que lo supera. La línea fina muestra la dispersión entre puntos de muestreo.</p>
