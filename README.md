@@ -34,10 +34,8 @@ celular con cada tecla (`visitaEnCurso`): si se recarga o se cierra la app, al v
 Productividad y observaciones por lote tienen un solo pendiente por visita/lote que, al sincronizar,
 **reemplaza** sus filas en el Excel; quitar un producto aplicado encola su borrado en el Excel.
 
-Tablas que deben existir en el Excel: `Observaciones_Lotes` con encabezados
-`Cliente | Finca | Fecha visita | Lote | Potrero | Observaciones`, y `Informes_Generados` con
-`Cliente | Finca | Fecha visita | Fecha informe | Tipo de fumigacion | Volumen de mezcla | Observaciones adicionales`
-(alimenta la pestaña Historial).
+Si faltan las tablas `Observaciones_Lotes` o `Informes_Generados`, la app las crea sola en el Excel
+(hoja nueva + encabezados + tabla) la primera vez que necesita escribir en ellas.
 
 Las columnas que en el Excel son **fórmulas** (daños calculados, carga animal, etc.) se suben
 vacías a propósito, para que las calcule la propia hoja y no un valor fijo de la app.

@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "47";
+const APP_VERSION = "48";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -2117,11 +2117,13 @@ async function subirItem(it) {
       ]);
     }
   } else if (it.tipo === "observacion_lote") {
+    await Graph.asegurarTabla(CONFIG.TABLA_OBSERVACIONES_LOTES, ESQUEMA.ENCABEZADOS_OBSERVACIONES_LOTES);
     await Graph.eliminarFilasDonde(CONFIG.TABLA_OBSERVACIONES_LOTES, (f) => coincideVisitaExcel(f, ESQUEMA.OBSERVACIONES_LOTES, d, true));
     if (d.observaciones) {
       await Graph.agregarFilaEnTabla(CONFIG.TABLA_OBSERVACIONES_LOTES, [d.cliente, d.finca, d.fecha, d.lote, d.potrero || "", d.observaciones]);
     }
   } else if (it.tipo === "informe_generado") {
+    await Graph.asegurarTabla(CONFIG.TABLA_INFORMES_GENERADOS, ESQUEMA.ENCABEZADOS_INFORMES_GENERADOS);
     await Graph.eliminarFilasDonde(CONFIG.TABLA_INFORMES_GENERADOS, (f) => coincideVisitaExcel(f, ESQUEMA.INFORMES_GENERADOS, d, false));
     await Graph.agregarFilaEnTabla(CONFIG.TABLA_INFORMES_GENERADOS, [
       d.cliente, d.finca, d.fecha, d.fechaInforme, d.tipoFumigacion || "", d.volumenMezcla || "", d.notas || "",

@@ -1,4 +1,4 @@
-const CACHE_NAME = "visitas-tecnicas-v47";
+const CACHE_NAME = "visitas-tecnicas-v48";
 const ARCHIVOS = [
   "./",
   "./index.html",

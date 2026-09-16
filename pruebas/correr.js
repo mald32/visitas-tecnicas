@@ -390,6 +390,13 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     igual((await Informes.filasProductos()).map((f) => f[4]).join(","), "SILICROP");
   });
 
+  prueba("los encabezados de las tablas que crea la app cuadran con sus columnas", () => {
+    igual(ESQUEMA.ENCABEZADOS_OBSERVACIONES_LOTES.length, Object.keys(ESQUEMA.OBSERVACIONES_LOTES).length);
+    igual(ESQUEMA.ENCABEZADOS_INFORMES_GENERADOS.length, Object.keys(ESQUEMA.INFORMES_GENERADOS).length);
+    igual(ESQUEMA.ENCABEZADOS_OBSERVACIONES_LOTES[ESQUEMA.OBSERVACIONES_LOTES.observaciones], "Observaciones");
+    igual(ESQUEMA.ENCABEZADOS_INFORMES_GENERADOS[ESQUEMA.INFORMES_GENERADOS.fechaInforme], "Fecha informe");
+  });
+
   // -------------------------------------------------------------------------
   // 4. Filas que se suben a Excel: las columnas con fórmula deben ir vacías
   // -------------------------------------------------------------------------
