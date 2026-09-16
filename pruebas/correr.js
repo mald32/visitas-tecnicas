@@ -293,17 +293,22 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     igual(productos.length, 1);
   });
 
-  await pruebaAsync("un producto recomendado que se quitó del informe deja de aparecer", async () => {
+  await pruebaAsync("la recomendación guardada reemplaza la de esa visita, duplicados incluidos", async () => {
     const { Informes } = cargarInformes({
       filas: filasDosLotes,
       recomendados: [
         ["CLIENTE", "FINCA", "2026-09-14", "", "ORTHENE", "INSECTICIDA", "SC", "g", 200],
+        ["CLIENTE", "FINCA", "2026-09-14", "", "ORTHENE", "INSECTICIDA", "SC", "g", 200],
         ["CLIENTE", "FINCA", "2026-09-14", "", "SILICROP", "ADYUVANTE", "SL", "cc", 40],
+        ["CLIENTE", "FINCA", "2026-09-10", "", "ORTHENE", "INSECTICIDA", "SC", "g", 200],
       ],
-      cola: [{ tipo: "eliminar_producto_recomendado", datos: { cliente: "CLIENTE", finca: "FINCA", fecha: "2026-09-14", producto: "ORTHENE", formulacion: "SC", dosis: "200" } }],
+      cola: [{ tipo: "recomendaciones_visita", datos: { cliente: "CLIENTE", finca: "FINCA", fecha: "2026-09-14",
+        productos: [{ producto: "SILICROP", tipo: "ADYUVANTE", formulacion: "SL", unidad: "cc", dosis: "40" }] } }],
     });
     const r = await Informes.recomendacionesGuardadas("CLIENTE", "FINCA", "2026-09-14");
-    igual(r.map((p) => p.nombre).join(","), "SILICROP");
+    igual(r.map((p) => p.nombre).join(","), "SILICROP", "las dos filas repetidas de ORTHENE deben desaparecer");
+    const otra = await Informes.recomendacionesGuardadas("CLIENTE", "FINCA", "2026-09-10");
+    igual(otra.length, 1, "la recomendación de otra visita no se toca");
   });
 
   await pruebaAsync("la productividad guardada en el celular reemplaza la de esa visita en el Excel", async () => {

@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "45";
+const APP_VERSION = "46";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -1775,40 +1775,29 @@ function productosRecomendadosOrdenados() {
 }
 
 // Deja los productos recomendados de esta visita (en la cola y, al sincronizar, en el Excel)
-// exactamente como quedaron en pantalla: agrega los nuevos y borra los que se quitaron o cambiaron
-// de dosis. Antes solo agregaba, y al regenerar un informe se acumulaban recomendaciones viejas.
+// exactamente como quedaron en pantalla. Se guarda la lista completa, no producto por producto:
+// al sincronizar se borran todas las filas de esa visita y se escriben estas. Así se corrigen
+// también los duplicados, que comparando producto por producto no se detectaban (dos filas iguales
+// tienen la misma "clave" que la única que quedó en pantalla).
 async function guardarProductosRecomendados(cliente, finca, fecha, productos) {
-  let existentes = [];
-  try {
-    existentes = await Informes.recomendacionesGuardadas(cliente, finca, fecha);
-  } catch (e) {
-    console.warn("No se pudieron leer las recomendaciones guardadas:", e.message);
-  }
-  const clave = (p) => claveProducto(p.nombre, p.formulacion, p.dosis);
-  const enPantalla = new Set(productos.map(clave));
-  const yaGuardados = new Set(existentes.map(clave));
+  const datos = {
+    cliente, finca, fecha,
+    productos: productos.map((p) => ({
+      producto: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad, dosis: p.dosis,
+    })),
+  };
   const items = await DB.listarItems();
   const deLaVisita = (it) => it.datos.cliente === cliente && it.datos.finca === finca && it.datos.fecha === fecha;
-
-  for (const p of existentes.filter((x) => !enPantalla.has(clave(x)))) {
-    const enCola = items.filter((it) => it.tipo === "producto_recomendado" && deLaVisita(it) &&
-      claveProducto(it.datos.producto, it.datos.formulacion, it.datos.dosis) === clave(p));
-    for (const it of enCola) await DB.eliminarItem(it.id);
-    const soloEnCelular = enCola.length > 0 && enCola.every((it) => it.estado === "pendiente");
-    if (!soloEnCelular) {
-      await DB.agregarItem("eliminar_producto_recomendado", {
-        cliente, finca, fecha, producto: p.nombre, formulacion: p.formulacion, dosis: p.dosis,
-      });
+  // Los pendientes del formato anterior ya están incluidos en la lista completa.
+  for (const it of items) {
+    if (it.estado === "pendiente" && deLaVisita(it) &&
+      (it.tipo === "producto_recomendado" || it.tipo === "eliminar_producto_recomendado")) {
+      await DB.eliminarItem(it.id);
     }
   }
-
-  for (const p of productos) {
-    if (!yaGuardados.has(clave(p))) {
-      await DB.agregarItem("producto_recomendado", {
-        cliente, finca, fecha, producto: p.nombre, tipo: p.tipo, formulacion: p.formulacion, unidad: p.unidad, dosis: p.dosis,
-      });
-    }
-  }
+  const pendiente = items.find((it) => it.tipo === "recomendaciones_visita" && it.estado === "pendiente" && deLaVisita(it));
+  if (pendiente) await DB.actualizarDatosItem(pendiente.id, datos);
+  else await DB.agregarItem("recomendaciones_visita", datos);
 }
 
 async function onGenerarInforme() {
@@ -1885,7 +1874,7 @@ async function registrarInformeGenerado(datos) {
 // Excel de una vez si hay conexión, sin esperar a "Sincronizar").
 async function sincronizarProductosRecomendadosPendientes() {
   const items = await DB.listarItems();
-  const pendientes = items.filter((it) => ["producto_recomendado", "eliminar_producto_recomendado", "informe_generado"].includes(it.tipo) &&
+  const pendientes = items.filter((it) => ["producto_recomendado", "eliminar_producto_recomendado", "recomendaciones_visita", "informe_generado"].includes(it.tipo) &&
     it.estado === "pendiente");
   for (const it of pendientes) {
     try {
@@ -2041,7 +2030,7 @@ function grupoDeOrden(it) {
   if (it.tipo === "productividad_visita") return `pf|${d.cliente}|${d.finca}|${d.fecha}`;
   if (it.tipo === "observacion_lote") return `ol|${d.cliente}|${d.finca}|${d.fecha}|${d.lote}`;
   if (it.tipo === "informe_generado") return `ig|${d.cliente}|${d.finca}|${d.fecha}`;
-  if (it.tipo === "producto_recomendado" || it.tipo === "eliminar_producto_recomendado") return `pr|${d.cliente}|${d.finca}|${d.fecha}`;
+  if (["producto_recomendado", "eliminar_producto_recomendado", "recomendaciones_visita"].includes(it.tipo)) return `pr|${d.cliente}|${d.finca}|${d.fecha}`;
   return null;
 }
 
@@ -2074,6 +2063,11 @@ async function subirItem(it) {
       } catch (e) {
         if (!/itemnotfound/i.test(e.message)) throw e;
       }
+    }
+  } else if (it.tipo === "recomendaciones_visita") {
+    await Graph.eliminarFilasDonde(CONFIG.TABLA_PRODUCTOS_RECOMENDADOS, (f) => coincideVisitaExcel(f, ESQUEMA.PRODUCTOS_RECOMENDADOS, d, false));
+    for (const p of d.productos || []) {
+      await Graph.agregarProductoRecomendado([d.cliente, d.finca, d.fecha, "", p.producto, p.tipo, p.formulacion, p.unidad, p.dosis]);
     }
   } else if (it.tipo === "eliminar_producto_recomendado") {
     const C = ESQUEMA.PRODUCTOS_RECOMENDADOS;

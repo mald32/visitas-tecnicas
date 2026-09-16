@@ -216,14 +216,24 @@ const Informes = {
   // borra allá, más lo agregado en la app y aún no se sube.
   async filasRecomendados() {
     const crudas = await this._remota(CONFIG.TABLA_PRODUCTOS_RECOMENDADOS, "productosRecomendadosBase", COL_PR);
-    const quitados = new Set((await this._pendientes()).filter((it) => it.tipo === "eliminar_producto_recomendado")
+    const pendientesTodos = await this._pendientes();
+    // La recomendación de una visita se guarda completa: un pendiente reemplaza TODAS las filas de
+    // esa visita en el Excel (así se van también los duplicados y lo que se quitó del informe).
+    const reemplazos = pendientesTodos.filter((it) => it.tipo === "recomendaciones_visita");
+    const visitasReemplazadas = new Set(reemplazos.map((it) => claveVisita(it.datos)));
+    const quitados = new Set(pendientesTodos.filter((it) => it.tipo === "eliminar_producto_recomendado")
       .map((it) => claveVisita(it.datos) + "|" + claveProducto(it.datos.producto, it.datos.formulacion, it.datos.dosis)));
-    const conservadas = crudas.filter((f) => !quitados.has(claveVisita({ cliente: f[COL_PR.cliente], finca: f[COL_PR.finca], fecha: f[COL_PR.fecha] }) +
-      "|" + claveProducto(f[COL_PR.producto], f[COL_PR.formulacion], f[COL_PR.dosis])));
-    const pendientes = (await this._pendientes()).filter((it) => it.tipo === "producto_recomendado").map((it) => [
-      it.datos.cliente, it.datos.finca, it.datos.fecha, "",
-      it.datos.producto, it.datos.tipo, it.datos.formulacion, it.datos.unidad, it.datos.dosis,
-    ]);
+    const conservadas = crudas.filter((f) => {
+      const visita = { cliente: f[COL_PR.cliente], finca: f[COL_PR.finca], fecha: f[COL_PR.fecha] };
+      if (visitasReemplazadas.has(claveVisita(visita))) return false;
+      return !quitados.has(claveVisita(visita) + "|" + claveProducto(f[COL_PR.producto], f[COL_PR.formulacion], f[COL_PR.dosis]));
+    });
+    const fila = (base, p) => [base.cliente, base.finca, base.fecha, "", p.producto || p.nombre, p.tipo, p.formulacion, p.unidad, p.dosis];
+    const pendientes = [
+      ...reemplazos.flatMap((it) => (it.datos.productos || []).map((p) => fila(it.datos, p))),
+      // Formato anterior (un pendiente por producto), por si quedó algo de versiones previas.
+      ...pendientesTodos.filter((it) => it.tipo === "producto_recomendado").map((it) => fila(it.datos, it.datos)),
+    ];
     return [...conservadas, ...this._normalizarFechas(pendientes, COL_PR.fecha)];
   },
 
