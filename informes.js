@@ -1311,8 +1311,9 @@ footer{margin-top:var(--e8);font-size:var(--t-micro);color:var(--tinta-suave);te
 .tabla-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 .solo-impresion{display:none;}
 .historial-cab{display:flex;align-items:center;gap:var(--e2);margin:var(--e3) 0;font-size:var(--t-peq);color:var(--tinta-media);}
-.boton-imprimir{position:sticky;top:var(--e2);float:right;background:var(--marca);color:#fff;border:none;border-radius:20px;
-  padding:var(--e2) var(--e4);font-family:var(--sans);font-size:var(--t-peq);cursor:pointer;z-index:5;}
+/* Va en su propia línea arriba del informe: flotando se montaba sobre el encabezado. */
+.boton-imprimir{display:block;margin:0 0 var(--e3) auto;background:var(--marca);color:#fff;border:none;border-radius:20px;
+  padding:var(--e2) var(--e4);font-family:var(--sans);font-size:var(--t-peq);cursor:pointer;}
 
 /* --- Versión para imprimir / PDF: 3 páginas, cada una con el encabezado --- */
 @page{margin:12mm;}
