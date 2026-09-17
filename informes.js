@@ -1249,6 +1249,9 @@ header h1{margin:0;font-family:var(--serif);font-size:var(--t-gde);font-weight:4
 .datos-grid .icono svg{width:20px;height:20px;display:block;}
 .datos-grid .etiqueta{color:var(--tinta-suave);font-size:var(--t-micro);text-transform:uppercase;letter-spacing:1px;}
 .datos-grid .valor{color:var(--tinta);font-weight:600;}
+.datos-grid-cliente{grid-template-columns:1fr;}
+.lista-fincas{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:2px var(--e5);}
+.lista-fincas em{font-style:normal;font-weight:400;color:var(--tinta-media);}
 
 /* --- Títulos de sección: serif + regla de marca (lenguaje de documento, no de plantilla) --- */
 h2{font-family:var(--serif);font-size:var(--t-gde);font-weight:400;color:var(--marca-honda);
@@ -1386,11 +1389,17 @@ footer{margin-top:var(--e8);font-size:var(--t-micro);color:var(--tinta-suave);te
 /* --- Versión para imprimir / PDF: el mismo informe de la pantalla, tal cual --- */
 @page{margin:12mm;}
 @media print{
+  /* Sin esto el navegador imprime en blanco los fondos: el encabezado verde y las franjas de color
+     desaparecían y el informe no se parecía al de la pantalla. */
+  *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;}
   body{max-width:none;padding:0;background:#fff;}
   .no-imprimir{display:none !important;}
-  /* Lo único que se cuida es que un bloque no quede partido entre dos hojas. */
-  .lote-bloque,.kpi-bloque,.historial-item,.manejo-box,table,.caja-fija,.reco-lista li{break-inside:avoid;}
-  h2,h3{break-after:avoid;}
+  /* Las rejillas flexibles no se saben partir entre hojas y dejaban media página en blanco: al
+     imprimir, los bloques se acomodan de a dos como cajas normales, que sí pueden pasar de hoja. */
+  .manejo-grid,.lotes-grid{display:block;}
+  .manejo-grid>.manejo-box,.lotes-grid>.lote-bloque{display:inline-block;width:49%;vertical-align:top;box-sizing:border-box;}
+  .lotes-grid>.lote-bloque{margin-bottom:var(--e3);}
+  .kpi-bloque,.historial-item,table,.caja-fija,.reco-lista li{break-inside:avoid;}
 }
 
 @media (max-width:640px){
@@ -1413,12 +1422,16 @@ footer{margin-top:var(--e8);font-size:var(--t-micro);color:var(--tinta-suave);te
 <button type="button" class="no-imprimir boton-imprimir" onclick="window.print()">Guardar como PDF / Imprimir</button>
 ${encabezadoHtml}
 
-<div class="datos-grid">
-  <div><span class="icono">${ICONO_CALENDARIO}</span><span class="etiqueta">${D.es_cliente ? "Fechas de visita" : "Fecha de visita"}</span><span class="valor">${esc(D.fecha)}</span></div>
-  <div><span class="icono">${ICONO_LOTES}</span><span class="etiqueta">${D.es_cliente ? "Fincas revisadas" : "Lotes revisados"}</span><span class="valor">${D.lotes_reales.map((l) => {
-    const t = D.tabla_lotes.find((x) => x.lote === l);
-    return esc(nombreUnidad(l)) + (t && t.subtitulo ? ` (${esc(t.subtitulo)})` : "");
-  }).join(", ")}</span></div>
+<div class="datos-grid${D.es_cliente ? " datos-grid-cliente" : ""}">
+  ${D.es_cliente
+    ? `<div><span class="icono">${ICONO_CALENDARIO}</span><span class="etiqueta">Fincas y fecha de muestreo</span>
+        <span class="valor lista-fincas">${D.tabla_lotes.map((t) =>
+          `<span>${esc(t.lote)} <em>${formatoFechaVisible(t.fecha)}</em></span>`).join("")}</span></div>`
+    : `<div><span class="icono">${ICONO_CALENDARIO}</span><span class="etiqueta">Fecha de visita</span><span class="valor">${esc(D.fecha)}</span></div>
+      <div><span class="icono">${ICONO_LOTES}</span><span class="etiqueta">Lotes revisados</span><span class="valor">${D.lotes_reales.map((l) => {
+        const t = D.tabla_lotes.find((x) => x.lote === l);
+        return esc(nombreUnidad(l)) + (t && t.subtitulo ? ` (${esc(t.subtitulo)})` : "");
+      }).join(", ")}</span></div>`}
 </div>
 
 <h2 class="banner-naranja">Indicadores de productividad</h2>

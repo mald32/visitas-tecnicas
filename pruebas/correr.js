@@ -455,7 +455,8 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const html = Informes.generarHtml(D, [], "Nota general");
     contiene(html, "Informe Técnico por Fincas");
     contiene(html, "Finca AMAZONAS");
-    contiene(html, "Fincas revisadas");
+    contiene(html, "Fincas y fecha de muestreo", "la franja lista cada finca con su fecha");
+    contiene(html, "14/09/2026", "con la fecha de la visita elegida de esa finca");
     contiene(html, "LORSBAN", "la recomendación guardada de esa visita");
     contiene(html, "Repetir en 15 días", "y sus observaciones");
     contiene(html, "Nota general", "más la nota general del cliente");
