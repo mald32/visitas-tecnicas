@@ -113,6 +113,15 @@ function esc(valor) {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+// Mes de una fecha ("2026-07-01" -> "2026-07") y cómo se muestra en el eje del historial.
+const mesDeFecha = (fechaISO) => String(fechaISO).slice(0, 7);
+
+function fmtMes(mes, conAnio) {
+  const meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  const [anio, m] = String(mes).split("-");
+  return meses[Number(m) - 1] + (conAnio ? " " + String(anio).slice(2) : "");
+}
+
 function fmtFechaCorta(fechaISO) {
   const [y, m, d] = fechaISO.split("-");
   const meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
@@ -232,23 +241,26 @@ function resumenDeTabla(tabla, umbrales) {
   return { barras_estatica: barrasEstatica, tortas, promedio_finca: promedioFinca, promedio_barras: promedioBarras, promedio_torta: promedioTorta, alertas };
 }
 
-// Historial: una línea por serie (lote o finca) sobre las fechas indicadas.
-function historialDeSeries(filas, fechas, series, umbrales) {
+// Historial: una línea por serie (lote o finca) sobre los meses indicados. Se agrupa por mes (no por
+// día) porque las visitas son mensuales: así todas las fincas caen en el mismo punto del eje aunque
+// se hayan muestreado en días distintos.
+function historialDeSeries(filas, meses, series, umbrales) {
+  const variosAnios = new Set(meses.map((m) => m.slice(0, 4))).size > 1;
   const historial = {};
   for (const [nombreVar, colOFn] of Object.entries(VARIABLES_HISTORIAL)) {
     const extraer = typeof colOFn === "function" ? colOFn : (fila) => fila[colOFn];
     const porSerie = {}, erroresPorSerie = {};
     for (const serie of series) {
       const promedios = [], errores = [];
-      for (const f of fechas) {
-        const sub = filas.filter((fila) => fila[COL.fecha] === f && serie.filtro(fila));
+      for (const mes of meses) {
+        const sub = filas.filter((fila) => mesDeFecha(fila[COL.fecha]) === mes && serie.filtro(fila));
         promedios.push(promedio(sub.map(extraer)));
         errores.push(desviacion(sub.map(extraer)));
       }
       porSerie[String(serie.clave)] = promedios;
       erroresPorSerie[String(serie.clave)] = errores;
     }
-    historial[nombreVar] = { fechas: fechas.map(fmtFechaCorta), lotes: porSerie, errores: erroresPorSerie };
+    historial[nombreVar] = { fechas: meses.map((m) => fmtMes(m, variosAnios)), lotes: porSerie, errores: erroresPorSerie };
   }
   const umbralesHistorial = {};
   for (const nombreVar of Object.keys(VARIABLES_HISTORIAL)) {
@@ -653,7 +665,7 @@ const Informes = {
     const fechasFinca = [...new Set(
       filas.filter((f) => f[COL.cliente] === cliente && f[COL.finca] === finca).map((f) => f[COL.fecha])
     )].sort();
-    const ultimas6 = fechasFinca.slice(-6);
+    const ultimos6Meses = [...new Set(fechasFinca.map(mesDeFecha))].sort().slice(-6);
     const lotesFinca = [...new Set(
       filas.filter((f) => f[COL.cliente] === cliente && f[COL.finca] === finca).map((f) => f[COL.lote])
     )].sort((a, b) => a - b);
@@ -669,7 +681,7 @@ const Informes = {
       etiqueta_unidad: "Lote", plural_unidad: "lotes",
       tabla_lotes: tablaLotes, umbrales,
       ...resumenDeTabla(tablaLotes, umbrales),
-      ...historialDeSeries(filas, ultimas6, series, umbrales),
+      ...historialDeSeries(filas, ultimos6Meses, series, umbrales),
       productividad, orden_productos: ordenProductos,
     };
   },
@@ -749,10 +761,10 @@ const Informes = {
 
     const fincas = tablaFincas.map((t) => t.lote);
     const fechasVisitas = tablaFincas.map((t) => t.fecha);
-    // Historial: el eje son las últimas 8 fechas en las que se visitó alguna de estas fincas.
-    const fechasHistorial = [...new Set(filas
+    // Historial: el eje son los últimos 8 meses en los que se visitó alguna de estas fincas.
+    const mesesHistorial = [...new Set(filas
       .filter((f) => f[COL.cliente] === cliente && fincas.includes(f[COL.finca]))
-      .map((f) => f[COL.fecha]))].sort().slice(-8);
+      .map((f) => mesDeFecha(f[COL.fecha])))].sort().slice(-8);
     const series = fincas.map((finca) => ({
       clave: finca,
       filtro: (f) => f[COL.cliente] === cliente && f[COL.finca] === finca,
@@ -764,7 +776,7 @@ const Informes = {
       lotes_reales: fincas, lotes_finca: fincas, fechas_visitas: fechasVisitas,
       tabla_lotes: tablaFincas, umbrales,
       ...resumenDeTabla(tablaFincas, umbrales),
-      ...historialDeSeries(filas, fechasHistorial, series, umbrales),
+      ...historialDeSeries(filas, mesesHistorial, series, umbrales),
       productividad, orden_productos: ordenProductos,
     };
   },
@@ -1286,7 +1298,12 @@ td.alerta{color:var(--alerta);font-weight:700;}
 .manejo-subtitulo{display:block;font-size:var(--t-micro);font-weight:700;color:var(--marca);text-transform:uppercase;letter-spacing:1px;margin:var(--e3) 0 var(--e1);}
 .manejo-lista{list-style:none;padding:0;margin:0;}
 .manejo-lista li{margin:var(--e1) 0;color:var(--tinta);}
-.manejo-columnas{display:grid;grid-template-columns:1fr 1fr;gap:var(--e2) var(--e6);margin-bottom:var(--e2);color:var(--tinta);}
+/* Dos bloques por hilera (dos lotes, o dos fincas): con muchos lotes, uno debajo de otro se hacía
+   un larguero. Los datos de cada bloque van uno debajo del otro, no en dos columnas apretadas. */
+.manejo-grid{display:flex;flex-wrap:wrap;gap:var(--e4);align-items:flex-start;}
+.manejo-grid>.manejo-box{flex:0 1 calc(50% - var(--e4) / 2);box-sizing:border-box;margin-bottom:0;min-width:0;}
+.manejo-grid>.manejo-box:last-child:nth-child(odd){flex-basis:100%;}
+.manejo-columnas{display:grid;grid-template-columns:1fr;gap:var(--e2);margin-bottom:var(--e2);color:var(--tinta);}
 .manejo-etiqueta{display:block;font-size:var(--t-micro);color:var(--tinta-suave);text-transform:uppercase;letter-spacing:1px;}
 
 /* --- Recomendaciones --- */
@@ -1360,8 +1377,8 @@ ${encabezadoHtml}
 <h2 class="banner-naranja">Indicadores de productividad</h2>
 ${productividadHtml}
 
-<h2 class="banner-azul">Manejo agronómico aplicado</h2>
-${manejoTodosHtml || '<p class="hint">Sin manejo agronómico registrado en esta visita.</p>'}
+<h2 class="banner-azul">Manejo agronómico</h2>
+${manejoTodosHtml ? `<div class="manejo-grid">${manejoTodosHtml}</div>` : '<p class="hint">Sin manejo agronómico registrado en esta visita.</p>'}
 
 <h2>Tabla de resultados por lote</h2>
 <table class="tabla-lotes"><thead><tr>

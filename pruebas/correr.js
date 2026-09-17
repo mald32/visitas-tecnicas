@@ -256,10 +256,10 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const html = Informes.generarHtml(D, [], "");
     contiene(html, "Indicadores de productividad");
     cierto(
-      html.indexOf("Indicadores de productividad") < html.indexOf("Manejo agronómico aplicado"),
+      html.indexOf("Indicadores de productividad") < html.indexOf("Manejo agronómico"),
       "productividad debe ir antes que manejo agronómico"
     );
-    cierto(html.indexOf("Manejo agronómico aplicado") < html.indexOf("Tabla de resultados por lote"),
+    cierto(html.indexOf("Manejo agronómico") < html.indexOf("Tabla de resultados por lote"),
       "manejo agronómico debe ir antes que la tabla de resultados");
   });
 
@@ -449,12 +449,28 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     noContiene(html, "Visita No:", "en el informe del cliente no hay número de visita");
   });
 
+  await pruebaAsync("el historial agrupa por mes, no por día exacto", async () => {
+    const { Informes } = cargarInformes({
+      filas: [
+        filaPunto({ finca: "AMAZONAS", fecha: "2026-07-02", adultos: 10 }),
+        filaPunto({ finca: "AMAZONAS", fecha: "2026-09-14", adultos: 20 }),
+        filaPunto({ finca: "SOLEDAD", fecha: "2026-07-20", adultos: 4 }),
+        filaPunto({ finca: "SOLEDAD", fecha: "2026-09-10", adultos: 6 }),
+      ],
+    });
+    const D = await Informes.calcularDatosCliente("CLIENTE", [{ finca: "AMAZONAS", fecha: "2026-09-14" }, { finca: "SOLEDAD", fecha: "2026-09-10" }]);
+    const h = D.historial["Individuos Adultos de Collaria"];
+    igual(h.fechas.join(","), "Jul,Sep", "julio y septiembre, aunque los días sean distintos");
+    igual(h.lotes.AMAZONAS.join(","), "10,20", "cada finca cae en el punto de su mes");
+    igual(h.lotes.SOLEDAD.join(","), "4,6");
+  });
+
   await pruebaAsync("el historial del cliente lleva una línea por finca", async () => {
     const { Informes } = cargarInformes({ filas: filasDosFincas });
     const D = await Informes.calcularDatosCliente("CLIENTE", seleccionDosFincas);
     const h = D.historial["Individuos Adultos de Collaria"];
     igual(Object.keys(h.lotes).join(","), "AMAZONAS,SOLEDAD");
-    igual(h.fechas.length, 2, "las 2 fechas en que se visitó alguna de las fincas");
+    igual(h.fechas.join(","), "Sep", "las dos visitas son del mismo mes: un solo punto en el eje");
   });
 
   // ---------------------------------------------------------------------------
