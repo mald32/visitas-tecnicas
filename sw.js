@@ -1,4 +1,4 @@
-const CACHE_NAME = "visitas-tecnicas-v61";
+const CACHE_NAME = "visitas-tecnicas-v62";
 const ARCHIVOS = [
   "./",
   "./index.html",
@@ -39,11 +39,20 @@ self.addEventListener("fetch", (event) => {
 
   // Abrir la app (navegación): siempre la copia guardada, sin importar ?parámetros o #código que
   // agregue el login. Antes, sin internet, una URL distinta a la guardada mostraba el dinosaurio.
+  // Abrir la app: se intenta primero la red (así una versión nueva entra de inmediato) y si en 3
+  // segundos no responde, o no hay internet, se abre la copia guardada. Antes era siempre la copia,
+  // y el celular se podía quedar pegado en una versión vieja.
   if (event.request.mode === "navigate") {
-    event.respondWith(
-      caches.match("./index.html").then((cacheada) => cacheada || fetch(event.request))
-        .catch(() => caches.match("./index.html"))
-    );
+    const guardada = caches.match("./index.html");
+    const red = fetch(event.request).then((respuesta) => {
+      if (respuesta && respuesta.ok) {
+        const copia = respuesta.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copia));
+      }
+      return respuesta;
+    });
+    const limite = new Promise((resolve) => setTimeout(() => resolve(guardada), 3000));
+    event.respondWith(Promise.race([red, limite]).catch(() => guardada).then((r) => r || red));
     return;
   }
 
