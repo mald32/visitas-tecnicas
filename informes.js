@@ -167,7 +167,7 @@ const claveProducto = (nombre, formulacion, dosis) =>
 // Los puntos tal como se capturaron, para poder mostrarlos en la ventana de detalle del informe.
 function puntosDeUnidad(sub) {
   return sub.map((f) => ({
-    lote: f[COL.lote], punto: f[COL.punto],
+    lote: f[COL.lote], potrero: f[COL.potrero], punto: f[COL.punto],
     adultos: f[COL.adultos], ninfas: f[COL.ninfas], loritos: f[COL.loritos], lepidopteros: f[COL.lepidopteros],
     incid_coll: f[COL.incidColl], sev_coll: f[COL.sevColl],
     incid_hongos: f[COL.incidHongos], sev_hongos: f[COL.sevHongos],
@@ -1105,6 +1105,7 @@ const Informes = {
       const conLote = !!D.es_cliente;
       const filas = (t.puntos || []).map((p) => `<tr>
         ${conLote ? `<td>${esc(p.lote)}</td>` : ""}
+        <td>${esc(p.potrero || "")}</td>
         <td>${esc(p.punto)}</td>
         <td${semaforo(p.adultos, defDe("adultos"))}>${fmt(p.adultos)}</td>
         <td${semaforo(p.ninfas, defDe("ninfas"))}>${fmt(p.ninfas)}</td>
@@ -1119,7 +1120,7 @@ const Informes = {
         <h3>${esc(nombreUnidad(t.lote))}${t.subtitulo ? ` — ${esc(t.subtitulo)}` : ""}</h3>
         <p class="hint">Datos de cada punto de muestreo, tal como se capturaron.</p>
         <div class="tabla-scroll"><table class="tabla-lotes"><thead><tr>
-          ${conLote ? "<th>Lote</th>" : ""}<th>Punto</th>
+          ${conLote ? "<th>Lote</th>" : ""}<th>Potrero</th><th>Punto</th>
           <th>Collaria Adultos</th><th>Collaria Ninfas</th><th>Loritos</th><th>Lepidópteros</th>
           <th>Incidencia Collaria</th><th>Severidad Collaria</th><th>Incidencia Hongo</th><th>Severidad Hongo</th>
         </tr></thead><tbody>${filas}</tbody></table></div>

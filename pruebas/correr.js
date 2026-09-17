@@ -418,7 +418,8 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const html = Informes.generarHtml(D, [], "");
     igual(html.split("<dialog id=\"detalle").length - 1, 2, "una ventana por lote");
     contiene(html, "<th>Collaria Adultos</th>");
-    noContiene(html, "<th>Lote</th><th>Punto</th>", "en el informe de una finca no hace falta la columna Lote");
+    noContiene(html, "<th>Lote</th><th>Potrero</th>", "en el informe de una finca no hace falta la columna Lote");
+    contiene(html, "<th>Potrero</th><th>Punto</th>", "pero sí el potrero de cada punto");
   });
 
 
@@ -492,7 +493,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const { Informes } = cargarInformes({ filas: filasDosFincas });
     const D = await Informes.calcularDatosCliente("CLIENTE", seleccionDosFincas);
     const html = Informes.generarHtml(D, [], "");
-    contiene(html, "<th>Lote</th><th>Punto</th>");
+    contiene(html, "<th>Lote</th><th>Potrero</th><th>Punto</th>");
     igual(D.tabla_lotes[0].puntos.length, 3, "AMAZONAS tiene 3 puntos entre sus 2 lotes");
   });
 
