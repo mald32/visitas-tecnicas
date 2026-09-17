@@ -45,7 +45,7 @@ vacías a propósito, para que las calcule la propia hoja y no un valor fijo de 
 ## Antes de publicar un cambio
 
 ```bash
-node pruebas/correr.js   # 47 pruebas: cálculos, informe, escape de HTML, formato de filas
+node pruebas/correr.js   # 48 pruebas: cálculos, informe, escape de HTML, formato de filas
 node publicar.js         # corre las pruebas y sube la versión en app.js y sw.js a la vez
 git add -A && git commit -m "..." && git push
 ```
@@ -56,6 +56,10 @@ que el celular ya tiene la última versión y no una cacheada.
 El informe tiene dos modos: **por lotes de una finca** (una visita) y **por fincas de un cliente**
 (el asesor elige qué finca entra y de qué visita). El segundo promedia todos los puntos de la finca
 y usa la finca como unidad de comparación. Ambos se imprimen en 3 páginas desde el propio informe.
+
+En la hoja `Configuracion`, cada variable tiene su **umbral** (columna B) y su **máximo permitido**
+(columna C). El informe pinta las tablas con semáforo: verde hasta el umbral, amarillo entre umbral
+y máximo, rojo por encima (al revés en Pasto sano, que es un mínimo).
 
 ## Si algún día cambia el Excel
 

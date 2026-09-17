@@ -45,18 +45,18 @@ prueba("Potrero es la columna 18 y Punto la 4 (usadas por índice en app.js)", (
 // ---------------------------------------------------------------------------
 
 const UMBRALES = [
-  ["Umbral de Adultos de Collaria", 5],
-  ["Umbral de Ninfas de Collaria", 5],
-  ["Umbral de Individuos de Lorito", 5],
-  ["Umbral de Numero de Lepidopteros", 5],
-  ["Umbral de Incidencia de ataques de Collaria", 0.3],
-  ["Umbral de Severidad promedio del Dano por Collaria", 0.05],
-  ["Umbral de Incidencia de Manchas del Kikuyo", 0.3],
-  ["Umbral de Severidad Promedio del Ataque de Hongos", 0.05],
-  ["Umbral de Dano por Moluscos", 0.05],
-  ["Umbral de Dano Total de la Pastura por Collaria", 0.05],
-  ["Umbral de Dano a la pastura por Hongos", 0.05],
-  ["Umbral (Min) de Pasto Sano", 0.95],
+  ["Umbral de Adultos de Collaria", 5, 10],
+  ["Umbral de Ninfas de Collaria", 5, 10],
+  ["Umbral de Individuos de Lorito", 5, 10],
+  ["Umbral de Numero de Lepidopteros", 5, 10],
+  ["Umbral de Incidencia de ataques de Collaria", 0.3, 0.5],
+  ["Umbral de Severidad promedio del Dano por Collaria", 0.05, 0.1],
+  ["Umbral de Incidencia de Manchas del Kikuyo", 0.3, 0.5],
+  ["Umbral de Severidad Promedio del Ataque de Hongos", 0.05, 0.1],
+  ["Umbral de Dano por Moluscos", 0.05, 0.1],
+  ["Umbral de Dano Total de la Pastura por Collaria", 0.05, 0.1],
+  ["Umbral de Dano a la pastura por Hongos", 0.05, 0.1],
+  ["Umbral (Min) de Pasto Sano", 0.95, 0.9],
 ];
 
 // Arma una fila de "Base de datos" usando nombres, no posiciones.
@@ -94,7 +94,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
       return [];
     },
     async leerRango(hoja, rango) {
-      if (rango === "A8:B19") return UMBRALES;
+      if (rango === "A8:C19") return UMBRALES;
       if (rango === "A4:E500") return catalogo;
       return [];
     },
@@ -521,6 +521,23 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const html = Informes.generarHtml(D, [], "");
     noContiene(html, "Lo recomendado en cada finca", "no debe quedar un encabezado colgando");
     contiene(html, "Sin productos recomendados para este informe.");
+  });
+
+  // ---------------------------------------------------------------------------
+  await pruebaAsync("las tablas pintan el semáforo: verde, amarillo o rojo según umbral y máximo", async () => {
+    const { Informes } = cargarInformes({
+      filas: [
+        filaPunto({ lote: 1, punto: 1, adultos: 3 }),   // por debajo del umbral (5) -> verde
+        filaPunto({ lote: 2, punto: 1, adultos: 8 }),   // entre umbral y máximo (10) -> amarillo
+        filaPunto({ lote: 3, punto: 1, adultos: 20 }),  // por encima del máximo -> rojo
+      ],
+    });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
+    igual(D.maximos["Umbral de Adultos de Collaria"], 10, "el máximo se lee de la columna C");
+    const html = Informes.generarHtml(D, [], "");
+    contiene(html, `<td class="sem-ok">3.0</td>`, "3 adultos: verde");
+    contiene(html, `<td class="sem-medio">8.0</td>`, "8 adultos: amarillo");
+    contiene(html, `<td class="sem-alto">20.0</td>`, "20 adultos: rojo");
   });
 
   // ---------------------------------------------------------------------------

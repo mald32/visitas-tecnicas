@@ -604,22 +604,42 @@ const Informes = {
 
   formatoFechaVisible,
 
-  async umbrales() {
+// De la hoja Configuracion se leen dos números por variable: el umbral (columna B) y el máximo
+// permitido (columna C). Con esos dos se pinta el semáforo del informe: verde hasta el umbral,
+// amarillo entre el umbral y el máximo, rojo por encima del máximo.
+  async _umbralesYMaximos() {
     if (!this._umbralesCache) {
-      let valores = null;
+      let leido = null;
       if (navigator.onLine) {
         try {
-          const filas = await conLimiteDeTiempo(Graph.leerRango(CONFIG.HOJA_CONFIG, "A8:B19"), this.LIMITE_LECTURA_MS);
-          valores = {};
-          filas.forEach(([nombre, valor]) => { if (nombre) valores[nombre] = valor; });
-          await DB.guardarCache("umbralesBase", valores);
+          const filas = await conLimiteDeTiempo(Graph.leerRango(CONFIG.HOJA_CONFIG, "A8:C19"), this.LIMITE_LECTURA_MS);
+          leido = { valores: {}, maximos: {} };
+          filas.forEach(([nombre, valor, maximo]) => {
+            if (!nombre) return;
+            leido.valores[nombre] = valor;
+            if (maximo !== "" && maximo != null) leido.maximos[nombre] = maximo;
+          });
+          await DB.guardarCache("umbralesBase", leido);
         } catch (e) {
           console.warn("No se pudieron leer los umbrales de Excel, usando caché local:", e.message);
         }
       }
-      this._umbralesCache = valores || (await DB.leerCache("umbralesBase")) || {};
+      if (!leido) {
+        const guardado = (await DB.leerCache("umbralesBase")) || {};
+        // Las versiones anteriores guardaban solo los umbrales, sin los máximos.
+        leido = guardado.valores ? guardado : { valores: guardado, maximos: {} };
+      }
+      this._umbralesCache = leido;
     }
     return this._umbralesCache;
+  },
+
+  async umbrales() {
+    return (await this._umbralesYMaximos()).valores;
+  },
+
+  async maximos() {
+    return (await this._umbralesYMaximos()).maximos;
   },
 
   invalidarCache() {
@@ -639,6 +659,7 @@ const Informes = {
   async calcularDatos(cliente, finca, fecha) {
     const filas = await this.filas();
     const umbrales = await this.umbrales();
+    const maximos = await this.maximos();
     const productosAplicados = await this.filasProductos();
     const productividad = await this.productividadDeVisita(cliente, finca, fecha);
     const catalogoProductos = await this.filasCatalogoProductos();
@@ -694,7 +715,7 @@ const Informes = {
     return {
       cliente, finca, fecha, visita_numero: visitaNumero, lotes_reales: lotesReales, lotes_finca: lotesFinca,
       etiqueta_unidad: "Lote", plural_unidad: "lotes",
-      tabla_lotes: tablaLotes, umbrales,
+      tabla_lotes: tablaLotes, umbrales, maximos,
       ...resumenDeTabla(tablaLotes, umbrales),
       ...historialDeSeries(filas, ultimos6Meses, series, umbrales),
       productividad, orden_productos: ordenProductos,
@@ -708,6 +729,7 @@ const Informes = {
   async calcularDatosCliente(cliente, seleccion) {
     const filas = await this.filas();
     const umbrales = await this.umbrales();
+    const maximos = await this.maximos();
     const productosAplicados = await this.filasProductos();
     const observacionesLotes = await this.filasObservacionesLotes();
     const catalogoProductos = await this.filasCatalogoProductos();
@@ -790,7 +812,7 @@ const Informes = {
       cliente, finca: "", fecha: fechasVisitas.map(formatoFechaVisible).join(", "),
       es_cliente: true, etiqueta_unidad: "Finca", plural_unidad: "fincas",
       lotes_reales: fincas, lotes_finca: fincas, fechas_visitas: fechasVisitas,
-      tabla_lotes: tablaFincas, umbrales,
+      tabla_lotes: tablaFincas, umbrales, maximos,
       ...resumenDeTabla(tablaFincas, umbrales),
       ...historialDeSeries(filas, mesesHistorial, series, umbrales),
       productividad, orden_productos: ordenProductos,
@@ -801,34 +823,43 @@ const Informes = {
     const U = D.etiqueta_unidad || "Lote";              // Lote (informe de visita) o Finca (informe de cliente)
     const UP = D.plural_unidad || "lotes";
     const nombreUnidad = (valor) => `${U} ${valor}`;
-    const claseAlerta = (valor, umbral, esMinimo) => {
-      if (valor == null || umbral == null) return "";
-      const excede = esMinimo ? valor < umbral : valor > umbral;
-      return excede ? ' class="alerta"' : "";
+    // Verde hasta el umbral, amarillo entre el umbral y el máximo permitido, rojo por encima.
+    // En Pasto sano es al revés (es un mínimo): verde por encima del umbral, rojo bajo el máximo.
+    const semaforo = (valor, def) => {
+      if (!def || valor == null) return "";
+      const umbral = D.umbrales[def.umbral];
+      const maximo = (D.maximos || {})[def.umbral];
+      if (umbral == null) return "";
+      const dentro = def.esMinimo ? valor >= umbral : valor <= umbral;
+      if (dentro) return ' class="sem-ok"';
+      if (maximo == null) return ' class="sem-alto"';
+      const pasado = def.esMinimo ? valor < maximo : valor > maximo;
+      return pasado ? ' class="sem-alto"' : ' class="sem-medio"';
     };
+    const defDe = (campo) => DEFINICIONES_UMBRAL.find((d) => d.campo === campo);
     const u = D.umbrales;
     const um = (nombreDef) => u[DEFINICIONES_UMBRAL.find((d) => d.campo === nombreDef).umbral];
 
     const filasTabla = D.tabla_lotes.map((t) => `<tr>
       <td>${esc(nombreUnidad(t.lote))}</td>
-      <td${claseAlerta(t.incid_coll, um("incid_coll"))}>${fmt(t.incid_coll, true)}</td>
-      <td${claseAlerta(t.sev_coll, um("sev_coll"))}>${fmt(t.sev_coll, true)}</td>
-      <td${claseAlerta(t.incid_hongos, um("incid_hongos"))}>${fmt(t.incid_hongos, true)}</td>
-      <td${claseAlerta(t.sev_hongos, um("sev_hongos"))}>${fmt(t.sev_hongos, true)}</td>
-      <td${claseAlerta(t.adultos, um("adultos"))}>${fmt(t.adultos)}</td>
-      <td${claseAlerta(t.ninfas, um("ninfas"))}>${fmt(t.ninfas)}</td>
-      <td${claseAlerta(t.loritos, um("loritos"))}>${fmt(t.loritos)}</td>
-      <td${claseAlerta(t.lepidopteros, um("lepidopteros"))}>${fmt(t.lepidopteros)}</td>
+      <td${semaforo(t.incid_coll, defDe("incid_coll"))}>${fmt(t.incid_coll, true)}</td>
+      <td${semaforo(t.sev_coll, defDe("sev_coll"))}>${fmt(t.sev_coll, true)}</td>
+      <td${semaforo(t.incid_hongos, defDe("incid_hongos"))}>${fmt(t.incid_hongos, true)}</td>
+      <td${semaforo(t.sev_hongos, defDe("sev_hongos"))}>${fmt(t.sev_hongos, true)}</td>
+      <td${semaforo(t.adultos, defDe("adultos"))}>${fmt(t.adultos)}</td>
+      <td${semaforo(t.ninfas, defDe("ninfas"))}>${fmt(t.ninfas)}</td>
+      <td${semaforo(t.loritos, defDe("loritos"))}>${fmt(t.loritos)}</td>
+      <td${semaforo(t.lepidopteros, defDe("lepidopteros"))}>${fmt(t.lepidopteros)}</td>
     </tr>`).join("") + (D.tabla_lotes.length > 1 ? `<tr class="fila-promedio">
       <td>Promedio general</td>
-      <td${claseAlerta(D.promedio_finca.incid_coll, um("incid_coll"))}>${fmt(D.promedio_finca.incid_coll, true)}</td>
-      <td${claseAlerta(D.promedio_finca.sev_coll, um("sev_coll"))}>${fmt(D.promedio_finca.sev_coll, true)}</td>
-      <td${claseAlerta(D.promedio_finca.incid_hongos, um("incid_hongos"))}>${fmt(D.promedio_finca.incid_hongos, true)}</td>
-      <td${claseAlerta(D.promedio_finca.sev_hongos, um("sev_hongos"))}>${fmt(D.promedio_finca.sev_hongos, true)}</td>
-      <td${claseAlerta(D.promedio_finca.adultos, um("adultos"))}>${fmt(D.promedio_finca.adultos)}</td>
-      <td${claseAlerta(D.promedio_finca.ninfas, um("ninfas"))}>${fmt(D.promedio_finca.ninfas)}</td>
-      <td${claseAlerta(D.promedio_finca.loritos, um("loritos"))}>${fmt(D.promedio_finca.loritos)}</td>
-      <td${claseAlerta(D.promedio_finca.lepidopteros, um("lepidopteros"))}>${fmt(D.promedio_finca.lepidopteros)}</td>
+      <td${semaforo(D.promedio_finca.incid_coll, defDe("incid_coll"))}>${fmt(D.promedio_finca.incid_coll, true)}</td>
+      <td${semaforo(D.promedio_finca.sev_coll, defDe("sev_coll"))}>${fmt(D.promedio_finca.sev_coll, true)}</td>
+      <td${semaforo(D.promedio_finca.incid_hongos, defDe("incid_hongos"))}>${fmt(D.promedio_finca.incid_hongos, true)}</td>
+      <td${semaforo(D.promedio_finca.sev_hongos, defDe("sev_hongos"))}>${fmt(D.promedio_finca.sev_hongos, true)}</td>
+      <td${semaforo(D.promedio_finca.adultos, defDe("adultos"))}>${fmt(D.promedio_finca.adultos)}</td>
+      <td${semaforo(D.promedio_finca.ninfas, defDe("ninfas"))}>${fmt(D.promedio_finca.ninfas)}</td>
+      <td${semaforo(D.promedio_finca.loritos, defDe("loritos"))}>${fmt(D.promedio_finca.loritos)}</td>
+      <td${semaforo(D.promedio_finca.lepidopteros, defDe("lepidopteros"))}>${fmt(D.promedio_finca.lepidopteros)}</td>
     </tr>` : "");
 
     // Solo las siglas de la formulacion (ej: "SC" de "SC (Suspension Concentrada)"), sin el nombre completo.
@@ -1075,9 +1106,14 @@ const Informes = {
       const filas = (t.puntos || []).map((p) => `<tr>
         ${conLote ? `<td>${esc(p.lote)}</td>` : ""}
         <td>${esc(p.punto)}</td>
-        <td>${fmt(p.adultos)}</td><td>${fmt(p.ninfas)}</td><td>${fmt(p.loritos)}</td><td>${fmt(p.lepidopteros)}</td>
-        <td>${fmt(p.incid_coll, true)}</td><td>${fmt(p.sev_coll, true)}</td>
-        <td>${fmt(p.incid_hongos, true)}</td><td>${fmt(p.sev_hongos, true)}</td>
+        <td${semaforo(p.adultos, defDe("adultos"))}>${fmt(p.adultos)}</td>
+        <td${semaforo(p.ninfas, defDe("ninfas"))}>${fmt(p.ninfas)}</td>
+        <td${semaforo(p.loritos, defDe("loritos"))}>${fmt(p.loritos)}</td>
+        <td${semaforo(p.lepidopteros, defDe("lepidopteros"))}>${fmt(p.lepidopteros)}</td>
+        <td${semaforo(p.incid_coll, defDe("incid_coll"))}>${fmt(p.incid_coll, true)}</td>
+        <td${semaforo(p.sev_coll, defDe("sev_coll"))}>${fmt(p.sev_coll, true)}</td>
+        <td${semaforo(p.incid_hongos, defDe("incid_hongos"))}>${fmt(p.incid_hongos, true)}</td>
+        <td${semaforo(p.sev_hongos, defDe("sev_hongos"))}>${fmt(p.sev_hongos, true)}</td>
       </tr>`).join("");
       return `<dialog id="detalle${i}" class="detalle-puntos no-imprimir">
         <h3>${esc(nombreUnidad(t.lote))}${t.subtitulo ? ` — ${esc(t.subtitulo)}` : ""}</h3>
@@ -1273,6 +1309,10 @@ td:first-child,th:first-child{text-align:left;padding-left:0;}
 td:last-child,th:last-child{padding-right:0;}
 tbody tr:nth-child(even) td{background:var(--papel-suave);}
 td.alerta{color:var(--alerta);font-weight:700;}
+/* Semáforo: verde hasta el umbral, amarillo entre el umbral y el máximo, rojo por encima. */
+td.sem-ok{background:#e8f4ea;}
+td.sem-medio{background:#fdf3d7;}
+td.sem-alto{background:#fbe0dc;color:var(--alerta);font-weight:700;}
 .fila-promedio td{font-weight:700;border-top:2px solid var(--marca);background:var(--marca-tenue) !important;}
 
 /* --- Bloque por lote: barras y anillo lado a lado --- */
