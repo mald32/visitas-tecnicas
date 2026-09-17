@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "60";
+const APP_VERSION = "61";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -2408,8 +2408,24 @@ function actualizarEstadoConexion() {
 function registrarServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
 
+  let ultimaRevision = 0;
   navigator.serviceWorker.register("sw.js").then((registro) => {
-    registro.update(); // no confiar solo en el cache del navegador para sw.js: revisar ya mismo
+    const revisar = () => {
+      if (Date.now() - ultimaRevision < 30000) return; // no más de una revisión cada 30 s
+      ultimaRevision = Date.now();
+      registro.update().catch(() => {});
+      // Si ya hay una versión nueva instalada esperando, que entre de una vez.
+      if (registro.waiting) registro.waiting.postMessage("activar-ya");
+    };
+    revisar();
+    // Al volver a la app (cambiar de pestaña, desbloquear el celular) se revisa otra vez: antes solo
+    // se miraba al abrirla y la versión nueva podía tardar en entrar.
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) revisar(); });
+    window.addEventListener("online", revisar);
+    registro.addEventListener("updatefound", () => {
+      const nuevo = registro.installing;
+      if (nuevo) nuevo.addEventListener("statechange", () => { if (nuevo.state === "installed" && registro.waiting) registro.waiting.postMessage("activar-ya"); });
+    });
   }).catch((e) => console.warn("SW no registrado:", e));
 
   let yaRecargando = false;
