@@ -115,6 +115,13 @@ input.campo-invalido, select.campo-invalido, textarea.campo-invalido { border-co
 .botones-punto button { flex: 1; }
 #btn-punto-anterior:disabled { opacity: 0.4; }
 
+.aviso-version {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--principal); color: #fff; font-size: 13px;
+  padding: 10px 12px; margin: 0 0 14px; border-radius: 10px;
+}
+.aviso-version button { background: #fff; color: var(--principal-oscuro); padding: 6px 14px; font-size: 13px; width: auto; }
+
 .aviso-suave {
   background: var(--fondo-suave);
   border-left: 4px solid var(--principal);

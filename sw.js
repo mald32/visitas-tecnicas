@@ -1,4 +1,4 @@
-const CACHE_NAME = "visitas-tecnicas-v63";
+const CACHE_NAME = "visitas-tecnicas-v64";
 const ARCHIVOS = [
   "./",
   "./index.html",
@@ -36,6 +36,8 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== location.origin) return; // Graph y login de Microsoft van directo a la red
   if (event.request.method !== "GET") return;
+  // version.json siempre va a la red: es justo el archivo que sirve para saber si hay algo nuevo.
+  if (url.pathname.endsWith("version.json")) return;
 
   // Abrir la app (navegación): siempre la copia guardada, sin importar ?parámetros o #código que
   // agregue el login. Antes, sin internet, una URL distinta a la guardada mostraba el dinosaurio.

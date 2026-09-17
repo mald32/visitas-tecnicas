@@ -12,6 +12,7 @@ const { execSync } = require("child_process");
 const RAIZ = __dirname;
 const RUTA_APP = path.join(RAIZ, "app.js");
 const RUTA_SW = path.join(RAIZ, "sw.js");
+const RUTA_VERSION = path.join(RAIZ, "version.json");
 
 function leer(ruta) { return fs.readFileSync(ruta, "utf8"); }
 
@@ -42,4 +43,7 @@ const nueva = Number(versionApp[1]) + 1;
 fs.writeFileSync(RUTA_APP, app.replace(/const APP_VERSION = "\d+";/, `const APP_VERSION = "${nueva}";`));
 fs.writeFileSync(RUTA_SW, sw.replace(/const CACHE_NAME = "visitas-tecnicas-v\d+";/, `const CACHE_NAME = "visitas-tecnicas-v${nueva}";`));
 
-console.log(`\n✅ Versión subida a v${nueva} (app.js y sw.js). Ya puedes hacer commit y push.`);
+// La app compara su propia versión contra este archivo para saber si el celular se quedó atrás.
+fs.writeFileSync(RUTA_VERSION, JSON.stringify({ version: String(nueva) }) + "\n");
+
+console.log(`\n✅ Versión subida a v${nueva} (app.js, sw.js y version.json). Ya puedes hacer commit y push.`);
