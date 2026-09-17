@@ -110,6 +110,8 @@ input.campo-invalido, select.campo-invalido, textarea.campo-invalido { border-co
 .productividad-lote-bloque .productividad-lote-campos { border: 1px solid var(--borde); border-radius: 0 0 10px 10px; padding: 12px; margin-top: -4px; }
 
 .botones-punto { display: flex; gap: 10px; margin-top: 14px; }
+#form-punto .botones-punto button[type="submit"] { width: auto; margin-top: 0; }
+#btn-terminar-lote { width: 100%; margin-top: 10px; }
 .botones-punto button { flex: 1; }
 #btn-punto-anterior:disabled { opacity: 0.4; }
 

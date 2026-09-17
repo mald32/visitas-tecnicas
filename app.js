@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "54";
+const APP_VERSION = "55";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -192,7 +192,7 @@ function guardarBorrador() {
   if (lote && pantallaFlujo === "pantalla-punto") {
     if (!el("caja-observaciones-lote").hidden) {
       sinGuardar.obs[lote] = el("observaciones-lote").value;
-    } else if (!editandoPuntoId) {
+    } else if (!editandoPuntoId && !puntoSincronizado && puntoMostrado === puntoActual) {
       const punto = {};
       CAMPOS_PUNTO.forEach((id) => { punto[id] = el(id).value; });
       sinGuardar.punto[lote] = punto;
@@ -251,21 +251,15 @@ async function restaurarBorrador(b, exacta) {
   const pantalla = exacta && loteActual && PANTALLAS_FLUJO.includes(b.pantalla) ? b.pantalla : "pantalla-lotes";
   if (pantalla === "pantalla-punto") {
     el("lote-actual-num").textContent = loteActual;
-    el("form-punto").reset();
     await calcularSiguientePunto();
-    if (editandoPuntoId) {
-      puntoMostrado = b.puntoMostrado;
-      el("punto-actual-num").textContent = puntoMostrado;
-    }
     const obs = sinGuardar.obs[String(loteActual)];
     if (obs != null && b.pantalla === "pantalla-punto" && capturandoLote === false) {
       mostrarCajaObservacionesLote(true);
       el("observaciones-lote").value = obs;
     } else {
       mostrarCajaObservacionesLote(false);
-      llenarPuntoSinGuardar();
+      await mostrarPunto(Math.min(b.puntoMostrado || puntoActual, puntoActual));
     }
-    el("btn-punto-anterior").disabled = puntoMostrado <= 1;
     await refrescarResumenCola();
   }
   mostrarPantalla(pantalla);
@@ -374,7 +368,7 @@ async function mostrarInicioVisitas() {
 function mostrarCajaObservacionesLote(mostrar) {
   el("caja-observaciones-lote").hidden = !mostrar;
   el("form-punto").hidden = mostrar;
-  document.querySelector(".botones-punto").hidden = mostrar;
+
   if (mostrar) ajustarAltoTexto(el("observaciones-lote"));
 }
 
@@ -387,6 +381,7 @@ function fechaLocalHoy() {
 
 async function iniciar() {
   el("app-version").textContent = "v" + APP_VERSION;
+  refrescarResumenCola(); // el botón de sincronizar arranca apagado si no hay nada pendiente
   registrarServiceWorker();
   await Graph.init();
 
@@ -1300,10 +1295,8 @@ async function onElegirLote(lote) {
     await calcularSiguientePunto();
     await precargarPotreroLote();
     el("lote-actual-num").textContent = loteActual;
-    el("form-punto").reset();
     mostrarCajaObservacionesLote(false);
-    llenarPuntoSinGuardar();
-    el("btn-punto-anterior").disabled = puntoMostrado <= 1;
+    await mostrarPunto(puntoActual);
     mostrarPantalla("pantalla-punto");
     window.scrollTo(0, 0);
     await guardarBorrador();
@@ -1381,11 +1374,39 @@ async function puntosDelLoteActual() {
   );
 }
 
+// El punto nuevo es el siguiente al más alto ya guardado (si faltara alguno en el medio, no se
+// pisa: se puede navegar hasta él y llenarlo).
 async function calcularSiguientePunto() {
-  const delMismoLote = await puntosDelLoteActual();
-  puntoActual = delMismoLote.length + 1;
+  const numeros = (await puntosDelLoteActual()).map((it) => Number(it.datos.fila[ESQUEMA.BASE.punto]) || 0);
+  puntoActual = numeros.length ? Math.max(...numeros) + 1 : 1;
   puntoMostrado = puntoActual;
   el("punto-actual-num").textContent = puntoActual;
+}
+
+// Muestra el punto pedido del lote: si está guardado, lo carga; si no, deja el formulario en blanco.
+let puntoSincronizado = false;
+async function mostrarPunto(numero) {
+  const delLote = await puntosDelLoteActual();
+  const item = delLote.find((it) => Number(it.datos.fila[ESQUEMA.BASE.punto]) === numero);
+  puntoMostrado = numero;
+  if (numero >= puntoActual) puntoActual = numero;
+  editandoPuntoId = item && item.estado === "pendiente" ? item.id : null;
+  puntoSincronizado = !!(item && item.estado !== "pendiente");
+
+  const potrero = el("potrero-nombre-punto").value;
+  el("form-punto").reset();
+  el("potrero-nombre-punto").value = potrero;
+  if (item) cargarPuntoEnFormulario(item.datos.fila);
+  else if (numero === puntoActual) llenarPuntoSinGuardar(); // lo que se estaba escribiendo del punto nuevo
+
+  el("punto-actual-num").textContent = numero;
+  el("btn-punto-anterior").disabled = numero <= 1;
+  el("btn-punto-siguiente").textContent = numero < puntoActual ? "Punto siguiente" : "Siguiente punto";
+  el("aviso-punto").hidden = !puntoSincronizado;
+  el("aviso-punto").textContent = puntoSincronizado
+    ? "Este punto ya se subió a tu Excel: se puede ver, pero no cambiar desde aquí."
+    : "";
+  await guardarBorrador();
 }
 
 // Si se retoma un lote que ya tenia puntos guardados, se recupera el nombre de potrero ya usado.
@@ -1420,10 +1441,10 @@ function leerCamposComunes() {
   };
 }
 
-async function guardarPuntoActual() {
+async function guardarPuntoActual(numero) {
   const c = leerCamposComunes();
   const fila = [
-    visita.cliente, visita.finca, visita.fecha, loteActual, puntoActual,
+    visita.cliente, visita.finca, visita.fecha, loteActual, numero,
     c.adultos, c.ninfas, c.incidColl, c.sevColl, c.danoCollTotal,
     c.loritos, c.lepidopteros,
     c.hojasMoluscos, c.incidMoluscos, c.danoMoluscos,
@@ -1469,44 +1490,28 @@ function cargarPuntoEnFormulario(fila) {
   el("observaciones").value = fila[B.observaciones] || "";
 }
 
+// "Siguiente punto": guarda lo que esté en pantalla (o corrige el punto que se está viendo) y pasa
+// al punto siguiente por número: del 1 al 2, del 2 al 3... no salta al final de la lista.
 async function onGuardarPunto(ev) {
   ev.preventDefault();
-  if (editandoPuntoId) {
+  if (puntoSincronizado) {
+    // Ya está en el Excel: no se toca, solo se avanza.
+  } else if (editandoPuntoId) {
     await actualizarPuntoEditado();
-    editandoPuntoId = null;
-    puntoMostrado = puntoActual;
   } else {
-    await guardarPuntoActual();
-    puntoActual += 1;
-    puntoMostrado = puntoActual;
+    await guardarPuntoActual(puntoMostrado);
+    if (puntoMostrado >= puntoActual) puntoActual = puntoMostrado + 1;
+    delete sinGuardar.punto[String(loteActual)];
   }
-  const potrero = el("potrero-nombre-punto").value;
-  el("form-punto").reset();
-  el("potrero-nombre-punto").value = potrero;
-  el("punto-actual-num").textContent = puntoMostrado;
-  el("btn-punto-anterior").disabled = puntoMostrado <= 1;
-  await guardarBorrador();
+  await mostrarPunto(puntoMostrado + 1);
   await refrescarResumenCola();
 }
 
 // Retrocede un punto a la vez dentro del mismo lote para poder corregirlo. Solo se puede
 // editar un punto que aun no se haya sincronizado (uno ya subido no se puede corregir desde aqui).
 async function onPuntoAnterior() {
-  const objetivo = puntoMostrado - 1;
-  if (objetivo < 1) { alert("No hay un punto anterior en este lote."); return; }
-  const delLote = await puntosDelLoteActual();
-  const item = delLote.find((it) => it.datos.fila[ESQUEMA.BASE.punto] === objetivo);
-  if (!item) { alert("No se encontró ese punto."); return; }
-  if (item.estado !== "pendiente") {
-    alert("Ese punto ya se sincronizó con tu Excel y no se puede corregir desde aquí.");
-    return;
-  }
-  editandoPuntoId = item.id;
-  puntoMostrado = objetivo;
-  cargarPuntoEnFormulario(item.datos.fila);
-  el("punto-actual-num").textContent = puntoMostrado;
-  el("btn-punto-anterior").disabled = puntoMostrado <= 1;
-  await guardarBorrador();
+  if (puntoMostrado <= 1) return;
+  await mostrarPunto(puntoMostrado - 1);
 }
 
 // Sin importar en que punto se haya escrito el nombre del potrero, al terminar el lote se le
@@ -1531,8 +1536,9 @@ async function onTerminarLote() {
   if (editandoPuntoId) {
     await actualizarPuntoEditado();
     editandoPuntoId = null;
-  } else if (capturandoLote && el("form-punto").checkValidity()) {
-    await guardarPuntoActual();
+  } else if (capturandoLote && !puntoSincronizado && el("form-punto").checkValidity()) {
+    await guardarPuntoActual(puntoMostrado);
+    if (puntoMostrado >= puntoActual) puntoActual = puntoMostrado + 1;
   }
   await aplicarPotreroATodosLosPuntos(potrero);
   capturandoLote = false;
@@ -1635,6 +1641,7 @@ async function onFinMuestreo() {
 async function refrescarResumenCola() {
   const items = await DB.listarItems();
   const pendientes = items.filter((it) => it.estado === "pendiente").length;
+  el("btn-sincronizar").disabled = pendientes === 0;
   el("resumen-cola").textContent = pendientes > 0
     ? `${pendientes} punto(s)/dato(s) pendiente(s) de subir a tu Excel.`
     : "Todo sincronizado con tu Excel.";
@@ -2199,6 +2206,13 @@ const NOMBRE_TIPO_ITEM = {
   informe_generado: "registro del informe", recomendaciones_cliente: "recomendación del informe por fincas", eliminar_visita: "borrado de la visita", eliminar_lote: "borrado de un lote",
 };
 
+// Tablas que la app espera encontrar en el Excel para ciertos datos (si no están, Graph responde
+// "ItemNotFound" y conviene decir cuál falta en vez de mostrar el error crudo).
+const TABLA_DE_TIPO = {
+  observacion_lote: "Observaciones_Lotes", informe_generado: "Informes_Generados",
+  recomendaciones_cliente: "Recomendaciones_Cliente",
+};
+
 function descripcionItem(it) {
   const d = it.datos || {};
   const nombre = NOMBRE_TIPO_ITEM[it.tipo] || it.tipo;
@@ -2356,7 +2370,10 @@ async function sincronizar() {
         subidos += 1;
       } catch (e) {
         await DB.marcarError(it.id, e.message);
-        errores.push(`${descripcionItem(it)}: ${e.message}`);
+        const falta = /itemnotfound/i.test(e.message) && TABLA_DE_TIPO[it.tipo];
+        errores.push(`${descripcionItem(it)}: ${falta
+          ? `falta crear la tabla "${falta}" en tu Excel.`
+          : e.message}`);
         if (grupo) gruposDetenidos.add(grupo);
         if (it.tipo === "eliminar_visita") gruposDetenidos.add(visitaDelItem);
         if (it.tipo === "eliminar_lote") gruposDetenidos.add(loteDelItem);
@@ -2454,8 +2471,8 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       alert("Ocurrió un error al sincronizar: " + e.message);
     } finally {
-      el("btn-sincronizar").disabled = false;
       el("btn-sincronizar").textContent = "Sincronizar";
+      await refrescarResumenCola(); // queda apagado si ya no hay nada pendiente
     }
   });
 

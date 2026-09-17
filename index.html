@@ -137,6 +137,7 @@
   <h2>Lote <span id="lote-actual-num"></span> · punto <span id="punto-actual-num"></span></h2>
 
   <label>Potrero del lote <span class="asterisco">*</span> <input type="text" id="potrero-nombre-punto" placeholder="Ej: Potrero 3"></label>
+  <p id="aviso-punto" class="aviso-suave" hidden></p>
 
   <form id="form-punto">
     <h3>Collaria scenica</h3>
@@ -169,13 +170,12 @@
     <h3>Observaciones de este punto</h3>
     <label>Observaciones <textarea id="observaciones" rows="2"></textarea></label>
 
-    <button type="submit">Siguiente punto</button>
-  </form>
-
-  <div class="botones-punto">
-    <button type="button" id="btn-punto-anterior" class="secundario">Punto anterior</button>
+    <div class="botones-punto">
+      <button type="button" id="btn-punto-anterior" class="secundario">Punto anterior</button>
+      <button type="submit" id="btn-punto-siguiente">Siguiente punto</button>
+    </div>
     <button type="button" id="btn-terminar-lote">Terminar lote</button>
-  </div>
+  </form>
 
   <div id="caja-observaciones-lote" class="caja-nueva" hidden>
     <h3>Observaciones lote</h3>
