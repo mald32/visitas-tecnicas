@@ -155,11 +155,25 @@ function conLimiteDeTiempo(promesa, ms) {
 
 const claveVisita = (d) => `${d.cliente}|${d.finca}|${normalizarFecha(d.fecha)}`;
 const claveVisitaLote = (d) => `${claveVisita(d)}|${d.lote === "" || d.lote == null ? "" : String(d.lote)}`;
+// Los textos del Excel se comparan y se muestran sin espacios sobrantes: si un tipo se escribió
+// "CORRECTORES DE AGUA " y luego "CORRECTORES DE AGUA", deben seguir siendo el mismo.
+const limpiar = (v) => String(v == null ? "" : v).trim();
+
 const claveProducto = (nombre, formulacion, dosis) =>
   [nombre, formulacion, dosis].map((v) => String(v == null ? "" : v).trim().toLowerCase()).join("|");
 
 // Promedios y dispersión de un conjunto de puntos de muestreo. La "unidad" puede ser un lote (informe
 // de una visita) o una finca completa (informe de un cliente): el cálculo es el mismo.
+// Los puntos tal como se capturaron, para poder mostrarlos en la ventana de detalle del informe.
+function puntosDeUnidad(sub) {
+  return sub.map((f) => ({
+    lote: f[COL.lote], punto: f[COL.punto],
+    adultos: f[COL.adultos], ninfas: f[COL.ninfas], loritos: f[COL.loritos], lepidopteros: f[COL.lepidopteros],
+    incid_coll: f[COL.incidColl], sev_coll: f[COL.sevColl],
+    incid_hongos: f[COL.incidHongos], sev_hongos: f[COL.sevHongos],
+  })).sort((a, b) => (a.lote - b.lote) || (a.punto - b.punto));
+}
+
 function metricasDeUnidad(sub) {
   const danoColl = promedio(sub.map((s) => s[COL.danoCollTotal]));
   const danoMol = promedio(sub.map((s) => s[COL.danoMoluscos]));
@@ -378,8 +392,8 @@ const Informes = {
     return filas
       .filter((f) => f[COL_PR.cliente] === cliente && f[COL_PR.finca] === finca && f[COL_PR.fecha] === fecha)
       .map((f) => ({
-        nombre: f[COL_PR.producto], tipo: f[COL_PR.tipo], formulacion: f[COL_PR.formulacion],
-        unidad: f[COL_PR.unidad], dosis: f[COL_PR.dosis],
+        nombre: limpiar(f[COL_PR.producto]), tipo: limpiar(f[COL_PR.tipo]), formulacion: limpiar(f[COL_PR.formulacion]),
+        unidad: limpiar(f[COL_PR.unidad]), dosis: limpiar(f[COL_PR.dosis]),
       }));
   },
 
@@ -402,8 +416,8 @@ const Informes = {
     const productos = productosFilas
       .filter((f) => f[COL_PA.cliente] === cliente && f[COL_PA.finca] === finca && f[COL_PA.fecha] === fecha && String(f[COL_PA.lote]) === String(lote))
       .map((f) => ({
-        nombre: f[COL_PA.producto], tipo: f[COL_PA.tipo], formulacion: f[COL_PA.formulacion],
-        unidad: f[COL_PA.unidad], dosis: f[COL_PA.dosis],
+        nombre: limpiar(f[COL_PA.producto]), tipo: limpiar(f[COL_PA.tipo]), formulacion: limpiar(f[COL_PA.formulacion]),
+        unidad: limpiar(f[COL_PA.unidad]), dosis: limpiar(f[COL_PA.dosis]),
       }));
 
     return { manejo, productos };
@@ -556,8 +570,8 @@ const Informes = {
       volumenMezcla: delInforme[0][COL_RC.volumenMezcla] ?? "",
       nota: delInforme[0][COL_RC.nota] || "",
       productos: delInforme.filter((f) => f[COL_RC.producto]).map((f) => ({
-        nombre: f[COL_RC.producto], tipo: f[COL_RC.tipo], formulacion: f[COL_RC.formulacion],
-        unidad: f[COL_RC.unidad], dosis: f[COL_RC.dosis],
+        nombre: limpiar(f[COL_RC.producto]), tipo: limpiar(f[COL_RC.tipo]), formulacion: limpiar(f[COL_RC.formulacion]),
+        unidad: limpiar(f[COL_RC.unidad]), dosis: limpiar(f[COL_RC.dosis]),
       })),
     };
   },
@@ -646,12 +660,13 @@ const Informes = {
       const productosLote = productosAplicados
         .filter((p) => p[COL_PA.cliente] === cliente && p[COL_PA.finca] === finca && p[COL_PA.fecha] === fecha && p[COL_PA.lote] === lote)
         .map((p) => ({
-          tipo: p[COL_PA.tipo], nombre: p[COL_PA.producto], formulacion: p[COL_PA.formulacion],
-          unidad: p[COL_PA.unidad], dosis: p[COL_PA.dosis],
+          tipo: limpiar(p[COL_PA.tipo]), nombre: limpiar(p[COL_PA.producto]), formulacion: limpiar(p[COL_PA.formulacion]),
+          unidad: limpiar(p[COL_PA.unidad]), dosis: limpiar(p[COL_PA.dosis]),
         }));
       return {
         lote, potrero: potreros.join(", "), subtitulo: potreros.length ? "Potrero " + potreros.join(", ") : "",
         observaciones, observacion_lote: observacionLote, productos: productosLote,
+        puntos: puntosDeUnidad(sub),
         ...metricasDeUnidad(sub),
         manejo: {
           tipoFumigacion: primero[COL.tipoFumigacion] || "",
@@ -715,7 +730,7 @@ const Informes = {
           const clave = claveProducto(p[COL_PA.producto], p[COL_PA.formulacion], p[COL_PA.dosis]);
           if (vistos.has(clave)) return;
           vistos.add(clave);
-          productos.push({ tipo: p[COL_PA.tipo], nombre: p[COL_PA.producto], formulacion: p[COL_PA.formulacion], unidad: p[COL_PA.unidad], dosis: p[COL_PA.dosis] });
+          productos.push({ tipo: limpiar(p[COL_PA.tipo]), nombre: limpiar(p[COL_PA.producto]), formulacion: limpiar(p[COL_PA.formulacion]), unidad: limpiar(p[COL_PA.unidad]), dosis: limpiar(p[COL_PA.dosis]) });
         });
 
       const observacionesDeLotes = observacionesLotes
@@ -733,6 +748,7 @@ const Informes = {
         productos,
         recomendados: await this.recomendacionesGuardadas(cliente, finca, fecha),
         informe: await this.informeGuardado(cliente, finca, fecha),
+        puntos: puntosDeUnidad(sub),
         ...metricasDeUnidad(sub),
         manejo: {
           tipoFumigacion: primero[COL.tipoFumigacion] || "",
@@ -995,7 +1011,10 @@ const Informes = {
         ? "1 punto de muestreo (sin dispersión)."
         : `Promedio de ${t.n_puntos} puntos de muestreo.`;
       return `<div class="lote-bloque">
-        <h3>${esc(nombreUnidad(t.lote))}${t.subtitulo ? ` — ${esc(t.subtitulo)}` : ""}</h3>
+        <h3><button type="button" class="ver-detalle no-imprimir" onclick="document.getElementById('detalle${i}').showModal()">
+          ${esc(nombreUnidad(t.lote))}${t.subtitulo ? ` — ${esc(t.subtitulo)}` : ""} <span class="lupa">ver puntos</span>
+        </button><span class="solo-pdf">${esc(nombreUnidad(t.lote))}${t.subtitulo ? ` — ${esc(t.subtitulo)}` : ""}</span></h3>
+        ${detalleHtml(t, i)}
         ${panelesHtml(valores, errores, D.tortas[i].valores)}
         <p class="nota-puntos">${nota}</p>
       </div>`;
@@ -1048,6 +1067,28 @@ const Informes = {
         texto += ` (${redondear(n * 2.5)}${unidad}/Caneca 500L - ${redondear(n * 5)}${unidad}/Caneca 1000L)`;
       }
       return texto;
+    }
+
+    // Ventana (se abre al tocar el nombre del lote o de la finca) con todos los puntos capturados.
+    function detalleHtml(t, i) {
+      const conLote = !!D.es_cliente;
+      const filas = (t.puntos || []).map((p) => `<tr>
+        ${conLote ? `<td>${esc(p.lote)}</td>` : ""}
+        <td>${esc(p.punto)}</td>
+        <td>${fmt(p.adultos)}</td><td>${fmt(p.ninfas)}</td><td>${fmt(p.loritos)}</td><td>${fmt(p.lepidopteros)}</td>
+        <td>${fmt(p.incid_coll, true)}</td><td>${fmt(p.sev_coll, true)}</td>
+        <td>${fmt(p.incid_hongos, true)}</td><td>${fmt(p.sev_hongos, true)}</td>
+      </tr>`).join("");
+      return `<dialog id="detalle${i}" class="detalle-puntos no-imprimir">
+        <h3>${esc(nombreUnidad(t.lote))}${t.subtitulo ? ` — ${esc(t.subtitulo)}` : ""}</h3>
+        <p class="hint">Datos de cada punto de muestreo, tal como se capturaron.</p>
+        <div class="tabla-scroll"><table class="tabla-lotes"><thead><tr>
+          ${conLote ? "<th>Lote</th>" : ""}<th>Punto</th>
+          <th>Collaria Adultos</th><th>Collaria Ninfas</th><th>Loritos</th><th>Lepidópteros</th>
+          <th>Incidencia Collaria</th><th>Severidad Collaria</th><th>Incidencia Hongo</th><th>Severidad Hongo</th>
+        </tr></thead><tbody>${filas}</tbody></table></div>
+        <button type="button" class="cerrar-detalle" onclick="this.closest('dialog').close()">Cerrar</button>
+      </dialog>`;
     }
 
     const tipoFumigacionTexto = TIPOS_FUMIGACION_TEXTO[manejoFumigacion.tipo] || "";
@@ -1326,23 +1367,29 @@ textarea{width:100%;min-height:72px;border:1px solid var(--linea);border-radius:
 .hint{font-size:var(--t-peq);color:var(--tinta-suave);}
 footer{margin-top:var(--e8);font-size:var(--t-micro);color:var(--tinta-suave);text-align:center;letter-spacing:.3px;}
 .tabla-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
-.solo-impresion{display:none;}
+.solo-pdf{display:none;}
+@media print{.solo-pdf{display:inline;}}
+.ver-detalle{background:none;border:none;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:left;}
+.ver-detalle:hover .lupa{background:var(--marca);color:#fff;}
+.lupa{font-family:var(--sans);font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--marca);
+  border:1px solid var(--marca);border-radius:10px;padding:1px 6px;vertical-align:2px;white-space:nowrap;}
+.detalle-puntos{border:none;border-radius:var(--radio);padding:var(--e4);max-width:96vw;box-shadow:0 10px 40px rgba(0,0,0,.25);}
+.detalle-puntos::backdrop{background:rgba(0,0,0,.45);}
+.detalle-puntos h3{margin:0 0 var(--e1);}
+.cerrar-detalle{margin-top:var(--e3);background:var(--marca);color:#fff;border:none;border-radius:20px;
+  padding:var(--e2) var(--e5);font-family:var(--sans);font-size:var(--t-peq);cursor:pointer;}
 .historial-cab{display:flex;align-items:center;gap:var(--e2);margin:var(--e3) 0;font-size:var(--t-peq);color:var(--tinta-media);}
 /* Va en su propia línea arriba del informe: flotando se montaba sobre el encabezado. */
 .boton-imprimir{display:block;margin:0 0 var(--e3) auto;background:var(--marca);color:#fff;border:none;border-radius:20px;
   padding:var(--e2) var(--e4);font-family:var(--sans);font-size:var(--t-peq);cursor:pointer;}
 
-/* --- Versión para imprimir / PDF: 3 páginas, cada una con el encabezado --- */
+/* --- Versión para imprimir / PDF: el mismo informe de la pantalla, tal cual --- */
 @page{margin:12mm;}
 @media print{
   body{max-width:none;padding:0;background:#fff;}
   .no-imprimir{display:none !important;}
-  .solo-impresion{display:block;}
-  .salto-pagina{break-before:page;page-break-before:always;height:0;}
-  /* En el PDF salen las 13 gráficas, tres por hilera, sin importar el grupo elegido en pantalla. */
-  .historial-grid{grid-template-columns:repeat(3,1fr) !important;}
-  .historial-item{display:block !important;}
-  .lote-bloque,.kpi-bloque,.historial-item,.manejo-bloque,table,.caja-fija,.reco-lista li{break-inside:avoid;}
+  /* Lo único que se cuida es que un bloque no quede partido entre dos hojas. */
+  .lote-bloque,.kpi-bloque,.historial-item,.manejo-box,table,.caja-fija,.reco-lista li{break-inside:avoid;}
   h2,h3{break-after:avoid;}
 }
 
@@ -1377,7 +1424,7 @@ ${encabezadoHtml}
 <h2 class="banner-naranja">Indicadores de productividad</h2>
 ${productividadHtml}
 
-<h2 class="banner-azul">Manejo agronómico</h2>
+<h2 class="banner-azul">Manejo Fitosanitario Actual</h2>
 ${manejoTodosHtml ? `<div class="manejo-grid">${manejoTodosHtml}</div>` : '<p class="hint">Sin manejo agronómico registrado en esta visita.</p>'}
 
 <h2>Tabla de resultados por lote</h2>
@@ -1390,15 +1437,11 @@ ${manejoTodosHtml ? `<div class="manejo-grid">${manejoTodosHtml}</div>` : '<p cl
 <p class="hint">La marca negra en cada barra es el umbral; en rojo, lo que lo supera. La línea fina muestra la dispersión entre puntos de muestreo.</p>
 <div class="lotes-grid">${porLoteHtml}</div>
 
-<div class="salto-pagina"></div>
-<div class="solo-impresion">${encabezadoHtml}</div>
 <h2 class="banner-naranja">Historial de la variable (evolucion por visita)</h2>
 <div class="historial-cab no-imprimir"><label for="varSelect">Grupo de variables:</label>
 <select id="varSelect">${opcionesVariable}</select></div>
 ${historialCanvasHtml}
 
-<div class="salto-pagina"></div>
-<div class="solo-impresion">${encabezadoHtml}</div>
 <h2 class="banner-azul">Observaciones</h2>
 <div class="caja-fija">${observacionesTexto}</div>
 

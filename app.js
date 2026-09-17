@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "57";
+const APP_VERSION = "58";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -98,7 +98,7 @@ function agregarBloqueProducto(containerId, valores = {}) {
       <label>Tipo
         <select class="p-tipo">
           <option value="">-</option>
-          ${tiposProducto.map((t) => `<option value="${t}" ${valores.tipo === t ? "selected" : ""}>${t}</option>`).join("")}
+          ${tiposProducto.map((t) => `<option value="${t}" ${texto(valores.tipo) === t ? "selected" : ""}>${t}</option>`).join("")}
         </select>
       </label>
       <label>Producto <input type="text" class="p-nombre" list="datalist-productos" value="${valores.nombre || ""}"></label>
@@ -107,7 +107,7 @@ function agregarBloqueProducto(containerId, valores = {}) {
       <label>Formulación
         <select class="p-formulacion">
           <option value="">-</option>
-          ${formulacionesProducto.map((f) => `<option value="${f}" ${valores.formulacion === f ? "selected" : ""}>${f}</option>`).join("")}
+          ${formulacionesProducto.map((f) => `<option value="${f}" ${texto(valores.formulacion) === f ? "selected" : ""}>${f}</option>`).join("")}
         </select>
       </label>
       <label>Unidad <input type="text" class="p-unidad" value="${valores.unidad || ""}"></label>
@@ -119,7 +119,7 @@ function agregarBloqueProducto(containerId, valores = {}) {
   el(containerId).appendChild(div);
 
   div.querySelector(".p-nombre").addEventListener("change", (e) => {
-    const encontrado = catalogoProductos.find((p) => p.nombre.toLowerCase() === e.target.value.trim().toLowerCase());
+    const encontrado = catalogoProductos.find((p) => texto(p.nombre).toLowerCase() === e.target.value.trim().toLowerCase());
     if (encontrado) {
       div.querySelector(".p-tipo").value = encontrado.tipo || "";
       div.querySelector(".p-formulacion").value = encontrado.formulacion || "";
@@ -143,6 +143,10 @@ function leerProductosFormulario(containerId) {
     })
     .filter((p) => p.nombre);
 }
+
+// Los textos del Excel pueden traer espacios al final ("CORRECTORES DE AGUA "): se limpian al leer
+// para que no aparezcan como si fueran otro tipo/producto distinto.
+const texto = (v) => String(v == null ? "" : v).trim();
 
 const el = (id) => document.getElementById(id);
 const PANTALLAS = ["pantalla-login", "pantalla-visita", "pantalla-lotes", "pantalla-punto", "pantalla-fin", "pantalla-informes", "pantalla-historial"];
@@ -512,7 +516,7 @@ async function leerConfigYClientesDeExcel() {
       const filasProductos = await Graph.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:F500");
       catalogoProductos = filasProductos
         .filter((f) => f[0])
-        .map((f) => ({ nombre: f[0], tipo: f[1], formulacion: f[2], unidad: f[5], orden: Number(f[4]) }));
+        .map((f) => ({ nombre: texto(f[0]), tipo: texto(f[1]), formulacion: texto(f[2]), unidad: texto(f[5]), orden: Number(f[4]) }));
       await DB.guardarCache("catalogoProductos", catalogoProductos);
       actualizarOpcionesCatalogo();
     }

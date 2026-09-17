@@ -400,15 +400,28 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     contiene(html, "Hojas atacadas por Moluscos", "va en el grupo Conteos");
   });
 
-  await pruebaAsync("el informe se imprime en 3 páginas, con el encabezado repetido y sin la firma", async () => {
+  await pruebaAsync("el PDF sale igual que la pantalla: sin cortes forzados ni encabezados repetidos", async () => {
     const { Informes } = cargarInformes({ filas: filasDosLotes });
     const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
     const html = Informes.generarHtml(D, [], "");
-    igual(html.split("<div class=\"salto-pagina\">").length - 1, 2, "2 cortes = 3 páginas");
-    igual(html.split("<div class=\"solo-impresion\">").length - 1, 2, "el encabezado se repite en las páginas 2 y 3");
+    noContiene(html, "salto-pagina", "no se fuerzan cortes de página");
+    noContiene(html, "solo-impresion", "el encabezado no se repite");
     noContiene(html, "class=\"firma\"", "el pie con el nombre del asesor ya no va");
-    contiene(html, "@media print", "hay estilos de impresión");
+    contiene(html, "@media print", "pero sí hay estilos de impresión");
+    contiene(html, "Manejo Fitosanitario Actual", "la sección cambió de nombre");
   });
+
+  await pruebaAsync("cada lote tiene su ventana con la tabla de puntos", async () => {
+    const { Informes } = cargarInformes({ filas: filasDosLotes });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
+    igual(D.tabla_lotes[0].puntos.length, 2, "el lote 1 tiene 2 puntos");
+    const html = Informes.generarHtml(D, [], "");
+    igual(html.split("<dialog id=\"detalle").length - 1, 2, "una ventana por lote");
+    contiene(html, "<th>Collaria Adultos</th>");
+    noContiene(html, "<th>Lote</th><th>Punto</th>", "en el informe de una finca no hace falta la columna Lote");
+  });
+
+
 
   // ---------------------------------------------------------------------------
   console.log("\nInforme por fincas de un cliente");
@@ -474,6 +487,14 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   });
 
   // ---------------------------------------------------------------------------
+  await pruebaAsync("en el informe por fincas la ventana incluye la columna Lote", async () => {
+    const { Informes } = cargarInformes({ filas: filasDosFincas });
+    const D = await Informes.calcularDatosCliente("CLIENTE", seleccionDosFincas);
+    const html = Informes.generarHtml(D, [], "");
+    contiene(html, "<th>Lote</th><th>Punto</th>");
+    igual(D.tabla_lotes[0].puntos.length, 3, "AMAZONAS tiene 3 puntos entre sus 2 lotes");
+  });
+
   await pruebaAsync("la recomendación del informe por fincas se guarda y se vuelve a leer", async () => {
     const { Informes } = cargarInformes({
       filas: filasDosFincas,
