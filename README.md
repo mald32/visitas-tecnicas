@@ -67,3 +67,8 @@ Si se mueve, renombra o agrega una columna en la hoja `Base de datos`, hay que a
 `esquema.js` (y nada más). La app compara los encabezados reales contra los esperados cada vez que
 inicia sesión y muestra un aviso arriba si no coinciden, en vez de escribir en la celda equivocada
 en silencio.
+
+## Para Claude
+
+Si vas a trabajar en este proyecto con Claude, lee primero [CLAUDE.md](CLAUDE.md): ahí está todo
+el contexto (flujo de datos, estructura del Excel, cómo se publica, qué quedó pendiente).
