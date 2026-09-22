@@ -11,6 +11,24 @@ const msalApp = new msal.PublicClientApplication({
 let cuentaActiva = null;
 let msalListo = false;
 
+// Excel devuelve la dirección de un rango como "'Base de datos'!A1:X40". De ahí salen la hoja y
+// dónde empieza la tabla, que es lo que se necesita para escribir en una celda suelta.
+function partesDeDireccion(direccion) {
+  const m = String(direccion || "").match(/^(?:'([^']+)'|([^!]+))!([A-Z]+)(\d+)/);
+  if (!m) return null;
+  return { hoja: m[1] || m[2], columna: m[3], fila: Number(m[4]) };
+}
+
+function numeroDeColumna(letras) {
+  return [...letras].reduce((n, c) => n * 26 + (c.charCodeAt(0) - 64), 0);
+}
+
+function letraDeColumna(numero) {
+  let n = numero, letras = "";
+  while (n > 0) { const resto = (n - 1) % 26; letras = String.fromCharCode(65 + resto) + letras; n = Math.floor((n - 1) / 26); }
+  return letras;
+}
+
 const Graph = {
   async init() {
     if (!msalListo) {
@@ -198,6 +216,28 @@ const Graph = {
       const r = await this.llamar(base);
       const indices = (r.value || []).filter((f) => coincide(f.values[0])).map((f) => f.index).sort((a, b) => b - a);
       for (const i of indices) await this.llamar(`${base}/itemAt(index=${i})`, { method: "DELETE" });
+      return indices.length;
+    });
+  },
+
+  // Cambia SOLO unas columnas de las filas que coincidan, dejando el resto de la fila como está
+  // (las columnas con fórmula siguen siendo fórmula). Se usa para corregir el manejo agronómico de
+  // una visita que ya está en el Excel: esos datos viven en las mismas filas de los puntos.
+  async actualizarColumnasDonde(nombreTabla, coincide, desdeColumna, valores) {
+    return this.conReintento(async (id) => {
+      const base = `/me/drive/items/${id}/workbook/tables('${nombreTabla}')`;
+      const rango = await this.llamar(`${base}/range?$select=address`);
+      const sitio = partesDeDireccion(rango.address);
+      if (!sitio) throw new Error("No pude ubicar la tabla " + nombreTabla + " en la hoja.");
+      const r = await this.llamar(`${base}/rows`);
+      const indices = (r.value || []).filter((f) => coincide(f.values[0])).map((f) => f.index);
+      const primera = numeroDeColumna(sitio.columna) + desdeColumna;
+      const desde = letraDeColumna(primera);
+      const hasta = letraDeColumna(primera + valores.length - 1);
+      for (const i of indices) {
+        const fila = sitio.fila + 1 + i; // +1 por la fila de encabezados de la tabla
+        await this.escribirRango(sitio.hoja, `${desde}${fila}:${hasta}${fila}`, [valores]);
+      }
       return indices.length;
     });
   },

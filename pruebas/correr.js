@@ -4,7 +4,7 @@
 
 const {
   prueba, pruebaAsync, igual, cerca, contiene, noContiene, cierto,
-  cargarApp, resumen,
+  cargarApp, elementoFalso, resumen,
 } = require("./arnes");
 
 const { ESQUEMA, verificarEncabezados } = require("../esquema.js");
@@ -620,6 +620,100 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const local = new Date();
     const esperado = `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`;
     igual(app.fechaLocalHoy(), esperado);
+  });
+
+  // -------------------------------------------------------------------------
+  // 7. Corregir el manejo de una visita que YA está en el Excel
+  //    (bug real: cambiar tipo de fumigación o volumen no se guardaba ni se subía,
+  //     porque esos datos viven en las filas de los puntos, no en una tabla aparte)
+  // -------------------------------------------------------------------------
+  console.log("\nManejo agronómico en filas ya subidas");
+
+  function graphDePrueba(filas) {
+    const escrituras = [];
+    const g = cargarApp(["graph.js"], {
+      CONFIG: { TABLE_NAME: "TablaBaseDatos", CLIENT_ID: "x", AUTHORITY: "x", REDIRECT_URI: "x", GRAPH_SCOPES: [] },
+      msal: { PublicClientApplication: function () { return { initialize: async () => {} }; } },
+      fetch: async () => ({ ok: true, json: async () => ({}) }),
+    }, ["Graph"]);
+    g.Graph.conReintento = (fn) => fn("id-archivo");
+    g.Graph.llamar = async (path) => {
+      if (path.includes("/range?$select=address")) return { address: "'Base de datos'!A1:X400" };
+      if (path.endsWith("/rows")) return { value: filas.map((f, i) => ({ index: i, values: [f] })) };
+      return {};
+    };
+    g.Graph.escribirRango = async (hoja, direccion, valores) => { escrituras.push({ hoja, direccion, valores }); };
+    return { Graph: g.Graph, escrituras };
+  }
+
+  await pruebaAsync("cambia el manejo solo en las filas de esa visita y ese lote", async () => {
+    const B = ESQUEMA.BASE;
+    const fila = (lote, punto) => {
+      const f = filaPunto({ cliente: "AVENDAÑOS", finca: "AMAZONAS", fecha: "2026-09-14" });
+      f[B.lote] = lote; f[B.punto] = punto;
+      return f;
+    };
+    const otra = filaPunto({ cliente: "OTRO", finca: "OTRA", fecha: "2026-09-14" });
+    const { Graph, escrituras } = graphDePrueba([fila(1, 1), fila(1, 2), fila(2, 1), otra]);
+
+    const cambiadas = await Graph.actualizarColumnasDonde("TablaBaseDatos",
+      (f) => f[B.cliente] === "AVENDAÑOS" && String(f[B.lote]) === "1",
+      B.tipoFumigacion, ["Aerea (Dron)", 30, "Si", 5.5]);
+
+    igual(cambiadas, 2, "solo los 2 puntos del lote 1 de esa visita");
+    igual(escrituras.length, 2, "una escritura por fila");
+    igual(escrituras[0].hoja, "Base de datos", "la hoja sale de la dirección de la tabla");
+    igual(escrituras[0].direccion, "U2:X2", "primera fila de datos: encabezado en la 1, datos desde la 2");
+    igual(escrituras[1].direccion, "U3:X3", "segunda fila de datos");
+    igual(escrituras[0].valores[0][0], "Aerea (Dron)", "escribe el tipo de fumigación");
+    igual(escrituras[0].valores[0][3], 5.5, "escribe el pH");
+  });
+
+  await pruebaAsync("no toca las columnas de los datos capturados ni las de fórmula", async () => {
+    const B = ESQUEMA.BASE;
+    const { Graph, escrituras } = graphDePrueba([filaPunto({})]);
+    await Graph.actualizarColumnasDonde("TablaBaseDatos", () => true, B.tipoFumigacion, ["", "", "", ""]);
+    igual(escrituras[0].direccion.split(":")[0].replace(/[0-9]/g, ""), "U",
+      "el manejo empieza en la columna 21 (U), después de las 20 primeras");
+    igual(escrituras[0].valores[0].length, 4, "solo las 4 columnas del manejo");
+  });
+
+  // -------------------------------------------------------------------------
+  // 8. El último punto no se pierde al terminar el lote
+  //    (bug real: se exigía el formulario completo y, si faltaba un campo,
+  //     el punto se descartaba en silencio; tocaba darle "Siguiente punto")
+  // -------------------------------------------------------------------------
+  console.log("\nÚltimo punto del lote");
+
+  function appConFormulario(valores) {
+    const elementos = new Map();
+    const dame = (id) => {
+      if (!elementos.has(id)) { const e = elementoFalso(); e.value = valores[id] || ""; elementos.set(id, e); }
+      return elementos.get(id);
+    };
+    return cargarApp(["esquema.js", "app.js"], {
+      CONFIG: { ASESOR: {} }, DB: {}, Graph: {}, Informes: {},
+      document: {
+        addEventListener() {}, getElementById: dame,
+        querySelectorAll() { return []; }, querySelector() { return elementoFalso(); },
+        createElement() { return elementoFalso(); },
+      },
+    });
+  }
+
+  prueba("un punto al que le falta un campo igual cuenta como escrito", () => {
+    const a = appConFormulario({ adultos: "3", ninfas: "", "incid-coll": "20" });
+    cierto(a.hayDatosEnPunto(), "con adultos e incidencia escritos hay que guardarlo");
+  });
+
+  prueba("un formulario en blanco no genera un punto vacío", () => {
+    const a = appConFormulario({});
+    cierto(!a.hayDatosEnPunto(), "sin nada escrito no se guarda nada");
+  });
+
+  prueba("el potrero solo no cuenta como punto (viene puesto del lote)", () => {
+    const a = appConFormulario({ "potrero-nombre-punto": "Potrero 3" });
+    cierto(!a.hayDatosEnPunto(), "el potrero es del lote, no un dato del punto");
   });
 
   process.exit(resumen());

@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "64";
+const APP_VERSION = "65";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -1212,7 +1212,25 @@ async function confirmarManejoDeLotes(lotes) {
     const m = manejoDeLote(lote);
     await registrarProductosAplicadosDeLote(lote, productosConNombre(m.productos));
     await aplicarManejoAPuntosPendientes(lote, m.campos || {});
+    await encolarManejoEnExcel(lote, m.campos || {});
   }
+}
+
+// Los puntos que YA están en el Excel no se pueden corregir cambiando la cola: el tipo de
+// fumigación, el volumen de mezcla, el orden de mezcla y el pH viven en esas mismas filas. Por eso
+// se encola un cambio para el Excel. Si los cuatro campos están vacíos no se encola nada: sería
+// borrar en el Excel un manejo que quizá solo no se alcanzó a leer.
+async function encolarManejoEnExcel(lote, campos) {
+  if (!visita) return;
+  const valores = {};
+  CLAVES_MANEJO.forEach((k) => { valores[k] = String(campos[k] == null ? "" : campos[k]).trim(); });
+  if (CLAVES_MANEJO.every((k) => !valores[k])) return;
+  const datos = { cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote, campos: valores };
+  const pendiente = (await DB.listarItems()).find((it) => it.tipo === "manejo_puntos" && it.estado === "pendiente" &&
+    it.datos.cliente === visita.cliente && it.datos.finca === visita.finca && it.datos.fecha === visita.fecha &&
+    String(it.datos.lote) === String(lote));
+  if (pendiente) await DB.eliminarItem(pendiente.id);
+  await DB.agregarItem("manejo_puntos", datos);
 }
 
 async function registrarProductosAplicadosDeLote(lote, productos) {
@@ -1447,6 +1465,33 @@ function leerCamposComunes() {
   };
 }
 
+// El potrero no cuenta: es del lote entero y viene puesto de antes, no es un dato de este punto.
+const CAMPOS_PROPIOS_DEL_PUNTO = CAMPOS_PUNTO.filter((id) => id !== "potrero-nombre-punto");
+
+// ¿El asesor alcanzó a escribir algo en el punto que está en pantalla? Se usa para no perder el
+// último punto al terminar el lote: antes se exigía el formulario completo (checkValidity) y, si
+// faltaba un solo campo, el punto se descartaba en silencio. Ahora se guarda lo que haya (los
+// campos vacíos valen 0, igual que siempre) y solo se ignora el formulario totalmente en blanco.
+function hayDatosEnPunto() {
+  return CAMPOS_PROPIOS_DEL_PUNTO.some((id) => String(el(id).value).trim() !== "");
+}
+
+// Guarda el punto que está en pantalla si tiene algo escrito y todavía no está en el Excel.
+async function guardarPuntoEnPantallaSiHayDatos() {
+  if (!capturandoLote || puntoSincronizado || !loteActual) return false;
+  if (editandoPuntoId) { await actualizarPuntoEditado(); editandoPuntoId = null; return true; }
+  if (!hayDatosEnPunto()) return false;
+  await guardarPuntoActual(puntoMostrado);
+  if (puntoMostrado >= puntoActual) puntoActual = puntoMostrado + 1;
+  // Se limpia el formulario para no volver a guardar el mismo punto si se toca el botón otra vez.
+  const potrero = el("potrero-nombre-punto").value;
+  el("form-punto").reset();
+  el("potrero-nombre-punto").value = potrero;
+  puntoMostrado = puntoActual;
+  delete sinGuardar.punto[String(loteActual)];
+  return true;
+}
+
 async function guardarPuntoActual(numero) {
   const c = leerCamposComunes();
   const fila = [
@@ -1539,13 +1584,7 @@ async function onTerminarLote() {
     marcarCampoInvalido(el("potrero-nombre-punto"));
     return;
   }
-  if (editandoPuntoId) {
-    await actualizarPuntoEditado();
-    editandoPuntoId = null;
-  } else if (capturandoLote && !puntoSincronizado && el("form-punto").checkValidity()) {
-    await guardarPuntoActual(puntoMostrado);
-    if (puntoMostrado >= puntoActual) puntoActual = puntoMostrado + 1;
-  }
+  await guardarPuntoEnPantallaSiHayDatos();
   await aplicarPotreroATodosLosPuntos(potrero);
   capturandoLote = false;
 
@@ -1591,6 +1630,9 @@ async function onFinalizarLote() {
 }
 
 async function onFinMuestreo() {
+  // Si quedó un punto escrito sin cerrar el lote (se salió a la lista sin darle "Terminar lote"),
+  // se guarda antes de cerrar la visita: si no, ese punto se perdía.
+  await guardarPuntoEnPantallaSiHayDatos();
   if (!productividadModo) {
     const caja = el("productividad-modo").closest(".seccion");
     caja.querySelector(".seccion-titulo").setAttribute("aria-expanded", "true");
@@ -2210,6 +2252,7 @@ const NOMBRE_TIPO_ITEM = {
   recomendaciones_visita: "recomendación del informe", eliminar_producto_recomendado: "borrado de un producto recomendado",
   productividad: "productividad", productividad_visita: "productividad", observacion_lote: "observaciones del lote",
   informe_generado: "registro del informe", recomendaciones_cliente: "recomendación del informe por fincas", eliminar_visita: "borrado de la visita", eliminar_lote: "borrado de un lote",
+  manejo_puntos: "manejo agronómico (tipo de fumigación, volumen, orden y pH)",
 };
 
 // Tablas que la app espera encontrar en el Excel para ciertos datos (si no están, Graph responde
@@ -2239,6 +2282,7 @@ function coincideVisitaExcel(fila, columnas, d, conLote) {
 function grupoDeOrden(it) {
   const d = it.datos || {};
   if (it.tipo === "producto_aplicado" || it.tipo === "eliminar_producto_aplicado") return `pa|${d.cliente}|${d.finca}|${d.fecha}|${d.lote}`;
+  if (it.tipo === "manejo_puntos") return `mp|${d.cliente}|${d.finca}|${d.fecha}|${d.lote}`;
   if (it.tipo === "productividad_visita") return `pf|${d.cliente}|${d.finca}|${d.fecha}`;
   if (it.tipo === "observacion_lote") return `ol|${d.cliente}|${d.finca}|${d.fecha}|${d.lote}`;
   if (it.tipo === "informe_generado") return `ig|${d.cliente}|${d.finca}|${d.fecha}`;
@@ -2315,6 +2359,12 @@ async function subirItem(it) {
         p.dosis == null ? "" : p.dosis, d.tipoFumigacion || "", d.volumenMezcla || "", d.nota || "",
       ]);
     }
+  } else if (it.tipo === "manejo_puntos") {
+    const B = ESQUEMA.BASE;
+    const c = d.campos || {};
+    await Graph.actualizarColumnasDonde(CONFIG.TABLE_NAME,
+      (f) => coincideVisitaExcel(f, B, d, true), B.tipoFumigacion,
+      [c.tipoFumigacion || "", c.litrosMezclaHa || "", c.ordenMezclaCorrecto || "", c.phFinalMezcla || ""]);
   } else if (it.tipo === "informe_generado") {
     await Graph.eliminarFilasDonde(CONFIG.TABLA_INFORMES_GENERADOS, (f) => coincideVisitaExcel(f, ESQUEMA.INFORMES_GENERADOS, d, false));
     await Graph.agregarFilaEnTabla(CONFIG.TABLA_INFORMES_GENERADOS, [
