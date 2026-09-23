@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "65";
+const APP_VERSION = "66";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -385,7 +385,6 @@ function fechaLocalHoy() {
 
 async function iniciar() {
   el("app-version").textContent = "v" + APP_VERSION;
-  el("btn-actualizar-version").addEventListener("click", actualizarAhora);
   revisarVersionPublicada();
   refrescarResumenCola(); // el botón de sincronizar arranca apagado si no hay nada pendiente
   registrarServiceWorker();
@@ -416,6 +415,7 @@ async function iniciar() {
 }
 
 async function despuesDeLogin() {
+  sesionIniciada = true;
   await cargarConfigYClientes();
   el("nav-tabs").hidden = false;
   await cargarBorradores();
@@ -426,6 +426,8 @@ async function despuesDeLogin() {
     await mostrarInicioVisitas();
   }
   if (navigator.onLine) verificarFormatoDelExcel(); // en segundo plano: no debe demorar la entrada
+  arrancarSincronizacionAutomatica();
+  sincronizarEnSegundoPlano(); // lo que quedó de la salida anterior sube solo al entrar
 }
 
 // Visitas iniciadas y no terminadas, de la más reciente a la más antigua.
@@ -1667,7 +1669,7 @@ async function onFinMuestreo() {
   const pendientes = puntosVisita.filter((p) => p.estado === "pendiente");
   let resumen = `${visita.cliente} · ${visita.finca} · ${visita.fecha}\n` + lineas.join("\n");
   if (pendientes.length > 0) {
-    resumen += `\n\n${pendientes.length} punto(s) guardado(s) localmente. Dale a "Sincronizar" arriba cuando quieras subirlos a Excel.`;
+    resumen += `\n\n${pendientes.length} punto(s) guardado(s) en el celular. Se suben solos apenas haya internet.`;
     const error = pendientes.find((p) => p.ultimoError)?.ultimoError;
     if (error) resumen += `\nÚltimo error al intentar subir: ${error}`;
   } else {
@@ -1675,6 +1677,7 @@ async function onFinMuestreo() {
   }
   el("resumen-final").textContent = resumen;
   await borrarBorrador(); // la visita terminada sale de "Visitas en curso"
+  sincronizarEnSegundoPlano(); // si hay señal, la visita terminada se sube sola
   visita = null;
   loteActual = null;
   pantallaFlujo = null;
@@ -1689,10 +1692,36 @@ async function onFinMuestreo() {
 async function refrescarResumenCola() {
   const items = await DB.listarItems();
   const pendientes = items.filter((it) => it.estado === "pendiente").length;
-  el("btn-sincronizar").disabled = pendientes === 0;
+  const boton = el("btn-sincronizar");
+  boton.disabled = pendientes === 0;
+  boton.classList.toggle("pendiente", pendientes > 0); // naranja si hay algo esperando, gris si no
   el("resumen-cola").textContent = pendientes > 0
     ? `${pendientes} punto(s)/dato(s) pendiente(s) de subir a tu Excel.`
     : "Todo sincronizado con tu Excel.";
+  return pendientes;
+}
+
+// Sube solo lo que haya pendiente, sin avisos: se usa al recuperar señal, al volver a la app y de
+// rato en rato. Así una visita terminada en el potrero llega al Excel apenas haya internet, sin
+// tener que acordarse de darle a "Sincronizar".
+async function sincronizarEnSegundoPlano() {
+  if (!navigator.onLine || sincronizando || !sesionIniciada || capturandoLote) return;
+  const pendientes = await refrescarResumenCola();
+  if (pendientes === 0) return;
+  await sincronizar({ silencioso: true });
+  await refrescarResumenCola();
+  try { await renderVisitasEnCurso(); } catch (e) { /* la pantalla puede no estar visible */ }
+}
+
+// Cada 2 minutos se revisa si quedó algo por subir (por si la señal volvió sin que el celular
+// avisara, que en el campo pasa todo el tiempo).
+let automaticaArrancada = false;
+function arrancarSincronizacionAutomatica() {
+  if (automaticaArrancada) return;
+  automaticaArrancada = true;
+  window.addEventListener("online", sincronizarEnSegundoPlano);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) sincronizarEnSegundoPlano(); });
+  setInterval(sincronizarEnSegundoPlano, 120000);
 }
 
 // ---------- Pestaña Informes ----------
@@ -2376,8 +2405,10 @@ async function subirItem(it) {
   return true;
 }
 
+let sesionIniciada = false;
 let sincronizando = false;
-async function sincronizar() {
+async function sincronizar(opciones = {}) {
+  const silencioso = opciones.silencioso === true;
   if (sincronizando || !navigator.onLine) return;
   sincronizando = true;
   const errores = [];
@@ -2439,7 +2470,10 @@ async function sincronizar() {
     sincronizando = false;
     Informes.invalidarCache(); // lo recién subido se vuelve a leer del Excel
     refrescarResumenCola();
-    if (errores.length > 0) {
+    if (silencioso) {
+      // Subida automática: si algo falla queda pendiente y se reintenta luego, sin interrumpir.
+      if (errores.length > 0) console.warn("Quedaron datos pendientes:", errores.join(" | "));
+    } else if (errores.length > 0) {
       alert(
         (subidos > 0 ? `${subidos} dato(s) subido(s) correctamente.\n\n` : "") +
         "No se pudieron subir " + errores.length + " dato(s) a Excel.\n\n" + errores.slice(0, 3).join("\n\n")
@@ -2458,27 +2492,22 @@ function actualizarEstadoConexion() {
 // Registra el service worker y hace que, apenas haya una version nueva instalada, la pagina se
 // recargue sola una vez para aplicarla (sin tener que borrar datos del sitio a mano).
 // La app pregunta a internet qué versión está publicada (version.json, sin caché) y se compara con
-// la suya. Si el celular se quedó con una copia vieja, se actualiza sola una vez y, si aun así no
-// cambia, deja el aviso con el botón "Actualizar", que borra las copias guardadas y recarga.
+// la suya. Si el celular se quedó con una copia vieja, se refresca sola y ya: sin avisos ni botones,
+// que era lo que estorbaba en pantalla. Como la visita en curso se guarda con cada tecla, al
+// recargar vuelve exactamente a donde iba.
 let revisandoVersion = false;
 async function revisarVersionPublicada() {
-  if (!navigator.onLine || revisandoVersion) return;
+  if (!navigator.onLine || revisandoVersion || sincronizando) return;
   revisandoVersion = true;
   try {
     const resp = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
     const datos = await resp.json();
     const publicada = String(datos.version || "");
-    if (!publicada || publicada === APP_VERSION) {
-      el("aviso-version").hidden = true;
-      return;
-    }
-    el("aviso-version-texto").textContent = `Hay una versión nueva (v${publicada}). Tienes la v${APP_VERSION}.`;
-    el("aviso-version").hidden = false;
-    // Un intento automático por sesión; si no funciona, queda el botón.
-    if (!sessionStorage.getItem("intentoActualizar")) {
-      sessionStorage.setItem("intentoActualizar", "1");
-      await actualizarAhora();
-    }
+    if (!publicada || publicada === APP_VERSION) return;
+    // Una sola vez por sesión: si algo saliera mal, no se queda recargando en bucle.
+    if (sessionStorage.getItem("intentoActualizar")) return;
+    sessionStorage.setItem("intentoActualizar", "1");
+    await actualizarAhora();
   } catch (e) {
     console.warn("No se pudo revisar la versión publicada:", e.message);
   } finally {
