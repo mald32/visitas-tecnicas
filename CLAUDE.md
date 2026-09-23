@@ -94,11 +94,11 @@ silencio).
 |---|---|
 | `Base de datos` / `TablaBaseDatos` | Una fila **por punto de muestreo**. 24 columnas. |
 | `Productos_Aplicados` | Lo que el ganadero **ya aplicó** (manejo agronómico). 9 columnas. |
-| `Productos_Recomendados` | Lo que el asesor **recomienda** en el informe por finca. 9 columnas. La columna Lote va vacía **por diseño**. |
+| `Productos_Recomendados` | Lo que el asesor **recomienda** en el informe **de una finca** (cliente+finca+fecha). 9 columnas. La columna Lote va vacía **por diseño**. |
 | `Productividad_Fincas` | Área, animales, días, producción. 11 columnas. |
 | `Observaciones_Lotes` | Lo que se escribe al terminar cada lote. 6 columnas. |
 | `Informes_Generados` | Una fila por visita con informe. 7 columnas. **Alimenta el Historial.** |
-| `Recomendaciones_Cliente` | La recomendación del informe **por fincas de un cliente**. 10 columnas. |
+| `Recomendaciones_Cliente` | La recomendación del informe **por fincas de un cliente** (cliente+fecha del informe, sin finca). 10 columnas. Es una tabla aparte a propósito: no se mezcla con `Productos_Recomendados`. |
 | `Productos` / `Tabla2` | Catálogo de productos (nombre, tipo, formulación, siglas, orden de mezcla). |
 | `Clientes_Fincas` | Clientes, fincas y sus lotes. |
 | `Configuracion` | `A8:C19` = variable, **umbral** (col B), **máximo permitido** (col C). |
@@ -160,6 +160,15 @@ Lecciones ya aprendidas, **no deshacer**:
 
 ---
 
+## 6 bis. Subida automática
+
+Desde la v66 no hay que darle a "Sincronizar": lo pendiente sube solo al entrar, al recuperar señal,
+al volver a la app, al terminar una visita y cada 2 minutos (`sincronizarEnSegundoPlano`). En
+silencio: si algo falla queda pendiente y se reintenta, sin sacar avisos. **No sube mientras se está
+muestreando un lote** (`capturandoLote`): el potrero se les pone a todos los puntos al terminar el
+lote y un punto ya subido no se puede corregir. El botón queda **naranja** cuando hay algo esperando
+y **gris** cuando no.
+
 ## 7. Versiones y publicación
 
 Este fue un dolor real: el celular se quedaba pegado en versiones viejas ("que pereza, sigo en la
@@ -169,10 +178,11 @@ Este fue un dolor real: el celular se quedaba pegado en versiones viejas ("que p
    `CACHE_NAME` (sw.js) y `version.json`.
 2. `sw.js` **nunca** intercepta `version.json`.
 3. `app.js` → `revisarVersionPublicada()` pide `version.json` con `cache: "no-store"` al abrir, al
-   volver a la app (`visibilitychange`) y al recuperar conexión. Si está atrasada, hace **un**
-   intento automático por sesión (`sessionStorage`) y muestra la franja verde con el botón
-   **Actualizar** → `actualizarAhora()`: `postMessage("activar-ya")`, `registro.update()`, borra
-   **todas** las cachés y recarga. **No toca los datos capturados.**
+   volver a la app (`visibilitychange`) y al recuperar conexión. Si está atrasada, se actualiza sola
+   **una vez por sesión** (`sessionStorage`) con `actualizarAhora()`: `postMessage("activar-ya")`,
+   `registro.update()`, borra **todas** las cachés y recarga. **En silencio**: la franja verde con el
+   botón "Actualizar" se quitó en la v66 porque estorbaba en pantalla (el usuario la quiere así: que
+   se actualice sola al refrescar). **No toca los datos capturados.**
 
 ### Cómo publicar
 ```bash
@@ -220,10 +230,16 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ---
 
-## 10. Estado al 17 de septiembre de 2026
+## 10. Estado al 22 de septiembre de 2026
 
-- Última versión publicada: **v64**, commit `5e1900e`, `main` al día con `origin/main`.
-- 48 pruebas pasando.
+- Última versión publicada: **v66**, `main` al día con `origin/main`.
+- 53 pruebas pasando.
+- v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
+  corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
+  viven en las columnas U:X de las filas de los puntos. Y el **último punto** ya no se pierde al
+  terminar el lote: antes se exigía el formulario completo y si faltaba un campo se descartaba en
+  silencio.
+- v66: subida automática, botón naranja/gris, sin franja de versión.
 
 ### Pendiente de decisión del usuario
 1. ¿Registrar el manejo "En general" en **todos los lotes con puntos** también al **salir** de la
