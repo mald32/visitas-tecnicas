@@ -32,6 +32,9 @@ async function withStore(storeName, mode, fn) {
     const result = fn(store);
     tx.oncomplete = () => resolve(result);
     tx.onerror = () => reject(tx.error);
+    // Si algo falla dentro de la transacción, IndexedDB la aborta sin disparar onerror: sin esto la
+    // promesa quedaba esperando para siempre y la sincronización se congelaba hasta cerrar la app.
+    tx.onabort = () => reject(tx.error || new Error("Se canceló la escritura en el celular."));
   });
 }
 
@@ -56,12 +59,28 @@ const DB = {
     });
   },
 
-  async marcarSincronizado(id) {
+  async leerItem(id) {
+    return withStore(STORE_COLA, "readonly", (store) => {
+      return new Promise((resolve, reject) => {
+        const req = store.get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+    });
+  },
+
+  // Solo se marca como subido si nadie lo cambió mientras subía (misma revisión). Con la subida
+  // automática el asesor puede estar escribiendo justo cuando ese dato va para el Excel: si se
+  // marcaba igual, la corrección quedaba como "ya subida" sin haber llegado nunca.
+  async marcarSincronizado(id, revision) {
     await withStore(STORE_COLA, "readwrite", (store) => {
       const req = store.get(id);
       req.onsuccess = () => {
         const item = req.result;
+        if (!item) return; // se borró mientras subía
+        if (revision !== undefined && (item.revision || 0) !== revision) return; // cambió: queda pendiente
         item.estado = "sincronizado";
+        delete item.ultimoError;
         store.put(item);
       };
     });
@@ -76,7 +95,10 @@ const DB = {
       const req = store.get(id);
       req.onsuccess = () => {
         const item = req.result;
+        if (!item) return;
         item.datos = { ...item.datos, ...cambiosDatos };
+        item.revision = (item.revision || 0) + 1;
+        item.estado = "pendiente"; // lo cambiado siempre tiene que volver a subir
         store.put(item);
       };
     });
@@ -87,6 +109,7 @@ const DB = {
       const req = store.get(id);
       req.onsuccess = () => {
         const item = req.result;
+        if (!item) return;
         item.estado = "pendiente";
         item.ultimoError = mensaje;
         store.put(item);

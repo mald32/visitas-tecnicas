@@ -230,16 +230,19 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ---
 
-## 10. Estado al 22 de septiembre de 2026
+## 10. Estado al 23 de septiembre de 2026
 
-- Última versión publicada: **v66**, `main` al día con `origin/main`.
-- 53 pruebas pasando.
+- Última versión publicada: **v67**, `main` al día con `origin/main`.
+- 55 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
   viven en las columnas U:X de las filas de los puntos. Y el **último punto** ya no se pierde al
   terminar el lote: antes se exigía el formulario completo y si faltaba un campo se descartaba en
   silencio.
 - v66: subida automática, botón naranja/gris, sin franja de versión.
+- v67: la subida automática vuelve a leer cada dato justo antes de subirlo (no sube lo que se borró
+  mientras tanto) y usa `revision` en la cola: si un dato se corrigió mientras subía, queda
+  pendiente en vez de marcarse como subido. `withStore` rechaza en `onabort` (antes se congelaba).
 
 ### Pendiente de decisión del usuario
 1. ¿Registrar el manejo "En general" en **todos los lotes con puntos** también al **salir** de la

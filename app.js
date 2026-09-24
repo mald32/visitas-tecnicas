@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "66";
+const APP_VERSION = "67";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -2416,7 +2416,16 @@ async function sincronizar(opciones = {}) {
   try {
     const items = await DB.listarItems();
     const gruposDetenidos = new Set();
-    for (const it of items.filter((i) => i.estado === "pendiente")) {
+    for (const { id } of items.filter((i) => i.estado === "pendiente")) {
+      // Si mientras tanto se empezó a muestrear un lote, se para: el potrero de sus puntos todavía
+      // no está puesto (mismo motivo por el que la subida automática no arranca en ese momento).
+      if (silencioso && capturandoLote) break;
+      // Se vuelve a leer justo antes de subir: la lista es una foto de cuando empezó la subida, y
+      // con la subida automática el asesor pudo haber borrado o corregido ese dato mientras tanto.
+      // Antes se subían lotes ya borrados y versiones viejas de lo corregido.
+      const it = await DB.leerItem(id);
+      if (!it || it.estado !== "pendiente") continue;
+      const revision = it.revision || 0;
       const grupo = grupoDeOrden(it);
       const visitaDelItem = it.datos && it.datos.fecha ? `v|${it.datos.cliente}|${it.datos.finca}|${it.datos.fecha}` : null;
       const loteDelItem = visitaDelItem && it.datos.lote != null && it.datos.lote !== "" ? `${visitaDelItem}|${it.datos.lote}` : null;
@@ -2453,7 +2462,7 @@ async function sincronizar(opciones = {}) {
             null, null, null,
           ]);
         }
-        await DB.marcarSincronizado(it.id);
+        await DB.marcarSincronizado(it.id, revision);
         subidos += 1;
       } catch (e) {
         await DB.marcarError(it.id, e.message);

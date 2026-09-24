@@ -61,7 +61,7 @@ function cierto(valor, mensaje) {
 function elementoFalso() {
   const el = {
     value: "", textContent: "", innerHTML: "", hidden: false, disabled: false,
-    dataset: {}, style: {}, classList: { add() {}, remove() {}, contains() { return false; } },
+    dataset: {}, style: {}, classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     addEventListener() {}, removeEventListener() {}, appendChild() {}, remove() {}, focus() {},
     scrollIntoView() {}, closest() { return elementoFalso(); },
     querySelector() { return elementoFalso(); }, querySelectorAll() { return []; },

@@ -716,5 +716,42 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     cierto(!a.hayDatosEnPunto(), "el potrero es del lote, no un dato del punto");
   });
 
+  // -------------------------------------------------------------------------
+  // Subida automática mientras el asesor sigue trabajando (v67: antes se subían datos ya borrados
+  // y lo corregido durante la subida quedaba marcado como "ya subido" sin haber llegado al Excel)
+  // -------------------------------------------------------------------------
+  console.log("\nSubida automática mientras se edita");
+
+  function appConCola(items, alSubir) {
+    const cola = new Map(items.map((it) => [it.id, { estado: "pendiente", ...it }]));
+    const subidos = [];
+    const marcados = [];
+    const DB = {
+      async listarItems() { return [...cola.values()].map((it) => ({ ...it })); },
+      async leerItem(id) { return cola.has(id) ? { ...cola.get(id) } : null; },
+      async eliminarItem(id) { cola.delete(id); },
+      async actualizarDatosItem(id, datos) { const it = cola.get(id); it.datos = { ...it.datos, ...datos }; it.revision = (it.revision || 0) + 1; },
+      async marcarSincronizado(id, revision) { marcados.push({ id, revision }); const it = cola.get(id); if (it && (it.revision || 0) === revision) it.estado = "sincronizado"; },
+      async marcarError(id, msg) { const it = cola.get(id); if (it) it.ultimoError = msg; },
+    };
+    const Graph = { async agregarFila(fila) { subidos.push(fila); await alSubir(DB, subidos.length); } };
+    const a = cargarApp(["esquema.js", "app.js"], { CONFIG: { ASESOR: {} }, DB, Graph, Informes: { invalidarCache() {} } });
+    return { a, cola, subidos, marcados };
+  }
+  const puntoCola = (id, lote) => ({ id, tipo: "punto", datos: { cliente: "C", finca: "F", fecha: "2026-09-23", lote, fila: new Array(24).fill(id) } });
+
+  await pruebaAsync("un lote borrado mientras se subía ya no se sube", async () => {
+    const { a, subidos } = appConCola([puntoCola(1, 1), puntoCola(2, 2)], async (DB, n) => { if (n === 1) await DB.eliminarItem(2); });
+    await a.sincronizar({ silencioso: true });
+    igual(subidos.length, 1, "solo debía subir el punto que sigue existiendo");
+  });
+
+  await pruebaAsync("lo corregido mientras se subía queda pendiente para volver a subir", async () => {
+    const { a, cola, marcados } = appConCola([puntoCola(1, 1)], async (DB) => { await DB.actualizarDatosItem(1, { fila: [] }); });
+    await a.sincronizar({ silencioso: true });
+    igual(marcados[0].revision, 0, "debe avisar qué versión subió");
+    igual(cola.get(1).estado, "pendiente", "la corrección no puede quedar como ya subida");
+  });
+
   process.exit(resumen());
 })();
