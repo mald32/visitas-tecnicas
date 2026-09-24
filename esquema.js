@@ -48,6 +48,10 @@ const ESQUEMA = {
     tipoFumigacion: 7, volumenMezcla: 8, nota: 9,
   },
 
+  // Hoja Visitas (tabla Visitas): una fila por visita. La leerá el agente del asesor para decir a
+  // quién hace rato no visita. Lotes, puntos y días desde la visita son fórmulas del Excel.
+  VISITAS: { cliente: 0, finca: 1, fecha: 2 },
+
   // Catálogo de la hoja Productos (tabla Tabla2).
   PRODUCTOS: { nombre: 0, tipo: 1, formulacion: 2, siglas: 3, orden: 4, unidad: 5 },
 
@@ -97,6 +101,7 @@ const ESQUEMA = {
       unidad: "Unidad", dosis: "Dosis", tipoFumigacion: "Tipo de fumigacion", volumenMezcla: "Volumen de mezcla", nota: "Nota general",
     },
     PRODUCTOS: { nombre: "Nombre", tipo: "Tipo", formulacion: "Formulacion", siglas: "Siglas", orden: "Orden", unidad: "Unidad" },
+    VISITAS: { cliente: "Cliente", finca: "Finca", fecha: "Fecha visita" },
   },
 
   // Columnas que en el Excel son fórmulas: se leen, pero nunca se escriben (se mandan vacías para

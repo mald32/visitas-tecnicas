@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "2.1";
+const APP_VERSION = "2.2";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -318,6 +318,9 @@ async function onBorrarVisita() {
   }
   for (const it of deLaVisita) await DB.eliminarItem(it.id);
   if (enExcel) await DB.agregarItem("eliminar_visita", { cliente: v.cliente, finca: v.finca, fecha: v.fecha });
+  // Si se vuelve a hacer una visita a esa finca ese mismo día, se debe volver a anotar en la lista.
+  const claveVisitaBorrada = `${v.cliente}|${v.finca}|${v.fecha}`;
+  await DB.guardarCache("visitasRegistradas", ((await DB.leerCache("visitasRegistradas")) || []).filter((k) => k !== claveVisitaBorrada));
 
   await borrarBorrador();
   visita = null;
@@ -473,6 +476,7 @@ async function verificarFormatoDelExcel() {
     [CONFIG.TABLA_PRODUCTOS_RECOMENDADOS, "PRODUCTOS_RECOMENDADOS"], [CONFIG.TABLA_PRODUCTIVIDAD, "PRODUCTIVIDAD"],
     [CONFIG.TABLA_OBSERVACIONES_LOTES, "OBSERVACIONES_LOTES"], [CONFIG.TABLA_INFORMES_GENERADOS, "INFORMES_GENERADOS"],
     [CONFIG.TABLA_RECOMENDACIONES_CLIENTE, "RECOMENDACIONES_CLIENTE"], [CONFIG.TABLA_PRODUCTOS, "PRODUCTOS"],
+    [CONFIG.TABLA_VISITAS, "VISITAS"],
   ];
   const problemas = [];
   for (const [tabla, clave] of tablas) {
@@ -1520,6 +1524,26 @@ async function guardarPuntoActual(numero) {
   await DB.agregarItem("punto", {
     cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: loteActual, fila,
   });
+  await registrarVisitaEnLaLista(visita);
+}
+
+// La hoja Visitas del Excel lleva una fila por visita (cliente, finca, fecha) para que el agente
+// del asesor pueda decirle a quién hace rato no visita. Se anota con el primer punto (una visita
+// sin puntos no fue una visita de campo) y una sola vez: al subir se reemplaza la fila de esa
+// visita, así que aunque se repitiera no quedaría duplicada.
+async function registrarVisitaEnLaLista(v) {
+  const clave = `${v.cliente}|${v.finca}|${v.fecha}`;
+  const registradas = (await DB.leerCache("visitasRegistradas")) || [];
+  if (registradas.includes(clave)) return;
+  await DB.agregarItem("visita", { cliente: v.cliente, finca: v.finca, fecha: v.fecha });
+  await DB.guardarCache("visitasRegistradas", [...registradas, clave]);
+}
+
+// Puntos que quedaron pendientes de una versión anterior (sin la hoja Visitas): su visita también
+// se anota, para que no falte en la lista del agente.
+async function registrarVisitasDePuntosPendientes() {
+  const pendientes = (await DB.listarItems()).filter((it) => it.tipo === "punto" && it.estado === "pendiente");
+  for (const it of pendientes) await registrarVisitaEnLaLista(it.datos);
 }
 
 // Actualiza (en vez de crear) el punto que se esta corrigiendo con "Punto anterior".
@@ -2284,7 +2308,7 @@ const NOMBRE_TIPO_ITEM = {
   eliminar_producto_aplicado: "borrado de un producto aplicado", producto_recomendado: "producto recomendado",
   recomendaciones_visita: "recomendación del informe", eliminar_producto_recomendado: "borrado de un producto recomendado",
   productividad: "productividad", productividad_visita: "productividad", observacion_lote: "observaciones del lote",
-  informe_generado: "registro del informe", recomendaciones_cliente: "recomendación del informe por fincas", eliminar_visita: "borrado de la visita", eliminar_lote: "borrado de un lote",
+  informe_generado: "registro del informe", visita: "anotación en la lista de visitas", recomendaciones_cliente: "recomendación del informe por fincas", eliminar_visita: "borrado de la visita", eliminar_lote: "borrado de un lote",
   manejo_puntos: "manejo agronómico (tipo de fumigación, volumen, orden y pH)",
 };
 
@@ -2292,7 +2316,7 @@ const NOMBRE_TIPO_ITEM = {
 // "ItemNotFound" y conviene decir cuál falta en vez de mostrar el error crudo).
 const TABLA_DE_TIPO = {
   observacion_lote: "Observaciones_Lotes", informe_generado: "Informes_Generados",
-  recomendaciones_cliente: "Recomendaciones_Cliente",
+  recomendaciones_cliente: "Recomendaciones_Cliente", visita: "Visitas",
 };
 
 function descripcionItem(it) {
@@ -2319,6 +2343,7 @@ function grupoDeOrden(it) {
   if (it.tipo === "productividad_visita") return `pf|${d.cliente}|${d.finca}|${d.fecha}`;
   if (it.tipo === "observacion_lote") return `ol|${d.cliente}|${d.finca}|${d.fecha}|${d.lote}`;
   if (it.tipo === "informe_generado") return `ig|${d.cliente}|${d.finca}|${d.fecha}`;
+  if (it.tipo === "visita") return `vi|${d.cliente}|${d.finca}|${d.fecha}`;
   if (it.tipo === "recomendaciones_cliente") return `rc|${d.cliente}|${d.fechaInforme}`;
   if (["producto_recomendado", "eliminar_producto_recomendado", "recomendaciones_visita"].includes(it.tipo)) return `pr|${d.cliente}|${d.finca}|${d.fecha}`;
   return null;
@@ -2330,6 +2355,7 @@ function tablasDeVisita() {
     [CONFIG.TABLE_NAME, ESQUEMA.BASE], [CONFIG.TABLA_PRODUCTOS_APLICADOS, ESQUEMA.PRODUCTOS_APLICADOS],
     [CONFIG.TABLA_PRODUCTOS_RECOMENDADOS, ESQUEMA.PRODUCTOS_RECOMENDADOS], [CONFIG.TABLA_PRODUCTIVIDAD, ESQUEMA.PRODUCTIVIDAD],
     [CONFIG.TABLA_OBSERVACIONES_LOTES, ESQUEMA.OBSERVACIONES_LOTES], [CONFIG.TABLA_INFORMES_GENERADOS, ESQUEMA.INFORMES_GENERADOS],
+    [CONFIG.TABLA_VISITAS, ESQUEMA.VISITAS],
   ];
 }
 
@@ -2399,6 +2425,9 @@ async function subirItem(it) {
       tipoFumigacion: c.tipoFumigacion || "", litrosMezclaHa: c.litrosMezclaHa || "",
       ordenMezclaCorrecto: c.ordenMezclaCorrecto || "", phFinalMezcla: c.phFinalMezcla || "",
     });
+  } else if (it.tipo === "visita") {
+    await Graph.eliminarFilasDonde(CONFIG.TABLA_VISITAS, (f) => coincideVisitaExcel(f, ESQUEMA.VISITAS, d, false));
+    await Graph.agregarFilaEnTabla(CONFIG.TABLA_VISITAS, [d.cliente, d.finca, d.fecha]);
   } else if (it.tipo === "informe_generado") {
     await Graph.eliminarFilasDonde(CONFIG.TABLA_INFORMES_GENERADOS, (f) => coincideVisitaExcel(f, ESQUEMA.INFORMES_GENERADOS, d, false));
     await Graph.agregarFilaEnTabla(CONFIG.TABLA_INFORMES_GENERADOS, [
@@ -2417,6 +2446,7 @@ async function sincronizar(opciones = {}) {
   if (sincronizando || !navigator.onLine) return;
   sincronizando = true;
   Graph.olvidarTitulos(); // se escribe según cómo esté la tabla ahora, no como estaba al abrir la app
+  try { await registrarVisitasDePuntosPendientes(); } catch (e) { console.warn("No se pudo anotar la visita:", e.message); }
   const errores = [];
   let subidos = 0;
   try {

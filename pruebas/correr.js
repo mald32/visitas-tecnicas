@@ -955,7 +955,12 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const cola = new Map(items.map((it) => [it.id, { estado: "pendiente", ...it }]));
     const subidos = [];
     const marcados = [];
+    const cache = {};
+    const filasVisitas = [];
     const DB = {
+      async leerCache(k) { return cache[k] ?? null; },
+      async guardarCache(k, v) { cache[k] = v; },
+      async agregarItem(tipo, datos) { const id = Math.max(0, ...cola.keys()) + 1; cola.set(id, { id, tipo, datos, estado: "pendiente" }); return id; },
       async listarItems() { return [...cola.values()].map((it) => ({ ...it })); },
       async leerItem(id) { return cola.has(id) ? { ...cola.get(id) } : null; },
       async eliminarItem(id) { cola.delete(id); },
@@ -963,9 +968,13 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
       async marcarSincronizado(id, revision) { marcados.push({ id, revision }); const it = cola.get(id); if (it && (it.revision || 0) === revision) it.estado = "sincronizado"; },
       async marcarError(id, msg) { const it = cola.get(id); if (it) it.ultimoError = msg; },
     };
-    const Graph = { olvidarTitulos() {}, async agregarFila(fila) { subidos.push(fila); await alSubir(DB, subidos.length); } };
-    const a = cargarApp(["esquema.js", "app.js"], { CONFIG: { ASESOR: {} }, DB, Graph, Informes: { invalidarCache() {} } });
-    return { a, cola, subidos, marcados };
+    const Graph = {
+      olvidarTitulos() {}, async agregarFila(fila) { subidos.push(fila); await alSubir(DB, subidos.length); },
+      async eliminarFilasDonde() { return 0; },
+      async agregarFilaEnTabla(tabla, fila) { if (tabla === "Visitas") filasVisitas.push(fila); },
+    };
+    const a = cargarApp(["esquema.js", "app.js"], { CONFIG: { ASESOR: {}, TABLA_VISITAS: "Visitas" }, DB, Graph, Informes: { invalidarCache() {} } });
+    return { a, cola, subidos, marcados, filasVisitas };
   }
   const puntoCola = (id, lote) => ({ id, tipo: "punto", datos: { cliente: "C", finca: "F", fecha: "2026-09-23", lote, fila: new Array(24).fill(id) } });
 
@@ -980,6 +989,19 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     await a.sincronizar({ silencioso: true });
     igual(marcados[0].revision, 0, "debe avisar qué versión subió");
     igual(cola.get(1).estado, "pendiente", "la corrección no puede quedar como ya subida");
+  });
+
+  // -------------------------------------------------------------------------
+  // Lista de visitas (hoja Visitas) para el agente del asesor
+  // -------------------------------------------------------------------------
+  console.log("\nLista de visitas");
+
+  await pruebaAsync("cada visita queda una sola vez en la hoja Visitas, aunque tenga varios puntos", async () => {
+    const { a, filasVisitas, subidos } = appConCola([puntoCola(1, 1), puntoCola(2, 2)], async () => {});
+    await a.sincronizar({ silencioso: true });
+    igual(subidos.length, 2, "los dos puntos suben");
+    igual(filasVisitas.length, 1, "una sola fila para la visita");
+    igual(JSON.stringify(filasVisitas[0]), JSON.stringify(["C", "F", "2026-09-23"]), "cliente, finca y fecha");
   });
 
   process.exit(resumen());

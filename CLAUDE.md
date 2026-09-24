@@ -44,7 +44,7 @@ dato.
 | `sw.js` | Service worker (offline + control de versión). |
 | `version.json` | `{"version":"2.N"}` — lo que la app consulta para saber si se quedó atrás. |
 | `publicar.js` | Sube la versión en un paso, corriendo antes las pruebas. |
-| `pruebas/` | 70 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
+| `pruebas/` | 71 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
 | `lib/msal-browser.min.js` | MSAL copiado al repo **a propósito** (desde CDN no abría sin internet). |
 
 ---
@@ -59,7 +59,7 @@ Se vacía al tocar *Sincronizar* o al generar un informe.
 `punto`, `cliente_finca`, `actualizar_lotes`, `producto_nuevo`, `producto_aplicado`,
 `eliminar_producto_aplicado`, `producto_recomendado`, `eliminar_producto_recomendado`,
 `recomendaciones_visita`, `productividad`, `productividad_visita`, `observacion_lote`,
-`informe_generado`, `recomendaciones_cliente`, `eliminar_visita`, `eliminar_lote`.
+`informe_generado`, `recomendaciones_cliente`, `eliminar_visita`, `eliminar_lote`, `visita`.
 
 ### Patrón "item de reemplazo"
 Varios tipos **no agregan: reemplazan**. Un solo pendiente por visita (o por lote) que, al subir,
@@ -106,6 +106,7 @@ tablas: se siguen leyendo por rango.
 | `Informes_Generados` | Una fila por visita con informe. 7 columnas. **Alimenta el Historial.** |
 | `Recomendaciones_Cliente` | La recomendación del informe **por fincas de un cliente** (cliente+fecha del informe, sin finca). 10 columnas. Es una tabla aparte a propósito: no se mezcla con `Productos_Recomendados`. |
 | `Productos` / `Tabla2` | Catálogo de productos (nombre, tipo, formulación, siglas, orden de mezcla). |
+| `Visitas` / `Visitas` | **Una fila por visita** (Cliente, Finca, Fecha visita; y fórmulas: Lotes muestreados, Puntos de muestreo, Días desde la visita). Creada el 24/09/2026 con las 42 visitas que había. **La lee un agente del usuario** para decirle a quién hace rato no visita. La app la llena sola (item `visita`, se anota con el primer punto de cada visita, una sola vez: caché `visitasRegistradas`; al subir reemplaza la fila; `eliminar_visita` también la borra). |
 | `Clientes_Fincas` | Clientes, fincas y sus lotes. |
 | `Configuracion` | `A8:C19` = variable, **umbral** (col B), **máximo permitido** (col C). |
 
@@ -257,8 +258,8 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ## 10. Estado al 24 de septiembre de 2026
 
-- Última versión publicada: **v2.1**, `main` al día con `origin/main`.
-- 70 pruebas pasando.
+- Última versión publicada: **v2.2**, `main` al día con `origin/main`.
+- 71 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
   viven en las columnas U:X de las filas de los puntos. Y el **último punto** ya no se pierde al
@@ -271,6 +272,13 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 - v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
   datos" para el muestreo por zonas y agregó abonos a Productividad).
+- **2.2**: hoja/tabla `Visitas` que la app llena sola (para el agente del usuario). En el Excel se
+  llenaron con fórmulas E "% del Lote", H "Peso de cada Potrero", M y N (verificado con Excel: M suma
+  100 % en los 83 lotes y N en las 42 fincas-visita). Para tocar el Excel se usó **Excel por COM
+  desde PowerShell** (instancia oculta, `New-Object -ComObject Excel.Application`), solo con su
+  archivo cerrado: así Excel mismo escribe y calcula, y se pueden leer los resultados. Ojo: en
+  PowerShell `$N` y `$n` son la misma variable, y una función que devuelve `Value2` necesita `, `
+  delante para no aplanar la tabla.
 - **2.1**: general de la finca = cada lote igual (como la columna N del Excel); la app acepta los
   nombres "Peso de cada zona/punto" y los viejos "Porcentaje de la zona/del punto".
 - **2.0** (antes v70): nueva numeración; filas y gráficas por potrero con fondos por nivel; general de
