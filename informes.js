@@ -125,9 +125,9 @@ function porcentajeDeZona(f) {
 
 // Cuánto pesa cada punto de `sub` en el resultado (los pesos suman 1). `sinAreas` avisa si en
 // algún nivel hubo que dar el mismo peso a potreros, lotes o fincas por falta de área.
-// Con `potrerosDeLaFinca` (estado general del informe de lotes de una finca) el 100 % se reparte
-// directamente entre todos los potreros de la finca, sin importar de qué lote son: un lote con dos
-// potreros muestreados pesa el doble que uno con un potrero (pedido explícito del asesor).
+// Con `lotesIguales` (estado general del informe de lotes de una finca) cada lote pesa lo mismo
+// dentro de la finca, tenga áreas o no: es la columna "Peso de cada punto (x Finca)" del Excel
+// (= "Peso de cada punto (x Lotes)" × "% del Lote"), definida así por el asesor.
 function pesosDePuntos(sub, opciones = {}) {
   const pesos = new Array(sub.length).fill(0);
   let sinAreas = false;
@@ -154,7 +154,7 @@ function pesosDePuntos(sub, opciones = {}) {
   };
   const niveles = [
     { clave: claveVisitaFila, medida: areaDe },
-    ...(opciones.potrerosDeLaFinca ? [] : [{ clave: (f) => String(f[COL.lote]), medida: areaDe }]),
+    { clave: (f) => String(f[COL.lote]), medida: opciones.lotesIguales ? () => 1 : areaDe },
     { clave: clavePotrero, medida: areaDe },
     { clave: (f) => limpiar(f[COL.zona]) || "1", medida: (grupo) => porcentajeDeZona(sub[grupo[0]]), esZona: true },
   ];
@@ -847,7 +847,7 @@ const Informes = {
       cliente, finca, fecha, visita_numero: visitaNumero, lotes_reales: lotesReales, lotes_finca: lotesFinca,
       etiqueta_unidad: "Lote", plural_unidad: "lotes",
       tabla_lotes: tablaLotes, umbrales, maximos,
-      ...resumenDeTabla(tablaLotes, umbrales, visita, { potrerosDeLaFinca: true }),
+      ...resumenDeTabla(tablaLotes, umbrales, visita, { lotesIguales: true }),
       ...historialDeSeries(filas, ultimos6Meses, series, umbrales),
       productividad, orden_productos: ordenProductos,
     };
@@ -1194,7 +1194,7 @@ const Informes = {
     }).join("") + (D.tabla_lotes.length <= 1 ? "" : `<div class="lote-bloque lote-bloque-promedio">
         <h3>Estado general de la finca</h3>
         ${panelesHtml(D.promedio_barras.valores, D.promedio_barras.errores, D.promedio_torta)}
-        <p class="nota-puntos">${D.es_cliente ? `Ponderado de las ${D.tabla_lotes.length} fincas.` : "Ponderado de todos los potreros de la finca."}${D.promedio_finca.sin_areas ? " Sin areas de potreros registradas." : ""}</p>
+        <p class="nota-puntos">${D.es_cliente ? `Ponderado de las ${D.tabla_lotes.length} fincas.` : "Ponderado de la finca: cada lote pesa igual y, dentro de él, cada potrero según su área o por partes iguales."}${D.promedio_finca.sin_areas ? " Sin areas de potreros registradas." : ""}</p>
       </div>`);
 
     const opcionesVariable = GRUPOS_HISTORIAL.map((g) => `<option value="${g.id}">${g.nombre}</option>`).join("") +

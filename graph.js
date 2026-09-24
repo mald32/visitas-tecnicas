@@ -267,7 +267,7 @@ const Graph = {
     const posiciones = posicionesEnExcel(clave, titulos);
     const columnas = Object.entries(cambios).map(([dato, valor]) => {
       if (posiciones[dato] === undefined) {
-        throw new Error(`En la tabla ${nombreTabla} del Excel no encuentro la columna "${ESQUEMA.TITULOS[clave][dato]}".`);
+        throw new Error(`En la tabla ${nombreTabla} del Excel no encuentro la columna "${tituloDe(clave, dato)}".`);
       }
       return { posicion: posiciones[dato], valor };
     }).sort((a, b) => a.posicion - b.posicion);

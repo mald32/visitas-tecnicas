@@ -50,6 +50,22 @@ function puntoInterno() {
 }
 const columna = (titulos, t) => titulos.indexOf(t);
 
+// Títulos como quedaron después de la reorganización de la madrugada del 24/09/2026.
+const TITULOS_BASE_REORGANIZADA = ["Cliente", "Finca", "Fecha visita", "Lote", "% del Lote", "Potrero", "Area del Potrero",
+  "Peso de cada Potrero", "Zona", "Area de la zona", "Peso de cada zona", "Peso de cada punto", "Peso de cada punto (x Lotes)",
+  "Peso de cada punto (x Finca)", "Peso de cada punto (x Fincas de un cliente)", ...TITULOS_BASE_REALES.slice(10)];
+
+prueba("reconoce los nombres nuevos de peso (Peso de cada zona / punto) y deja vacías las columnas de fórmula", () => {
+  const T = TITULOS_BASE_REORGANIZADA;
+  igual(columnasFaltantes("BASE", T).length, 0);
+  const fila = filaHaciaExcel("BASE", T, puntoInterno());
+  igual(fila[columna(T, "Peso de cada zona")], 1, "zona completa por defecto");
+  igual(fila[columna(T, "Collaria Adultos")], 7);
+  for (const t of ["% del Lote", "Peso de cada Potrero", "Peso de cada punto", "Peso de cada punto (x Lotes)", "Peso de cada punto (x Finca)"]) {
+    igual(fila[columna(T, t)], null, `"${t}" la calcula el Excel`);
+  }
+});
+
 prueba("con los títulos reales del Excel no falta ninguna columna", () => {
   igual(columnasFaltantes("BASE", TITULOS_BASE_REALES).length, 0, "Base de datos");
   igual(columnasFaltantes("PRODUCTIVIDAD", TITULOS_PRODUCTIVIDAD_REALES).length, 0, "Productividad_Fincas");
@@ -591,14 +607,14 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     contiene(Informes.generarHtml(D, [], ""), "Sin areas de potreros registradas");
   });
 
-  await pruebaAsync("el general de la finca pondera los lotes por su área muestreada", async () => {
+  await pruebaAsync("en el informe de lotes, el general de la finca da el mismo peso a cada lote", async () => {
     const filas = [
       puntoZona({ lote: 1, potrero: "P1", areaPotrero: 3, adultos: 10 }),
       puntoZona({ lote: 2, potrero: "P9", areaPotrero: 1, punto: 1, adultos: 2 }),
     ];
     const { Informes } = cargarInformes({ filas });
     const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-24");
-    cerca(D.promedio_finca.adultos, 8, 1e-9, "(10 × 3 + 2 × 1) / 4");
+    cerca(D.promedio_finca.adultos, 6, 1e-9, "(10 + 2) / 2, como la columna x Finca del Excel");
   });
 
   await pruebaAsync("el historial también pondera", async () => {
@@ -718,12 +734,21 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   // Lote 1: potrero A (10) y potrero B (20). Lote 2: potrero C (6). Sin áreas.
   const filasPotreros = [puntoPotrero(1, "A", 1, 10), puntoPotrero(1, "B", 2, 20), puntoPotrero(2, "C", 1, 6)];
 
-  await pruebaAsync("el general de la finca reparte el 100 % entre todos sus potreros", async () => {
+  await pruebaAsync("el general de la finca sigue la columna x Finca: cada lote igual, y adentro sus potreros", async () => {
     const { Informes } = cargarInformes({ filas: filasPotreros });
     const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-24");
-    cerca(D.tabla_lotes[0].adultos, 15, 1e-9, "lote 1: sus 2 potreros pesan igual");
-    cerca(D.promedio_finca.adultos, 12, 1e-9, "finca: (10 + 20 + 6) / 3, cada potrero igual");
+    cerca(D.tabla_lotes[0].adultos, 15, 1e-9, "lote 1: sus 2 potreros pesan igual (x Lotes)");
+    // Pesos x Finca: A = 25 %, B = 25 %, C = 50 %  →  10×0,25 + 20×0,25 + 6×0,5
+    cerca(D.promedio_finca.adultos, 10.5, 1e-9, "finca: cada lote 50 %");
     cierto(D.promedio_finca.sin_areas, "sin áreas se avisa");
+  });
+
+  await pruebaAsync("con áreas, los lotes siguen pesando igual en la finca (como la columna x Finca)", async () => {
+    const f = (lote, potrero, punto, adultos, area) => { const x = puntoPotrero(lote, potrero, punto, adultos); x[ESQUEMA.BASE.areaPotrero] = area; return x; };
+    const { Informes } = cargarInformes({ filas: [f(1, "A", 1, 10, 3), f(1, "B", 2, 30, 1), f(2, "C", 1, 6, 8)] });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-24");
+    cerca(D.tabla_lotes[0].adultos, 15, 1e-9, "lote 1 por área: (3×10 + 1×30) / 4");
+    cerca(D.promedio_finca.adultos, 10.5, 1e-9, "finca: (15 + 6) / 2, el lote 2 no pesa más por tener más área");
   });
 
   await pruebaAsync("un lote con 2 potreros trae filas y gráficas por potrero; uno con 1, no", async () => {

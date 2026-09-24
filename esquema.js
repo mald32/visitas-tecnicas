@@ -51,15 +51,18 @@ const ESQUEMA = {
   // Catálogo de la hoja Productos (tabla Tabla2).
   PRODUCTOS: { nombre: 0, tipo: 1, formulacion: 2, siglas: 3, orden: 4, unidad: 5 },
 
-  // Título de la columna del Excel donde vive cada dato. Al comparar no importan mayúsculas,
-  // tildes, la ñ ni los espacios de más ("Daño" y "Dano" son la misma columna), para que corregir
-  // la ortografía de un título en el Excel no rompa la app.
+  // Título de la columna del Excel donde vive cada dato (o una lista de nombres aceptados; el
+  // primero es el actual). Al comparar no importan mayúsculas, tildes, la ñ ni los espacios de más
+  // ("Daño" y "Dano" son la misma columna), para que corregir un título en el Excel no rompa la app.
   // Un dato que no aparece aquí no tiene columna propia en el Excel (se calcula al leer).
   TITULOS: {
     BASE: {
       cliente: "Cliente", finca: "Finca", fecha: "Fecha visita", lote: "Lote", potrero: "Potrero",
       areaPotrero: "Area del Potrero", zona: "Zona", areaZona: "Area de la zona",
-      pctZona: "Porcentaje de la zona", pctPunto: "Porcentaje del punto", punto: "Punto de muestreo",
+      // El 24/09/2026 se renombraron "Porcentaje de la zona/del punto" a "Peso de cada zona/punto".
+      // Se aceptan los dos nombres para que un cambio de nombre no vuelva a trabar la subida.
+      pctZona: ["Peso de cada zona", "Porcentaje de la zona"], pctPunto: ["Peso de cada punto", "Porcentaje del punto"],
+      punto: "Punto de muestreo",
       adultos: "Collaria Adultos", ninfas: "Collaria Ninfas",
       incidColl: "Incidencia Daño Collaria (% de hojas)", sevColl: "Severidad del Daño Collaria (% de la hoja)",
       loritos: "Numero de Loritos", lepidopteros: "Numero de larvas de Lepidopteros",
@@ -120,13 +123,20 @@ function normalizarTitulo(texto) {
     .toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+// Nombre con que se muestra la columna de un dato en los avisos (el actual, si tiene varios).
+function tituloDe(clave, dato) {
+  return [].concat((ESQUEMA.TITULOS[clave] || {})[dato])[0];
+}
+
 // Para cada dato de la app, en qué posición está su columna en el Excel real (según los títulos).
 function posicionesEnExcel(clave, titulosExcel) {
   const indice = new Map((titulosExcel || []).map((t, i) => [normalizarTitulo(t), i]));
   const posiciones = {};
-  for (const [dato, titulo] of Object.entries(ESQUEMA.TITULOS[clave] || {})) {
-    const i = indice.get(normalizarTitulo(titulo));
-    if (i !== undefined) posiciones[dato] = i;
+  for (const [dato, titulos] of Object.entries(ESQUEMA.TITULOS[clave] || {})) {
+    for (const titulo of [].concat(titulos)) {
+      const i = indice.get(normalizarTitulo(titulo));
+      if (i !== undefined) { posiciones[dato] = i; break; }
+    }
   }
   return posiciones;
 }
@@ -139,7 +149,7 @@ function columnasFaltantes(clave, titulosExcel) {
   const calculadas = new Set(ESQUEMA.CALCULADAS[clave] || []);
   return Object.entries(ESQUEMA.TITULOS[clave] || {})
     .filter(([dato]) => !calculadas.has(dato) && posiciones[dato] === undefined)
-    .map(([, titulo]) => titulo);
+    .map(([dato]) => tituloDe(clave, dato));
 }
 
 // Fila tal como viene del Excel → fila en el orden interno de la app.
@@ -189,5 +199,5 @@ function completarFilaBase(fila, parametros = {}) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { ESQUEMA, normalizarTitulo, posicionesEnExcel, columnasFaltantes, filaDesdeExcel, filaHaciaExcel, completarFilaBase };
+  module.exports = { ESQUEMA, normalizarTitulo, tituloDe, posicionesEnExcel, columnasFaltantes, filaDesdeExcel, filaHaciaExcel, completarFilaBase };
 }
