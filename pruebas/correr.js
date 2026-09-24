@@ -509,7 +509,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     igual(html.split("<dialog id=\"detalle").length - 1, 2, "una ventana por lote");
     contiene(html, "<th>Collaria Adultos</th>");
     noContiene(html, "<th>Lote</th><th>Potrero</th>", "en el informe de una finca no hace falta la columna Lote");
-    contiene(html, "<th>Potrero</th><th>Punto</th>", "pero sí el potrero de cada punto");
+    contiene(html, "<th>Potrero</th><th>Zona</th><th>Punto</th>", "pero sí el potrero y la zona de cada punto");
   });
 
 
@@ -660,7 +660,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const { Informes } = cargarInformes({ filas: filasDosFincas });
     const D = await Informes.calcularDatosCliente("CLIENTE", seleccionDosFincas);
     const html = Informes.generarHtml(D, [], "");
-    contiene(html, "<th>Lote</th><th>Potrero</th><th>Punto</th>");
+    contiene(html, "<th>Lote</th><th>Potrero</th><th>Zona</th><th>Punto</th>");
     igual(D.tabla_lotes[0].puntos.length, 3, "AMAZONAS tiene 3 puntos entre sus 2 lotes");
   });
 
@@ -692,20 +692,61 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   });
 
   // ---------------------------------------------------------------------------
-  await pruebaAsync("las tablas pintan el semáforo: verde, amarillo o rojo según umbral y máximo", async () => {
+  await pruebaAsync("lo que supera el umbral va en letra roja; lo demás, sin color", async () => {
     const { Informes } = cargarInformes({
       filas: [
-        filaPunto({ lote: 1, punto: 1, adultos: 3 }),   // por debajo del umbral (5) -> verde
-        filaPunto({ lote: 2, punto: 1, adultos: 8 }),   // entre umbral y máximo (10) -> amarillo
-        filaPunto({ lote: 3, punto: 1, adultos: 20 }),  // por encima del máximo -> rojo
+        filaPunto({ lote: 1, punto: 1, adultos: 3 }),   // por debajo del umbral (5)
+        filaPunto({ lote: 2, punto: 1, adultos: 8 }),   // supera el umbral (aunque no el máximo)
+        filaPunto({ lote: 3, punto: 1, adultos: 20 }),  // supera el umbral
       ],
     });
     const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
-    igual(D.maximos["Umbral de Adultos de Collaria"], 10, "el máximo se lee de la columna C");
     const html = Informes.generarHtml(D, [], "");
-    contiene(html, `<td class="sem-ok">3.0</td>`, "3 adultos: verde");
-    contiene(html, `<td class="sem-medio">8.0</td>`, "8 adultos: amarillo");
+    contiene(html, `<td>3.0</td>`, "3 adultos: normal");
+    contiene(html, `<td class="sem-alto">8.0</td>`, "8 adultos: rojo (ya no hay amarillo)");
     contiene(html, `<td class="sem-alto">20.0</td>`, "20 adultos: rojo");
+    noContiene(html, "sem-ok", "ya no se pintan fondos verdes");
+    noContiene(html, "sem-medio", "ya no se pintan fondos amarillos");
+  });
+
+  // Muestreo por potreros dentro del informe de lotes de una finca.
+  function puntoPotrero(lote, potrero, punto, adultos) {
+    const f = filaPunto({ lote, potrero, punto, adultos, fecha: "2026-09-24" });
+    f[ESQUEMA.BASE.zona] = 1; f[ESQUEMA.BASE.pctZona] = 1;
+    return f;
+  }
+  // Lote 1: potrero A (10) y potrero B (20). Lote 2: potrero C (6). Sin áreas.
+  const filasPotreros = [puntoPotrero(1, "A", 1, 10), puntoPotrero(1, "B", 2, 20), puntoPotrero(2, "C", 1, 6)];
+
+  await pruebaAsync("el general de la finca reparte el 100 % entre todos sus potreros", async () => {
+    const { Informes } = cargarInformes({ filas: filasPotreros });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-24");
+    cerca(D.tabla_lotes[0].adultos, 15, 1e-9, "lote 1: sus 2 potreros pesan igual");
+    cerca(D.promedio_finca.adultos, 12, 1e-9, "finca: (10 + 20 + 6) / 3, cada potrero igual");
+    cierto(D.promedio_finca.sin_areas, "sin áreas se avisa");
+  });
+
+  await pruebaAsync("un lote con 2 potreros trae filas y gráficas por potrero; uno con 1, no", async () => {
+    const { Informes } = cargarInformes({ filas: filasPotreros });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-24");
+    igual(D.tabla_lotes[0].potreros_detalle.length, 2, "lote 1 tiene A y B");
+    igual(D.tabla_lotes[1].potreros_detalle.length, 0, "lote 2 tiene un solo potrero: no se repite");
+    const html = Informes.generarHtml(D, [], "");
+    contiene(html, `<tr class="fila-potrero">`, "fila de potrero con su fondo");
+    contiene(html, `<tr class="fila-lote">`, "fila de lote con su fondo");
+    contiene(html, `<tr class="fila-promedio">`, "fila general con su fondo");
+    contiene(html, "Lote 1 — Potrero A", "gráficas del potrero A");
+    contiene(html, "Lote 1 — Potrero B", "gráficas del potrero B");
+    igual(html.split('class="lote-bloque lote-bloque-potrero"').length - 1, 2, "solo A y B: el lote 2 no repite gráficas");
+  });
+
+  await pruebaAsync("el informe por fincas no cambia: sin filas por potrero ni fondos por nivel", async () => {
+    const { Informes } = cargarInformes({ filas: filasPotreros });
+    const D = await Informes.calcularDatosCliente("CLIENTE", [{ finca: "FINCA", fecha: "2026-09-24" }]);
+    const html = Informes.generarHtml(D, [], "");
+    noContiene(html, `<tr class="fila-potrero">`);
+    noContiene(html, `<tr class="fila-lote">`);
+    cerca(D.tabla_lotes[0].adultos, 10.5, 1e-9, "la finca sigue pesando cada lote igual");
   });
 
   // ---------------------------------------------------------------------------

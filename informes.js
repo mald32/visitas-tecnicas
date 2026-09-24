@@ -125,7 +125,10 @@ function porcentajeDeZona(f) {
 
 // Cuánto pesa cada punto de `sub` en el resultado (los pesos suman 1). `sinAreas` avisa si en
 // algún nivel hubo que dar el mismo peso a potreros, lotes o fincas por falta de área.
-function pesosDePuntos(sub) {
+// Con `potrerosDeLaFinca` (estado general del informe de lotes de una finca) el 100 % se reparte
+// directamente entre todos los potreros de la finca, sin importar de qué lote son: un lote con dos
+// potreros muestreados pesa el doble que uno con un potrero (pedido explícito del asesor).
+function pesosDePuntos(sub, opciones = {}) {
   const pesos = new Array(sub.length).fill(0);
   let sinAreas = false;
   const agrupar = (indices, clave) => {
@@ -151,7 +154,7 @@ function pesosDePuntos(sub) {
   };
   const niveles = [
     { clave: claveVisitaFila, medida: areaDe },
-    { clave: (f) => String(f[COL.lote]), medida: areaDe },
+    ...(opciones.potrerosDeLaFinca ? [] : [{ clave: (f) => String(f[COL.lote]), medida: areaDe }]),
     { clave: clavePotrero, medida: areaDe },
     { clave: (f) => limpiar(f[COL.zona]) || "1", medida: (grupo) => porcentajeDeZona(sub[grupo[0]]), esZona: true },
   ];
@@ -265,20 +268,33 @@ const limpiar = (v) => String(v == null ? "" : v).trim();
 const claveProducto = (nombre, formulacion, dosis) =>
   [nombre, formulacion, dosis].map((v) => String(v == null ? "" : v).trim().toLowerCase()).join("|");
 
+// Un lote con 2 o más potreros muestreados lleva también su resultado por potrero (tabla y
+// gráficas). Con un solo potrero no: sería idéntico al del lote y solo alargaría el informe.
+function potrerosDeLote(sub) {
+  const grupos = new Map();
+  for (const f of sub) {
+    const k = limpiar(f[COL.potrero]).toLowerCase();
+    if (!grupos.has(k)) grupos.set(k, { potrero: limpiar(f[COL.potrero]), filas: [] });
+    grupos.get(k).filas.push(f);
+  }
+  if (grupos.size < 2) return [];
+  return [...grupos.values()].map((g) => ({ potrero: g.potrero, ...metricasDeUnidad(g.filas) }));
+}
+
 // Promedios y dispersión de un conjunto de puntos de muestreo. La "unidad" puede ser un lote (informe
 // de una visita) o una finca completa (informe de un cliente): el cálculo es el mismo.
 // Los puntos tal como se capturaron, para poder mostrarlos en la ventana de detalle del informe.
 function puntosDeUnidad(sub) {
   return sub.map((f) => ({
-    lote: f[COL.lote], potrero: f[COL.potrero], punto: f[COL.punto],
+    lote: f[COL.lote], potrero: f[COL.potrero], zona: limpiar(f[COL.zona]) || "1", punto: f[COL.punto],
     adultos: f[COL.adultos], ninfas: f[COL.ninfas], loritos: f[COL.loritos], lepidopteros: f[COL.lepidopteros],
     incid_coll: f[COL.incidColl], sev_coll: f[COL.sevColl],
     incid_hongos: f[COL.incidHongos], sev_hongos: f[COL.sevHongos],
   })).sort((a, b) => (a.lote - b.lote) || (a.punto - b.punto));
 }
 
-function metricasDeUnidad(sub) {
-  const { pesos, sinAreas } = pesosDePuntos(sub);
+function metricasDeUnidad(sub, opciones = {}) {
+  const { pesos, sinAreas } = pesosDePuntos(sub, opciones);
   const valor = (col) => ponderado(sub, pesos, (s) => s[col]);
   const dispersion = (col) => desviacionPonderada(sub, pesos, (s) => s[col]);
   const danoColl = valor(COL.danoCollTotal);
@@ -309,7 +325,7 @@ function metricasDeUnidad(sub) {
 // lotes de una finca o por fincas de un cliente.
 // `filasTodas` son todos los puntos de la finca (o de las fincas elegidas): el valor general se
 // pondera con ellos, no promediando los lotes como si todos pesaran igual.
-function resumenDeTabla(tabla, umbrales, filasTodas) {
+function resumenDeTabla(tabla, umbrales, filasTodas, opciones = {}) {
   const barrasEstatica = {
     categorias: ["Adultos de Collaria", "Ninfas de Collaria", "Loritos", "Lepidópteros"],
     umbrales: [
@@ -326,7 +342,7 @@ function resumenDeTabla(tabla, umbrales, filasTodas) {
     lote: t.lote, valores: [t.dano_coll || 0, t.dano_mol || 0, t.dano_hongos || 0, Math.max(t.pasto_sano || 0, 0)],
   }));
 
-  const general = metricasDeUnidad(filasTodas || []);
+  const general = metricasDeUnidad(filasTodas || [], opciones);
   const promedioFinca = { sin_areas: general.sin_areas };
   ["incid_coll", "sev_coll", "incid_hongos", "sev_hongos", "adultos", "ninfas", "loritos",
     "lepidopteros", "dano_mol", "dano_coll", "dano_hongos", "pasto_sano"].forEach((campo) => {
@@ -803,6 +819,7 @@ const Informes = {
         observaciones, observacion_lote: observacionLote, productos: productosLote,
         puntos: puntosDeUnidad(sub),
         ...metricasDeUnidad(sub),
+        potreros_detalle: potrerosDeLote(sub),
         manejo: {
           tipoFumigacion: primero[COL.tipoFumigacion] || "",
           litrosMezclaHa: primero[COL.litrosMezclaHa] || "",
@@ -830,7 +847,7 @@ const Informes = {
       cliente, finca, fecha, visita_numero: visitaNumero, lotes_reales: lotesReales, lotes_finca: lotesFinca,
       etiqueta_unidad: "Lote", plural_unidad: "lotes",
       tabla_lotes: tablaLotes, umbrales, maximos,
-      ...resumenDeTabla(tablaLotes, umbrales, visita),
+      ...resumenDeTabla(tablaLotes, umbrales, visita, { potrerosDeLaFinca: true }),
       ...historialDeSeries(filas, ultimos6Meses, series, umbrales),
       productividad, orden_productos: ordenProductos,
     };
@@ -939,25 +956,21 @@ const Informes = {
     const U = D.etiqueta_unidad || "Lote";              // Lote (informe de visita) o Finca (informe de cliente)
     const UP = D.plural_unidad || "lotes";
     const nombreUnidad = (valor) => `${U} ${valor}`;
-    // Verde hasta el umbral, amarillo entre el umbral y el máximo permitido, rojo por encima.
-    // En Pasto sano es al revés (es un mínimo): verde por encima del umbral, rojo bajo el máximo.
+    // Lo que supera su umbral va en letra roja; lo demás, normal. Antes cada celda llevaba fondo
+    // verde, amarillo o rojo, pero la tabla ahora usa fondos para distinguir potrero, lote y
+    // finca, y los dos colores juntos no se leían. En Pasto sano es al revés (es un mínimo).
     const semaforo = (valor, def) => {
       if (!def || valor == null) return "";
       const umbral = D.umbrales[def.umbral];
-      const maximo = (D.maximos || {})[def.umbral];
       if (umbral == null) return "";
-      const dentro = def.esMinimo ? valor >= umbral : valor <= umbral;
-      if (dentro) return ' class="sem-ok"';
-      if (maximo == null) return ' class="sem-alto"';
-      const pasado = def.esMinimo ? valor < maximo : valor > maximo;
-      return pasado ? ' class="sem-alto"' : ' class="sem-medio"';
+      const supera = def.esMinimo ? valor < umbral : valor > umbral;
+      return supera ? ' class="sem-alto"' : "";
     };
     const defDe = (campo) => DEFINICIONES_UMBRAL.find((d) => d.campo === campo);
     const u = D.umbrales;
     const um = (nombreDef) => u[DEFINICIONES_UMBRAL.find((d) => d.campo === nombreDef).umbral];
 
-    const filasTabla = D.tabla_lotes.map((t) => `<tr>
-      <td>${esc(nombreUnidad(t.lote))}</td>
+    const celdasTabla = (t) => `
       <td${semaforo(t.incid_coll, defDe("incid_coll"))}>${fmt(t.incid_coll, true)}</td>
       <td${semaforo(t.sev_coll, defDe("sev_coll"))}>${fmt(t.sev_coll, true)}</td>
       <td${semaforo(t.incid_hongos, defDe("incid_hongos"))}>${fmt(t.incid_hongos, true)}</td>
@@ -965,8 +978,15 @@ const Informes = {
       <td${semaforo(t.adultos, defDe("adultos"))}>${fmt(t.adultos)}</td>
       <td${semaforo(t.ninfas, defDe("ninfas"))}>${fmt(t.ninfas)}</td>
       <td${semaforo(t.loritos, defDe("loritos"))}>${fmt(t.loritos)}</td>
-      <td${semaforo(t.lepidopteros, defDe("lepidopteros"))}>${fmt(t.lepidopteros)}</td>
-    </tr>`).join("") + (D.tabla_lotes.length > 1 ? `<tr class="fila-promedio">
+      <td${semaforo(t.lepidopteros, defDe("lepidopteros"))}>${fmt(t.lepidopteros)}</td>`;
+    // En el informe de lotes cada nivel lleva su fondo (lote / potrero / general); el informe por
+    // fincas queda como estaba.
+    const claseLote = D.es_cliente ? "" : ' class="fila-lote"';
+    const filasTabla = D.tabla_lotes.map((t) => `<tr${claseLote}>
+      <td>${esc(nombreUnidad(t.lote))}</td>${celdasTabla(t)}
+    </tr>` + (t.potreros_detalle || []).map((p) => `<tr class="fila-potrero">
+      <td>Potrero ${esc(p.potrero)}</td>${celdasTabla(p)}
+    </tr>`).join("")).join("") + (D.tabla_lotes.length > 1 ? `<tr class="fila-promedio">
       <td>Ponderado general</td>
       <td${semaforo(D.promedio_finca.incid_coll, defDe("incid_coll"))}>${fmt(D.promedio_finca.incid_coll, true)}</td>
       <td${semaforo(D.promedio_finca.sev_coll, defDe("sev_coll"))}>${fmt(D.promedio_finca.sev_coll, true)}</td>
@@ -1165,11 +1185,16 @@ const Informes = {
         ${detalleHtml(t, i)}
         ${panelesHtml(valores, errores, D.tortas[i].valores)}
         <p class="nota-puntos">${nota}</p>
-      </div>`;
+      </div>` + (t.potreros_detalle || []).map((p) => `<div class="lote-bloque lote-bloque-potrero">
+        <h3>${esc(nombreUnidad(t.lote))} — Potrero ${esc(p.potrero)}</h3>
+        ${panelesHtml([p.adultos, p.ninfas, p.loritos, p.lepidopteros], [p.adultos_sd, p.ninfas_sd, p.loritos_sd, p.lepidopteros_sd],
+          [p.dano_coll || 0, p.dano_mol || 0, p.dano_hongos || 0, Math.max(p.pasto_sano || 0, 0)])}
+        <p class="nota-puntos">${p.n_puntos === 1 ? "1 punto de muestreo (sin dispersión)." : `Ponderado de ${p.n_puntos} puntos de muestreo según sus zonas.`}</p>
+      </div>`).join("");
     }).join("") + (D.tabla_lotes.length <= 1 ? "" : `<div class="lote-bloque lote-bloque-promedio">
         <h3>Estado general de la finca</h3>
         ${panelesHtml(D.promedio_barras.valores, D.promedio_barras.errores, D.promedio_torta)}
-        <p class="nota-puntos">Ponderado de ${U === "Finca" ? "las" : "los"} ${D.tabla_lotes.length} ${UP}.${D.promedio_finca.sin_areas ? " Sin areas de potreros registradas." : ""}</p>
+        <p class="nota-puntos">${D.es_cliente ? `Ponderado de las ${D.tabla_lotes.length} fincas.` : "Ponderado de todos los potreros de la finca."}${D.promedio_finca.sin_areas ? " Sin areas de potreros registradas." : ""}</p>
       </div>`);
 
     const opcionesVariable = GRUPOS_HISTORIAL.map((g) => `<option value="${g.id}">${g.nombre}</option>`).join("") +
@@ -1223,6 +1248,7 @@ const Informes = {
       const filas = (t.puntos || []).map((p) => `<tr>
         ${conLote ? `<td>${esc(p.lote)}</td>` : ""}
         <td>${esc(p.potrero || "")}</td>
+        <td>${esc(p.zona)}</td>
         <td>${esc(p.punto)}</td>
         <td${semaforo(p.adultos, defDe("adultos"))}>${fmt(p.adultos)}</td>
         <td${semaforo(p.ninfas, defDe("ninfas"))}>${fmt(p.ninfas)}</td>
@@ -1237,7 +1263,7 @@ const Informes = {
         <h3>${esc(nombreUnidad(t.lote))}${t.subtitulo ? ` — ${esc(t.subtitulo)}` : ""}</h3>
         <p class="hint">Datos de cada punto de muestreo, tal como se capturaron.</p>
         <div class="tabla-scroll"><table class="tabla-lotes"><thead><tr>
-          ${conLote ? "<th>Lote</th>" : ""}<th>Potrero</th><th>Punto</th>
+          ${conLote ? "<th>Lote</th>" : ""}<th>Potrero</th><th>Zona</th><th>Punto</th>
           <th>Collaria Adultos</th><th>Collaria Ninfas</th><th>Loritos</th><th>Lepidópteros</th>
           <th>Incidencia Collaria</th><th>Severidad Collaria</th><th>Incidencia Hongo</th><th>Severidad Hongo</th>
         </tr></thead><tbody>${filas}</tbody></table></div>
@@ -1427,11 +1453,14 @@ td:first-child,th:first-child{text-align:left;padding-left:0;}
 td:last-child,th:last-child{padding-right:0;}
 tbody tr:nth-child(even) td{background:var(--papel-suave);}
 td.alerta{color:var(--alerta);font-weight:700;}
-/* Semáforo: verde hasta el umbral, amarillo entre el umbral y el máximo, rojo por encima. */
-td.sem-ok{background:#e8f4ea;}
-td.sem-medio{background:#fdf3d7;}
-td.sem-alto{background:#fbe0dc;color:var(--alerta);font-weight:700;}
+/* Lo que supera su umbral: solo la letra en rojo. */
+td.sem-alto{color:var(--alerta);font-weight:700;}
+/* Un fondo por nivel en el informe de lotes: lote, potrero (debajo de su lote) y general. */
+.fila-lote td{background:#e8eef6 !important;font-weight:600;}
+.fila-potrero td{background:#faf8f4 !important;}
+.fila-potrero td:first-child{padding-left:var(--e4);}
 .fila-promedio td{font-weight:700;border-top:2px solid var(--marca);background:var(--marca-tenue) !important;}
+.lote-bloque-potrero{background:#faf8f4;}
 
 /* --- Bloque por lote: barras y anillo lado a lado --- */
 /* --- Indicadores de productividad: tarjetas destacadas --- */

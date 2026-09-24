@@ -42,9 +42,9 @@ dato.
 | `esquema.js` | **Único** lugar donde se dice qué columna es cada cosa en el Excel. |
 | `config.js` | Nombres de hojas/tablas, `CLIENT_ID` de Azure, datos del asesor. |
 | `sw.js` | Service worker (offline + control de versión). |
-| `version.json` | `{"version":"NN"}` — lo que la app consulta para saber si se quedó atrás. |
+| `version.json` | `{"version":"2.N"}` — lo que la app consulta para saber si se quedó atrás. |
 | `publicar.js` | Sube la versión en un paso, corriendo antes las pruebas. |
-| `pruebas/` | 65 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
+| `pruebas/` | 68 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
 | `lib/msal-browser.min.js` | MSAL copiado al repo **a propósito** (desde CDN no abría sin internet). |
 
 ---
@@ -135,8 +135,17 @@ El motor está parametrizado por unidad: `metricasDeUnidad(sub)`, `puntosDeUnida
 `D.etiqueta_unidad` / `D.plural_unidad` / `D.es_cliente` deciden si se dice "Lote" o "Finca".
 
 Otros detalles del informe:
-- **Semáforo:** verde hasta el umbral, amarillo entre umbral y máximo, rojo por encima. Clases
-  `sem-ok` / `sem-medio` / `sem-alto`. **Pasto sano va al revés** (es un mínimo).
+- **Semáforo (desde la 2.0):** solo **letra roja** (`sem-alto`) si supera el umbral; nada de fondos
+  verde/amarillo (el usuario lo pidió así; los fondos ahora distinguen niveles). **Pasto sano va al
+  revés** (es un mínimo). El máximo permitido ya no se usa para colorear.
+- **Informe de lotes de una finca (2.0):** tabla con fila por lote (fondo azul claro `fila-lote`),
+  debajo sus potreros (`fila-potrero`, fondo crema) y "Ponderado general" (`fila-promedio`, verde).
+  Gráficas de barras + torta por lote, por potrero y del estado general. Filas y gráficas por potrero
+  **solo si el lote tiene 2 o más potreros** (con uno serían idénticas al lote). El 100 % se reparte:
+  potrero = entre sus puntos por zona; lote = entre sus potreros; **general de la finca = entre todos
+  los potreros de la finca** (`potrerosDeLaFinca`: sin áreas, cada potrero igual; un lote con 2
+  potreros pesa el doble). El **informe por fincas de un cliente queda como estaba** (finca = lotes
+  iguales sin áreas), pedido explícito.
 - **Historial:** agrupado **por mes**, no por día (`mesDeFecha`, `fmtMes`). 13 gráficas, una línea
   por lote/finca, en 3 grupos (Conteos / Epidemiología / Estado de las pasturas) + opción "Todas"
   (3 por hilera, que es la versión para imprimir).
@@ -181,7 +190,8 @@ y **gris** cuando no.
 Este fue un dolor real: el celular se quedaba pegado en versiones viejas ("que pereza, sigo en la
 61"). El mecanismo actual **no depende del service worker**:
 
-1. `publicar.js` sube el número en **tres** lugares a la vez: `APP_VERSION` (app.js),
+1. `publicar.js` sube la versión (**2.0, 2.1, 2.2… después de 2.9 sigue 2.10**; el usuario no quiere
+   el conteo 69, 70…) en **tres** lugares a la vez: `APP_VERSION` (app.js),
    `CACHE_NAME` (sw.js) y `version.json`.
 2. `sw.js` **nunca** intercepta `version.json`.
 3. `app.js` → `revisarVersionPublicada()` pide `version.json` con `cache: "no-store"` al abrir, al
@@ -239,8 +249,8 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ## 10. Estado al 24 de septiembre de 2026
 
-- Última versión publicada: **v69**, `main` al día con `origin/main`.
-- 65 pruebas pasando.
+- Última versión publicada: **v2.0**, `main` al día con `origin/main`.
+- 68 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
   viven en las columnas U:X de las filas de los puntos. Y el **último punto** ya no se pierde al
@@ -253,6 +263,8 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 - v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
   datos" para el muestreo por zonas y agregó abonos a Productividad).
+- **2.0** (antes v70): nueva numeración; filas y gráficas por potrero con fondos por nivel; general de
+  la finca por todos sus potreros; semáforo solo en letra roja; columna Zona en la ventana de puntos.
 - v69: el informe (tabla, general, barras de error e historial) **pondera** por zona, potrero y
   lote en vez de promediar puntos; "Promedio general" pasó a "Ponderado general".
 
