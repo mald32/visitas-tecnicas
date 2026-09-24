@@ -7,37 +7,126 @@ const {
   cargarApp, elementoFalso, resumen,
 } = require("./arnes");
 
-const { ESQUEMA, verificarEncabezados } = require("../esquema.js");
+const {
+  ESQUEMA, columnasFaltantes, filaDesdeExcel, filaHaciaExcel, completarFilaBase,
+} = require("../esquema.js");
 
 // ---------------------------------------------------------------------------
-// 1. Esquema del Excel (el punto más frágil: si se mueve una columna, todo falla)
+// 1. Esquema del Excel: cada dato se ubica por el TÍTULO de su columna, no por su posición
 // ---------------------------------------------------------------------------
-console.log("\nEsquema del Excel");
+console.log("\nEsquema del Excel (por títulos)");
 
-prueba("los encabezados reales del Excel coinciden con los que espera el código", () => {
-  igual(verificarEncabezados(ESQUEMA.ENCABEZADOS_BASE).length, 0, "no debería haber diferencias");
+// Títulos reales de la tabla "Base de datos" tal como quedaron el 24/09/2026 (muestreo por zonas).
+const TITULOS_BASE_REALES = [
+  "Cliente", "Finca", "Fecha visita", "Lote", "Potrero", "Area del Potrero", "Zona", "Area de la zona",
+  "Porcentaje de la zona", "Porcentaje del punto", "Punto de muestreo", "Collaria Adultos", "Collaria Ninfas",
+  "Incidencia Daño Collaria (% de hojas)", "Severidad del Daño Collaria (% de la hoja)", "Numero de Loritos",
+  "Numero de larvas de Lepidopteros", "Hojas Atacadas por Moluscos (#)", "Incidencia Daño Moluscos (% de hojas)",
+  "Incidencia de Mancha Fungicas (% de hojas)", "Severidad Manchas Fungicas (% de la hoja)",
+  "Collaria Adultos (Pond)", "Collaria Ninfas (Pond)", "Incidencia Daño Collaria (% de hojas) (Pond)",
+  "Severidad del Daño Collaria (% de la hoja) (Pond)", "Numero de Loritos (Pond)",
+  "Numero de larvas de Lepidopteros (Pond)", "Hojas Atacadas por Moluscos (#) (Pond)",
+  "Incidencia Daño Moluscos (% de hojas) (Pond)", "Incidencia de Mancha Fungicas (% de hojas) (Pond)",
+  "Severidad Manchas Fungicas (% de la hoja) (Pond)", "Daño Pasturas Moluscos (%)", "Daño Pasturas Collaria (%)",
+  "Daño Pasturas Hongo (%)", "Observaciones", "Tipo de Fumigacion", "Litros de Mezcla/ha",
+  "Orden de Mezcla Correcto?", "pH Final de la Mezcla", "Suma pesos del potrero",
+];
+const TITULOS_PRODUCTIVIDAD_REALES = [
+  "Cliente", "Finca", "Fecha de Muestreo", "Lote", "Area del Lote (Hectareas)", "Animales en Ordeño",
+  "Dias de Rotación", "Producción Diaria de Leche (L/vaca*dia)", "Carga Animal (Animales/hectarea)",
+  "Area Diaria por Animal (m2/vaca*dia)", "Productividad de la Lecheria (Leche/ha*dia)", "Abono Usado",
+  "Kg Abono/ha", "Kg N/ha", "Kg P/ha", "Kg K/ha", "Kg Ca/ha", "Kg Mg/ha", "Kg S/ha", "g B/ha", "g Zn/ha",
+  "g Fe /ha", "g Mn/ha", "g Cu/ha", "g Mo/ha",
+];
+
+function puntoInterno() {
+  const B = ESQUEMA.BASE;
+  const f = new Array(24).fill(0); // un punto guardado con el orden viejo (24 datos), como en el celular
+  f[B.cliente] = "CLIENTE"; f[B.finca] = "FINCA"; f[B.fecha] = "2026-09-24"; f[B.lote] = 2; f[B.punto] = 3;
+  f[B.adultos] = 7; f[B.incidColl] = 0.5; f[B.sevColl] = 0.2; f[B.danoCollTotal] = 0.1;
+  f[B.potrero] = "Entran 25"; f[B.observaciones] = "bajo encharcado";
+  f[B.tipoFumigacion] = "Aerea (Dron)"; f[B.litrosMezclaHa] = 20; f[B.ordenMezclaCorrecto] = "Si"; f[B.phFinalMezcla] = 5.5;
+  return f;
+}
+const columna = (titulos, t) => titulos.indexOf(t);
+
+prueba("con los títulos reales del Excel no falta ninguna columna", () => {
+  igual(columnasFaltantes("BASE", TITULOS_BASE_REALES).length, 0, "Base de datos");
+  igual(columnasFaltantes("PRODUCTIVIDAD", TITULOS_PRODUCTIVIDAD_REALES).length, 0, "Productividad_Fincas");
 });
 
-prueba("detecta si alguien reordena una columna en el Excel", () => {
-  const alterados = [...ESQUEMA.ENCABEZADOS_BASE];
-  [alterados[18], alterados[19]] = [alterados[19], alterados[18]]; // Potrero <-> Observaciones
-  const diffs = verificarEncabezados(alterados);
-  cierto(diffs.length >= 2, "debería reportar al menos 2 columnas distintas");
-  contiene(diffs.join(" "), "Columna 19");
+prueba("cada dato del punto cae en la columna con su título", () => {
+  const T = TITULOS_BASE_REALES;
+  const fila = filaHaciaExcel("BASE", T, puntoInterno());
+  igual(fila.length, 40, "la fila debe tener las 40 columnas de la tabla");
+  igual(fila[columna(T, "Potrero")], "Entran 25");
+  igual(fila[columna(T, "Lote")], 2);
+  igual(fila[columna(T, "Punto de muestreo")], 3);
+  igual(fila[columna(T, "Collaria Adultos")], 7);
+  igual(fila[columna(T, "Observaciones")], "bajo encharcado");
+  igual(fila[columna(T, "Tipo de Fumigacion")], "Aerea (Dron)", "el manejo va a su columna, no encima de los hongos");
+  igual(fila[columna(T, "pH Final de la Mezcla")], 5.5);
 });
 
-prueba("detecta si falta una columna al final", () => {
-  const cortos = ESQUEMA.ENCABEZADOS_BASE.slice(0, -1);
-  cierto(verificarEncabezados(cortos).length > 0, "debería avisar que falta la última columna");
+prueba("un punto sin zona se sube como zona 1 que ocupa todo el potrero", () => {
+  const T = TITULOS_BASE_REALES;
+  const fila = filaHaciaExcel("BASE", T, puntoInterno());
+  igual(fila[columna(T, "Zona")], 1);
+  igual(fila[columna(T, "Porcentaje de la zona")], 1, "si fuera vacío, el punto pesaría 0 en el Excel");
 });
 
-prueba("las columnas calculadas por fórmula son las 4 esperadas", () => {
-  igual(JSON.stringify(ESQUEMA.INDICES_BASE_CALCULADAS), JSON.stringify([9, 13, 14, 17]));
+prueba("las columnas con fórmula (porcentaje del punto, ponderados, daños, suma) van vacías", () => {
+  const T = TITULOS_BASE_REALES;
+  const fila = filaHaciaExcel("BASE", T, puntoInterno());
+  for (const t of T.filter((x) => /\(Pond\)|^Daño Pasturas|^Porcentaje del punto$|^Suma pesos|^Incidencia Daño Moluscos \(% de hojas\)$/.test(x))) {
+    igual(fila[columna(T, t)], null, `"${t}" la calcula el Excel`);
+  }
 });
 
-prueba("Potrero es la columna 18 y Punto la 4 (usadas por índice en app.js)", () => {
-  igual(ESQUEMA.BASE.potrero, 18);
-  igual(ESQUEMA.BASE.punto, 4);
+prueba("si se reordenan las columnas en el Excel, los datos siguen yendo a su título", () => {
+  const T = [...TITULOS_BASE_REALES].reverse();
+  const fila = filaHaciaExcel("BASE", T, puntoInterno());
+  igual(fila[columna(T, "Potrero")], "Entran 25");
+  igual(fila[columna(T, "Collaria Adultos")], 7);
+});
+
+prueba("no importan tildes, ñ, mayúsculas ni espacios de más en los títulos", () => {
+  const T = TITULOS_BASE_REALES.map((t) => t.replace(/ñ/g, "n").toUpperCase().replace("POTRERO", "  Potrero "));
+  igual(columnasFaltantes("BASE", T).length, 0);
+});
+
+prueba("si falta una columna que la app necesita, no sube nada y dice cuál", () => {
+  const T = TITULOS_BASE_REALES.filter((t) => t !== "Collaria Ninfas");
+  let error = null;
+  try { filaHaciaExcel("BASE", T, puntoInterno(), "TablaBaseDatos"); } catch (e) { error = e.message; }
+  cierto(error, "debía fallar para que el punto quede pendiente");
+  contiene(error, "Collaria Ninfas");
+});
+
+prueba("al leer del Excel, cada dato sale de su título y los daños se calculan con los datos crudos", () => {
+  const T = TITULOS_BASE_REALES;
+  const B = ESQUEMA.BASE;
+  const excel = new Array(40).fill("");
+  excel[columna(T, "Cliente")] = "CLIENTE"; excel[columna(T, "Potrero")] = "P1";
+  excel[columna(T, "Incidencia Daño Collaria (% de hojas)")] = 0.8; excel[columna(T, "Severidad del Daño Collaria (% de la hoja)")] = 0.25;
+  excel[columna(T, "Hojas Atacadas por Moluscos (#)")] = 4; excel[columna(T, "Incidencia Daño Moluscos (% de hojas)")] = 0.4;
+  excel[columna(T, "Incidencia de Mancha Fungicas (% de hojas)")] = 0.5; excel[columna(T, "Severidad Manchas Fungicas (% de la hoja)")] = 0.1;
+  excel[columna(T, "Daño Pasturas Collaria (%)")] = 0.05; // ponderado: no debe usarse como daño del punto
+  const f = completarFilaBase(filaDesdeExcel("BASE", T, excel), { hojasEvaluadas: 10, severidadMoluscos: 0.1 });
+  igual(f[B.potrero], "P1");
+  cerca(f[B.danoCollTotal], 0.2, 1e-9, "daño Collaria del punto = incidencia × severidad");
+  cerca(f[B.danoMoluscos], 0.04, 1e-9, "daño moluscos = incidencia × severidad asumida");
+  cerca(f[B.danoHongos], 0.05, 1e-9, "daño hongos = incidencia × severidad");
+});
+
+prueba("productividad: los datos van a su título y las columnas de abono quedan vacías", () => {
+  const T = TITULOS_PRODUCTIVIDAD_REALES;
+  const fila = filaHaciaExcel("PRODUCTIVIDAD", T, ["C", "F", "2026-09-24", 1, 12, 40, 30, 18, null, null, null]);
+  igual(fila.length, 25);
+  igual(fila[columna(T, "Animales en Ordeño")], 40);
+  igual(fila[columna(T, "Producción Diaria de Leche (L/vaca*dia)")], 18);
+  igual(fila[columna(T, "Carga Animal (Animales/hectarea)")], null, "fórmula del Excel");
+  igual(fila[columna(T, "Kg N/ha")], null);
 });
 
 // ---------------------------------------------------------------------------
@@ -91,11 +180,11 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
       if (nombre === "Productos_Aplicados") return productosAplicados;
       if (nombre === "Productos_Recomendados") return recomendados;
       if (nombre === "Productividad_Fincas") return productividad;
+      if (nombre === "Tabla2") return catalogo;
       return [];
     },
     async leerRango(hoja, rango) {
       if (rango === "A8:C19") return UMBRALES;
-      if (rango === "A4:E500") return catalogo;
       return [];
     },
   };
@@ -111,6 +200,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     TABLA_PRODUCTIVIDAD: "Productividad_Fincas",
     TABLA_OBSERVACIONES_LOTES: "Observaciones_Lotes",
     TABLA_INFORMES_GENERADOS: "Informes_Generados",
+    TABLA_PRODUCTOS: "Tabla2",
     ASESOR: { nombre: "Miguel Leon", profesion: "Ingeniero Agrónomo" },
   };
   return cargarApp(["esquema.js", "informes.js"], { Graph, DB, CONFIG }, ["Informes"]);
@@ -337,7 +427,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   });
 
   await pruebaAsync("si la red dice 'en línea' pero no hay internet, usa la copia guardada en vez de colgarse", async () => {
-    const { Informes } = cargarInformes({ leerTablaColgada: true, cache: { filasBase: filasDosLotes } });
+    const { Informes } = cargarInformes({ leerTablaColgada: true, cache: { "titulos:filasBase": filasDosLotes } });
     Informes.LIMITE_LECTURA_MS = 30;
     const { manejo } = await Informes.manejoYProductosDeLote("CLIENTE", "FINCA", "2026-09-14", 1);
     igual(manejo.tipoFumigacion, "Aerea (Dron)");
@@ -546,21 +636,14 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   // -------------------------------------------------------------------------
   console.log("\nFilas para Excel");
 
-  prueba("al subir un punto se dejan vacías las 4 columnas que Excel calcula solo", () => {
-    const fila = filaPunto({ adultos: 7, incidColl: 0.5, sevColl: 0.2 });
-    const paraExcel = [...fila];
-    for (const i of ESQUEMA.INDICES_BASE_CALCULADAS) paraExcel[i] = null;
-
-    const B = ESQUEMA.BASE;
-    igual(paraExcel[B.danoCollTotal], null, "Daño Collaria Total lo calcula el Excel");
-    igual(paraExcel[B.incidMoluscos], null, "Incidencia Moluscos la calcula el Excel");
-    igual(paraExcel[B.danoMoluscos], null, "Daño Moluscos lo calcula el Excel");
-    igual(paraExcel[B.danoHongos], null, "Daño Hongos lo calcula el Excel");
-    // ...pero los datos crudos que escribe el técnico deben seguir intactos:
-    igual(paraExcel[B.adultos], 7, "los adultos capturados no se deben borrar");
-    cerca(paraExcel[B.incidColl], 0.5, 1e-9, "la incidencia capturada no se debe borrar");
-    igual(paraExcel[B.tipoFumigacion], "Aerea (Dron)", "el manejo agronómico no se debe borrar");
-    igual(paraExcel.length, 24, "la fila debe tener las 24 columnas de la tabla");
+  prueba("un punto capturado en la app sube con sus datos crudos y sin los calculados", () => {
+    const T = TITULOS_BASE_REALES;
+    const paraExcel = filaHaciaExcel("BASE", T, filaPunto({ adultos: 7, incidColl: 0.5, sevColl: 0.2 }));
+    igual(paraExcel[columna(T, "Collaria Adultos")], 7, "los adultos capturados no se deben borrar");
+    cerca(paraExcel[columna(T, "Incidencia Daño Collaria (% de hojas)")], 0.5, 1e-9, "la incidencia capturada no se debe borrar");
+    igual(paraExcel[columna(T, "Tipo de Fumigacion")], "Aerea (Dron)", "el manejo agronómico no se debe borrar");
+    igual(paraExcel[columna(T, "Incidencia Daño Moluscos (% de hojas)")], null, "la incidencia de moluscos la calcula el Excel");
+    igual(paraExcel.length, 40, "la fila debe tener las 40 columnas de la tabla");
   });
 
   // -------------------------------------------------------------------------
@@ -631,15 +714,17 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
 
   function graphDePrueba(filas) {
     const escrituras = [];
-    const g = cargarApp(["graph.js"], {
+    const g = cargarApp(["esquema.js", "graph.js"], {
       CONFIG: { TABLE_NAME: "TablaBaseDatos", CLIENT_ID: "x", AUTHORITY: "x", REDIRECT_URI: "x", GRAPH_SCOPES: [] },
       msal: { PublicClientApplication: function () { return { initialize: async () => {} }; } },
       fetch: async () => ({ ok: true, json: async () => ({}) }),
     }, ["Graph"]);
     g.Graph.conReintento = (fn) => fn("id-archivo");
     g.Graph.llamar = async (path) => {
-      if (path.includes("/range?$select=address")) return { address: "'Base de datos'!A1:X400" };
-      if (path.endsWith("/rows")) return { value: filas.map((f, i) => ({ index: i, values: [f] })) };
+      if (path.includes("/headerRowRange")) return { values: [TITULOS_BASE_REALES] };
+      if (path.includes("/range?$select=address")) return { address: "'Base de datos'!A1:AN400" };
+      // Las filas llegan como están en el Excel (40 columnas), no en el orden interno de la app.
+      if (path.endsWith("/rows")) return { value: filas.map((f, i) => ({ index: i, values: [filaHaciaExcel("BASE", TITULOS_BASE_REALES, f)] })) };
       return {};
     };
     g.Graph.escribirRango = async (hoja, direccion, valores) => { escrituras.push({ hoja, direccion, valores }); };
@@ -658,13 +743,13 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
 
     const cambiadas = await Graph.actualizarColumnasDonde("TablaBaseDatos",
       (f) => f[B.cliente] === "AVENDAÑOS" && String(f[B.lote]) === "1",
-      B.tipoFumigacion, ["Aerea (Dron)", 30, "Si", 5.5]);
+      { tipoFumigacion: "Aerea (Dron)", litrosMezclaHa: 30, ordenMezclaCorrecto: "Si", phFinalMezcla: 5.5 });
 
     igual(cambiadas, 2, "solo los 2 puntos del lote 1 de esa visita");
     igual(escrituras.length, 2, "una escritura por fila");
     igual(escrituras[0].hoja, "Base de datos", "la hoja sale de la dirección de la tabla");
-    igual(escrituras[0].direccion, "U2:X2", "primera fila de datos: encabezado en la 1, datos desde la 2");
-    igual(escrituras[1].direccion, "U3:X3", "segunda fila de datos");
+    igual(escrituras[0].direccion, "AJ2:AM2", "primera fila de datos: encabezado en la 1, datos desde la 2");
+    igual(escrituras[1].direccion, "AJ3:AM3", "segunda fila de datos");
     igual(escrituras[0].valores[0][0], "Aerea (Dron)", "escribe el tipo de fumigación");
     igual(escrituras[0].valores[0][3], 5.5, "escribe el pH");
   });
@@ -672,9 +757,10 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   await pruebaAsync("no toca las columnas de los datos capturados ni las de fórmula", async () => {
     const B = ESQUEMA.BASE;
     const { Graph, escrituras } = graphDePrueba([filaPunto({})]);
-    await Graph.actualizarColumnasDonde("TablaBaseDatos", () => true, B.tipoFumigacion, ["", "", "", ""]);
-    igual(escrituras[0].direccion.split(":")[0].replace(/[0-9]/g, ""), "U",
-      "el manejo empieza en la columna 21 (U), después de las 20 primeras");
+    await Graph.actualizarColumnasDonde("TablaBaseDatos", () => true,
+      { tipoFumigacion: "", litrosMezclaHa: "", ordenMezclaCorrecto: "", phFinalMezcla: "" });
+    igual(escrituras[0].direccion.split(":")[0].replace(/[0-9]/g, ""), "AJ",
+      "el manejo va en las columnas con su título (AJ:AM), no encima de los hongos");
     igual(escrituras[0].valores[0].length, 4, "solo las 4 columnas del manejo");
   });
 
@@ -734,7 +820,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
       async marcarSincronizado(id, revision) { marcados.push({ id, revision }); const it = cola.get(id); if (it && (it.revision || 0) === revision) it.estado = "sincronizado"; },
       async marcarError(id, msg) { const it = cola.get(id); if (it) it.ultimoError = msg; },
     };
-    const Graph = { async agregarFila(fila) { subidos.push(fila); await alSubir(DB, subidos.length); } };
+    const Graph = { olvidarTitulos() {}, async agregarFila(fila) { subidos.push(fila); await alSubir(DB, subidos.length); } };
     const a = cargarApp(["esquema.js", "app.js"], { CONFIG: { ASESOR: {} }, DB, Graph, Informes: { invalidarCache() {} } });
     return { a, cola, subidos, marcados };
   }

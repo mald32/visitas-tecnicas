@@ -292,11 +292,17 @@ const Informes = {
   // Lee una tabla de Excel una sola vez por sesión (o hasta invalidarCache) y la guarda en el
   // celular. Si no hay red, Graph falla o tarda demasiado, se usa la última copia guardada.
   async _tablaRemota(nombreTabla, claveCache) {
+    // La copia guardada en el celular antes de leer por títulos puede tener las columnas corridas
+    // (si se leyó el Excel nuevo con la app vieja): por eso esta copia se guarda con otro nombre.
+    claveCache = "titulos:" + claveCache;
     if (!this._remoto[claveCache]) {
       let crudas = null;
       if (navigator.onLine) {
         try {
           crudas = await conLimiteDeTiempo(Graph.leerTabla(nombreTabla), this.LIMITE_LECTURA_MS);
+          if (nombreTabla === CONFIG.TABLE_NAME) {
+            crudas = crudas.map((f) => completarFilaBase(f, typeof parametros !== "undefined" ? parametros : {}));
+          }
           await DB.guardarCache(claveCache, crudas);
         } catch (e) {
           console.warn(`No se pudo leer ${nombreTabla}, usando caché local:`, e.message);
@@ -590,13 +596,13 @@ const Informes = {
       let crudas = null;
       if (navigator.onLine) {
         try {
-          crudas = await conLimiteDeTiempo(Graph.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:E500"), this.LIMITE_LECTURA_MS);
-          await DB.guardarCache("catalogoOrdenBase", crudas);
+          crudas = await conLimiteDeTiempo(Graph.leerTabla(CONFIG.TABLA_PRODUCTOS), this.LIMITE_LECTURA_MS);
+          await DB.guardarCache("catalogoOrdenTitulos", crudas);
         } catch (e) {
           console.warn("No se pudo leer el catalogo de Productos, usando caché local:", e.message);
         }
       }
-      if (!crudas) crudas = (await DB.leerCache("catalogoOrdenBase")) || [];
+      if (!crudas) crudas = (await DB.leerCache("catalogoOrdenTitulos")) || [];
       this._catalogoCache = crudas;
     }
     return this._catalogoCache;

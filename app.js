@@ -2,7 +2,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "67";
+const APP_VERSION = "68";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -464,24 +464,33 @@ async function renderVisitasEnCurso() {
   });
 }
 
-// Compara los encabezados reales de "Base de datos" contra los que espera el código. Si alguien
-// reordena o renombra una columna en el Excel, la app escribiría en la celda equivocada sin
-// avisar: esto lo detecta y lo muestra, en vez de dañar datos en silencio.
+// La app ubica cada columna por su título, así que mover o agregar columnas en el Excel ya no
+// daña nada. Lo único que puede fallar es que se borre o se renombre una columna que la app
+// necesita: eso se avisa aquí al entrar (y lo de esa tabla queda pendiente hasta corregirlo).
 async function verificarFormatoDelExcel() {
-  try {
-    const filas = await Graph.leerRango("Base de datos", "A1:X1");
-    const diferencias = verificarEncabezados(filas[0] || []);
-    const aviso = el("aviso-esquema");
-    if (diferencias.length > 0) {
-      console.warn("El formato del Excel cambió:", diferencias);
-      aviso.textContent = "Ojo: las columnas de la hoja 'Base de datos' no están como la app las espera (" +
-        diferencias.length + " diferencia(s)). Revisa el Excel antes de seguir capturando. Detalle: " + diferencias[0];
-      aviso.hidden = false;
-    } else {
-      aviso.hidden = true;
+  const tablas = [
+    [CONFIG.TABLE_NAME, "BASE"], [CONFIG.TABLA_PRODUCTOS_APLICADOS, "PRODUCTOS_APLICADOS"],
+    [CONFIG.TABLA_PRODUCTOS_RECOMENDADOS, "PRODUCTOS_RECOMENDADOS"], [CONFIG.TABLA_PRODUCTIVIDAD, "PRODUCTIVIDAD"],
+    [CONFIG.TABLA_OBSERVACIONES_LOTES, "OBSERVACIONES_LOTES"], [CONFIG.TABLA_INFORMES_GENERADOS, "INFORMES_GENERADOS"],
+    [CONFIG.TABLA_RECOMENDACIONES_CLIENTE, "RECOMENDACIONES_CLIENTE"], [CONFIG.TABLA_PRODUCTOS, "PRODUCTOS"],
+  ];
+  const problemas = [];
+  for (const [tabla, clave] of tablas) {
+    try {
+      const faltan = columnasFaltantes(clave, await Graph.titulos(tabla));
+      if (faltan.length > 0) problemas.push(`${tabla}: falta ${faltan.map((t) => `"${t}"`).join(", ")}`);
+    } catch (e) {
+      console.warn(`No se pudo revisar la tabla ${tabla}:`, e.message);
     }
-  } catch (e) {
-    console.warn("No se pudo verificar el formato del Excel:", e.message);
+  }
+  const aviso = el("aviso-esquema");
+  if (problemas.length > 0) {
+    console.warn("Columnas que la app no encuentra en el Excel:", problemas);
+    aviso.textContent = "Ojo: en el Excel faltan columnas que la app necesita (o cambió su título). " +
+      "Lo de esas tablas queda guardado en el celular hasta que se corrija. " + problemas.join(" · ");
+    aviso.hidden = false;
+  } else {
+    aviso.hidden = true;
   }
 }
 
@@ -517,10 +526,11 @@ async function leerConfigYClientesDeExcel() {
         .map((f) => ({ cliente: f[0], finca: f[1], numeroLotes: Number(f[2]) }));
       await DB.guardarCache("clientesFincas", clientesFincas);
 
-      const filasProductos = await Graph.leerRango(CONFIG.HOJA_PRODUCTOS, "A4:F500");
+      const P = ESQUEMA.PRODUCTOS;
+      const filasProductos = await Graph.leerTabla(CONFIG.TABLA_PRODUCTOS);
       catalogoProductos = filasProductos
-        .filter((f) => f[0])
-        .map((f) => ({ nombre: texto(f[0]), tipo: texto(f[1]), formulacion: texto(f[2]), unidad: texto(f[5]), orden: Number(f[4]) }));
+        .filter((f) => f[P.nombre])
+        .map((f) => ({ nombre: texto(f[P.nombre]), tipo: texto(f[P.tipo]), formulacion: texto(f[P.formulacion]), unidad: texto(f[P.unidad]), orden: Number(f[P.orden]) }));
       await DB.guardarCache("catalogoProductos", catalogoProductos);
       actualizarOpcionesCatalogo();
     }
@@ -2267,12 +2277,6 @@ async function verDetalleHistorial(v) {
 
 // ---------- Sincronización ----------
 
-// Columnas de "Base de datos" que en el Excel real son formulas calculadas por la propia hoja
-// (Dano Collaria Total, Incidencia Moluscos, Dano Moluscos, Dano Hongos). Las calculamos tambien
-// aqui en JS para poder generar los informes antes de sincronizar, pero al subir a Excel se dejan
-// en blanco para que sea la formula de la hoja la que las calcule (y no un valor fijo nuestro).
-const COLUMNAS_CALCULADAS_EXCEL = ESQUEMA.INDICES_BASE_CALCULADAS;
-
 // Cómo se le dice al usuario qué dato falló al subir (antes solo salía el error de Microsoft).
 const NOMBRE_TIPO_ITEM = {
   punto: "punto de muestreo", cliente_finca: "cliente/finca nueva", actualizar_lotes: "número de lotes de la finca",
@@ -2391,9 +2395,10 @@ async function subirItem(it) {
   } else if (it.tipo === "manejo_puntos") {
     const B = ESQUEMA.BASE;
     const c = d.campos || {};
-    await Graph.actualizarColumnasDonde(CONFIG.TABLE_NAME,
-      (f) => coincideVisitaExcel(f, B, d, true), B.tipoFumigacion,
-      [c.tipoFumigacion || "", c.litrosMezclaHa || "", c.ordenMezclaCorrecto || "", c.phFinalMezcla || ""]);
+    await Graph.actualizarColumnasDonde(CONFIG.TABLE_NAME, (f) => coincideVisitaExcel(f, B, d, true), {
+      tipoFumigacion: c.tipoFumigacion || "", litrosMezclaHa: c.litrosMezclaHa || "",
+      ordenMezclaCorrecto: c.ordenMezclaCorrecto || "", phFinalMezcla: c.phFinalMezcla || "",
+    });
   } else if (it.tipo === "informe_generado") {
     await Graph.eliminarFilasDonde(CONFIG.TABLA_INFORMES_GENERADOS, (f) => coincideVisitaExcel(f, ESQUEMA.INFORMES_GENERADOS, d, false));
     await Graph.agregarFilaEnTabla(CONFIG.TABLA_INFORMES_GENERADOS, [
@@ -2411,6 +2416,7 @@ async function sincronizar(opciones = {}) {
   const silencioso = opciones.silencioso === true;
   if (sincronizando || !navigator.onLine) return;
   sincronizando = true;
+  Graph.olvidarTitulos(); // se escribe según cómo esté la tabla ahora, no como estaba al abrir la app
   const errores = [];
   let subidos = 0;
   try {
@@ -2435,9 +2441,8 @@ async function sincronizar(opciones = {}) {
         if (await subirItem(it)) {
           // ya subido arriba
         } else if (it.tipo === "punto") {
-          const filaParaExcel = [...it.datos.fila];
-          for (const idx of COLUMNAS_CALCULADAS_EXCEL) filaParaExcel[idx] = null;
-          await Graph.agregarFila(filaParaExcel);
+          // Las columnas con fórmula las deja vacías graph.js al acomodar la fila por títulos.
+          await Graph.agregarFila(it.datos.fila);
         } else if (it.tipo === "cliente_finca") {
           await Graph.agregarClienteFinca(it.datos.cliente, it.datos.finca, it.datos.numeroLotes);
         } else if (it.tipo === "actualizar_lotes") {

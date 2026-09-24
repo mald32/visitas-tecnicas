@@ -44,7 +44,7 @@ dato.
 | `sw.js` | Service worker (offline + control de versión). |
 | `version.json` | `{"version":"NN"}` — lo que la app consulta para saber si se quedó atrás. |
 | `publicar.js` | Sube la versión en un paso, corriendo antes las pruebas. |
-| `pruebas/` | 48 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
+| `pruebas/` | 59 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
 | `lib/msal-browser.min.js` | MSAL copiado al repo **a propósito** (desde CDN no abría sin internet). |
 
 ---
@@ -85,17 +85,23 @@ exactamente a donde iba; al retomar una visita vuelve al menú de lotes.
 
 ## 4. El Excel (`BASE_DE_DATOS_v2.xlsx`)
 
-Los índices de columna **solo** viven en `esquema.js`. Si cambia una columna en el Excel, se toca
-ese archivo y nada más. Al iniciar sesión, `verificarEncabezados` compara los encabezados reales
-contra los esperados y muestra un aviso si no coinciden (antes escribía en la celda equivocada en
-silencio).
+**Desde la v68 la app ubica cada columna por su TÍTULO, no por su posición.** `esquema.js` tiene,
+por tabla, el orden interno de la app (números fijos: del 0 al 23 en "Base de datos" es el orden
+viejo, **no cambiarlo**, hay puntos pendientes guardados así en los celulares) y el título de la
+columna de cada dato (`ESQUEMA.TITULOS`). La traducción se hace solo en `graph.js`
+(`leerTabla`, `agregarFilaEnTabla`, `eliminarFilasDonde`, `actualizarColumnasDonde`), pidiendo los
+títulos con `headerRowRange` (se vuelven a pedir en cada sincronización). Al comparar títulos no
+importan tildes, ñ, mayúsculas ni espacios. Si falta una columna que la app necesita, lo de esa
+tabla **no se sube** (queda pendiente con el error) y al entrar sale el aviso (`verificarFormatoDelExcel`).
+Mover o agregar columnas en el Excel ya no rompe nada. `Clientes_Fincas` y `Configuracion` no son
+tablas: se siguen leyendo por rango.
 
 | Hoja / Tabla | Contenido |
 |---|---|
-| `Base de datos` / `TablaBaseDatos` | Una fila **por punto de muestreo**. 24 columnas. |
+| `Base de datos` / `TablaBaseDatos` | Una fila **por punto de muestreo**. 40 columnas: Lote (de ganado) → Potrero → Zona (área, % de la zona) → Punto; datos crudos; ponderados "(Pond)", "Daño Pasturas" y "Suma pesos del potrero", que son fórmulas. |
 | `Productos_Aplicados` | Lo que el ganadero **ya aplicó** (manejo agronómico). 9 columnas. |
 | `Productos_Recomendados` | Lo que el asesor **recomienda** en el informe **de una finca** (cliente+finca+fecha). 9 columnas. La columna Lote va vacía **por diseño**. |
-| `Productividad_Fincas` | Área, animales, días, producción. 11 columnas. |
+| `Productividad_Fincas` | Área, animales, días, producción + abonos (estos los llena el usuario a mano). 25 columnas. |
 | `Observaciones_Lotes` | Lo que se escribe al terminar cada lote. 6 columnas. |
 | `Informes_Generados` | Una fila por visita con informe. 7 columnas. **Alimenta el Historial.** |
 | `Recomendaciones_Cliente` | La recomendación del informe **por fincas de un cliente** (cliente+fecha del informe, sin finca). 10 columnas. Es una tabla aparte a propósito: no se mezcla con `Productos_Recomendados`. |
@@ -104,10 +110,11 @@ silencio).
 | `Configuracion` | `A8:C19` = variable, **umbral** (col B), **máximo permitido** (col C). |
 
 ### Columnas fórmula
-Las columnas que en el Excel son fórmulas se suben **vacías** (`null`) a propósito, para que las
-calcule la hoja: `BASE_CALCULADAS` (daño Collaria total, incidencia/daño moluscos, daño hongos) y
-`PRODUCTIVIDAD_CALCULADAS` (carga animal, área diaria, productividad lechería). En local se
-calculan igual, solo para poder generar informes antes de sincronizar.
+Toda columna del Excel que la app no conoce, o que está en `ESQUEMA.CALCULADAS`, se sube **vacía**
+(`null`) para que la calcule la hoja. Los daños **por punto** (Collaria, moluscos, hongos) ya no tienen
+columna en el Excel (allá solo están ponderados): `completarFilaBase` los calcula al leer con los
+datos crudos. Un punto sin zona se sube como **Zona 1, 100 %** (`ESQUEMA.POR_DEFECTO`); si no, el
+"Porcentaje del punto" daría 0.
 
 > Si Graph devuelve **400 InvalidArgument**, casi siempre es una fila con distinto número de
 > columnas. `descripcionItem(it)` existe para que el aviso diga **qué dato** falló.
@@ -230,10 +237,10 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ---
 
-## 10. Estado al 23 de septiembre de 2026
+## 10. Estado al 24 de septiembre de 2026
 
-- Última versión publicada: **v67**, `main` al día con `origin/main`.
-- 55 pruebas pasando.
+- Última versión publicada: **v68**, `main` al día con `origin/main`.
+- 59 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
   viven en las columnas U:X de las filas de los puntos. Y el **último punto** ya no se pierde al
@@ -243,6 +250,22 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 - v67: la subida automática vuelve a leer cada dato justo antes de subirlo (no sube lo que se borró
   mientras tanto) y usa `revision` en la cola: si un dato se corrigió mientras subía, queda
   pendiente en vez de marcarse como subido. `withStore` rechaza en `onabort` (antes se congelaba).
+
+- v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
+  datos" para el muestreo por zonas y agregó abonos a Productividad).
+
+### Muestreo por zonas (en curso, 24/09/2026)
+El usuario cambió el método: por finca, cada **lote de ganado** (columna Lote) tiene uno o más
+**potreros** (casi siempre el que entra el ganado al día siguiente), cada potrero se divide en
+**zonas** con área o % (la app debe convertir área ↔ % sola) y cada zona tiene puntos. Ya no se
+promedia: se pondera. Reglas acordadas:
+- Peso del punto = % de la zona ÷ puntos de la zona (así está la fórmula del Excel).
+- Potrero = suma de valor × peso de sus puntos.
+- Lote de ganado = potreros ponderados por área; **si falta el área de algún potrero, pesan igual**
+  y el informe dice **"Sin areas de potreros registradas"**.
+- El informe calcula con los datos crudos (local + Excel), **no** lee las columnas "(Pond)".
+Falta: la captura por potreros/zonas en la app y la ponderación en `informes.js` (hoy todavía
+promedia puntos).
 
 ### Pendiente de decisión del usuario
 1. ¿Registrar el manejo "En general" en **todos los lotes con puntos** también al **salir** de la
