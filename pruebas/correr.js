@@ -281,7 +281,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const { Informes } = cargarInformes({ filas: unLote });
     const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
     const html = Informes.generarHtml(D, [], "");
-    noContiene(html, "Promedio general", "no debería haber fila de promedio con un solo lote");
+    noContiene(html, "Ponderado general", "no debería haber fila de promedio con un solo lote");
     noContiene(html, "Estado general de la finca", "no debería haber bloque de promedio con un solo lote");
   });
 
@@ -289,7 +289,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const { Informes } = cargarInformes({ filas: filasDosLotes });
     const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-14");
     const html = Informes.generarHtml(D, [], "");
-    contiene(html, "Promedio general");
+    contiene(html, "Ponderado general");
     contiene(html, 'Estado general de la finca');
   });
 
@@ -526,14 +526,91 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   ];
   const seleccionDosFincas = [{ finca: "AMAZONAS", fecha: "2026-09-14" }, { finca: "SOLEDAD", fecha: "2026-09-10" }];
 
-  await pruebaAsync("cada finca promedia todos los puntos de todos sus lotes", async () => {
+  await pruebaAsync("sin áreas, cada lote de la finca pesa igual (no cada punto)", async () => {
     const { Informes } = cargarInformes({ filas: filasDosFincas });
     const D = await Informes.calcularDatosCliente("CLIENTE", seleccionDosFincas);
     igual(D.tabla_lotes.map((t) => t.lote).join(","), "AMAZONAS,SOLEDAD");
-    cerca(D.tabla_lotes[0].adultos, 12, 1e-9, "promedio de los 3 puntos de AMAZONAS");
+    cerca(D.tabla_lotes[0].adultos, 10.5, 1e-9, "AMAZONAS: lote 1 = 15 y lote 2 = 6, pesan igual");
     igual(D.tabla_lotes[0].n_puntos, 3, "cuenta los puntos de los 2 lotes");
+    cierto(D.tabla_lotes[0].sin_areas, "se avisa que no hay áreas");
     cierto(D.tabla_lotes[0].adultos_sd > 0, "hay desviación para las barras de error");
-    cerca(D.promedio_finca.adultos, 7.5, 1e-9, "el promedio general es entre fincas");
+    cerca(D.promedio_finca.adultos, 6.75, 1e-9, "el general es entre fincas: (10,5 + 3) / 2");
+  });
+
+  // Puntos con zona, % de zona y área del potrero (muestreo por zonas).
+  const B = ESQUEMA.BASE;
+  function puntoZona({ lote = 1, potrero = "P1", zona = 1, pctZona = 1, areaZona = "", areaPotrero = "", punto = 1, adultos = 0, fecha = "2026-09-24", finca = "FINCA" }) {
+    const f = filaPunto({ lote, potrero, punto, adultos, fecha, finca });
+    f[B.zona] = zona; f[B.pctZona] = pctZona; f[B.areaZona] = areaZona; f[B.areaPotrero] = areaPotrero;
+    return f;
+  }
+
+  await pruebaAsync("dentro del potrero cada zona pesa su porcentaje, no su número de puntos", async () => {
+    // Zona 1 = 80 % con un punto de 10; zona 2 = 20 % con tres puntos de 40.
+    const filas = [
+      puntoZona({ zona: 1, pctZona: 0.8, punto: 1, adultos: 10 }),
+      puntoZona({ zona: 2, pctZona: 0.2, punto: 2, adultos: 40 }),
+      puntoZona({ zona: 2, pctZona: 0.2, punto: 3, adultos: 40 }),
+      puntoZona({ zona: 2, pctZona: 0.2, punto: 4, adultos: 40 }),
+    ];
+    const { Informes } = cargarInformes({ filas });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-24");
+    cerca(D.tabla_lotes[0].adultos, 16, 1e-9, "0,8 × 10 + 0,2 × 40 (el promedio simple daría 32,5)");
+  });
+
+  await pruebaAsync("si la zona trae área y no porcentaje, se saca con el área del potrero", async () => {
+    const filas = [
+      puntoZona({ zona: 1, pctZona: "", areaZona: 3, areaPotrero: 4, adultos: 10 }),
+      puntoZona({ zona: 2, pctZona: "", areaZona: 1, areaPotrero: 4, punto: 2, adultos: 30 }),
+    ];
+    const { Informes } = cargarInformes({ filas });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-24");
+    cerca(D.tabla_lotes[0].adultos, 15, 1e-9, "3/4 × 10 + 1/4 × 30");
+  });
+
+  await pruebaAsync("los potreros de un lote pesan según su área", async () => {
+    const filas = [
+      puntoZona({ potrero: "P1", areaPotrero: 3, adultos: 10 }),
+      puntoZona({ potrero: "P2", areaPotrero: 1, punto: 2, adultos: 30 }),
+    ];
+    const { Informes } = cargarInformes({ filas });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-24");
+    cerca(D.tabla_lotes[0].adultos, 15, 1e-9, "(3 × 10 + 1 × 30) / 4");
+    cierto(!D.tabla_lotes[0].sin_areas, "con áreas no hay aviso");
+    noContiene(Informes.generarHtml(D, [], ""), "Sin areas de potreros registradas");
+  });
+
+  await pruebaAsync("sin área de algún potrero pesan igual y el informe lo dice", async () => {
+    const filas = [
+      puntoZona({ potrero: "P1", areaPotrero: 3, adultos: 10 }),
+      puntoZona({ potrero: "P2", areaPotrero: "", punto: 2, adultos: 30 }),
+    ];
+    const { Informes } = cargarInformes({ filas });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-24");
+    cerca(D.tabla_lotes[0].adultos, 20, 1e-9, "(10 + 30) / 2");
+    contiene(Informes.generarHtml(D, [], ""), "Sin areas de potreros registradas");
+  });
+
+  await pruebaAsync("el general de la finca pondera los lotes por su área muestreada", async () => {
+    const filas = [
+      puntoZona({ lote: 1, potrero: "P1", areaPotrero: 3, adultos: 10 }),
+      puntoZona({ lote: 2, potrero: "P9", areaPotrero: 1, punto: 1, adultos: 2 }),
+    ];
+    const { Informes } = cargarInformes({ filas });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-24");
+    cerca(D.promedio_finca.adultos, 8, 1e-9, "(10 × 3 + 2 × 1) / 4");
+  });
+
+  await pruebaAsync("el historial también pondera", async () => {
+    const filas = [
+      puntoZona({ zona: 1, pctZona: 0.8, punto: 1, adultos: 10 }),
+      puntoZona({ zona: 2, pctZona: 0.2, punto: 2, adultos: 40 }),
+      puntoZona({ zona: 2, pctZona: 0.2, punto: 3, adultos: 40 }),
+    ];
+    const { Informes } = cargarInformes({ filas });
+    const D = await Informes.calcularDatos("CLIENTE", "FINCA", "2026-09-24");
+    const serie = D.historial["Individuos Adultos de Collaria"].lotes["1"];
+    cerca(serie[serie.length - 1], 16, 1e-9, "mismo ponderado que la tabla");
   });
 
   await pruebaAsync("el informe por fincas usa Finca como unidad y trae las recomendaciones de cada visita", async () => {

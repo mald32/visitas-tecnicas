@@ -44,7 +44,7 @@ dato.
 | `sw.js` | Service worker (offline + control de versión). |
 | `version.json` | `{"version":"NN"}` — lo que la app consulta para saber si se quedó atrás. |
 | `publicar.js` | Sube la versión en un paso, corriendo antes las pruebas. |
-| `pruebas/` | 59 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
+| `pruebas/` | 65 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
 | `lib/msal-browser.min.js` | MSAL copiado al repo **a propósito** (desde CDN no abría sin internet). |
 
 ---
@@ -239,8 +239,8 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ## 10. Estado al 24 de septiembre de 2026
 
-- Última versión publicada: **v68**, `main` al día con `origin/main`.
-- 59 pruebas pasando.
+- Última versión publicada: **v69**, `main` al día con `origin/main`.
+- 65 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
   viven en las columnas U:X de las filas de los puntos. Y el **último punto** ya no se pierde al
@@ -253,6 +253,8 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 - v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
   datos" para el muestreo por zonas y agregó abonos a Productividad).
+- v69: el informe (tabla, general, barras de error e historial) **pondera** por zona, potrero y
+  lote en vez de promediar puntos; "Promedio general" pasó a "Ponderado general".
 
 ### Muestreo por zonas (en curso, 24/09/2026)
 El usuario cambió el método: por finca, cada **lote de ganado** (columna Lote) tiene uno o más
@@ -263,9 +265,15 @@ promedia: se pondera. Reglas acordadas:
 - Potrero = suma de valor × peso de sus puntos.
 - Lote de ganado = potreros ponderados por área; **si falta el área de algún potrero, pesan igual**
   y el informe dice **"Sin areas de potreros registradas"**.
-- El informe calcula con los datos crudos (local + Excel), **no** lee las columnas "(Pond)".
-Falta: la captura por potreros/zonas en la app y la ponderación en `informes.js` (hoy todavía
-promedia puntos).
+- Finca = lotes ponderados por el área de sus potreros muestreados; cliente = fincas igual. Sin
+  áreas, pesan igual (lotes, no puntos).
+- El informe hace la misma cuenta de las columnas "(Pond)" pero con lo del celular + lo del Excel
+  (`pesosDePuntos`, `ponderado`, `desviacionPonderada` en `informes.js`); **no** lee "(Pond)"
+  porque con puntos sin subir o una visita retomada esas fórmulas todavía no tienen el número bueno.
+  Verificado el 24/09/2026: los 85 potreros del Excel dan igual que la suma de sus "(Pond)".
+- **Ojo al explicarle esto al usuario:** decir "datos crudos" lo confundió (creyó que se botaban los
+  ponderados). Decir: "la app hace la misma cuenta del ponderado".
+Falta: la captura por potreros/zonas en la app (hoy todo punto nuevo sube como Zona 1 = 100 %).
 
 ### Pendiente de decisión del usuario
 1. ¿Registrar el manejo "En general" en **todos los lotes con puntos** también al **salir** de la

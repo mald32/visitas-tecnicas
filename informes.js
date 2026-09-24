@@ -99,6 +99,109 @@ function desviacion(valores) {
   return Math.sqrt(varianza);
 }
 
+// ---------- Ponderación del muestreo por zonas ----------
+// Desde el 24/09/2026 el muestreo es: lote de ganado → uno o más potreros → zonas del potrero →
+// puntos. Ya no se promedian los puntos: cada uno pesa según lo que representa.
+//   - Dentro de una zona, sus puntos pesan igual.
+//   - Dentro de un potrero, cada zona pesa su porcentaje (o área de la zona ÷ área del potrero).
+//   - Dentro de un lote, cada potrero pesa su área. Si falta el área de alguno, pesan igual.
+//   - Dentro de una finca, cada lote pesa el área de sus potreros muestreados; sin áreas, igual.
+//   - Entre fincas (informe por cliente), igual: por área, o iguales si falta alguna.
+// Es la misma cuenta de las columnas "(Pond)" del Excel, hecha aquí con lo del celular + lo del
+// Excel, para que el informe salga bien aunque haya puntos sin subir o se agregue uno a una visita
+// ya terminada (en esos casos las fórmulas del Excel todavía no tienen el número correcto).
+
+const numeroPositivo = (v) => {
+  const n = Number(v);
+  return v !== null && v !== "" && Number.isFinite(n) && n > 0 ? n : null;
+};
+
+function porcentajeDeZona(f) {
+  const pct = numeroPositivo(f[COL.pctZona]);
+  if (pct !== null) return pct;
+  const areaZona = numeroPositivo(f[COL.areaZona]), areaPotrero = numeroPositivo(f[COL.areaPotrero]);
+  return areaZona !== null && areaPotrero !== null ? areaZona / areaPotrero : null;
+}
+
+// Cuánto pesa cada punto de `sub` en el resultado (los pesos suman 1). `sinAreas` avisa si en
+// algún nivel hubo que dar el mismo peso a potreros, lotes o fincas por falta de área.
+function pesosDePuntos(sub) {
+  const pesos = new Array(sub.length).fill(0);
+  let sinAreas = false;
+  const agrupar = (indices, clave) => {
+    const grupos = new Map();
+    for (const i of indices) {
+      const k = clave(sub[i]);
+      if (!grupos.has(k)) grupos.set(k, []);
+      grupos.get(k).push(i);
+    }
+    return [...grupos.values()];
+  };
+  const claveVisitaFila = (f) => claveVisita({ cliente: f[COL.cliente], finca: f[COL.finca], fecha: f[COL.fecha] });
+  const clavePotrero = (f) => `${claveVisitaFila(f)}|${f[COL.lote]}|${limpiar(f[COL.potrero]).toLowerCase()}`;
+  // Área de un grupo de puntos = suma de las áreas de sus potreros (null si falta alguna).
+  const areaDe = (grupo) => {
+    let total = 0;
+    for (const potrero of agrupar(grupo, clavePotrero)) {
+      const area = potrero.map((i) => numeroPositivo(sub[i][COL.areaPotrero])).find((a) => a !== null);
+      if (area === undefined) return null;
+      total += area;
+    }
+    return total;
+  };
+  const niveles = [
+    { clave: claveVisitaFila, medida: areaDe },
+    { clave: (f) => String(f[COL.lote]), medida: areaDe },
+    { clave: clavePotrero, medida: areaDe },
+    { clave: (f) => limpiar(f[COL.zona]) || "1", medida: (grupo) => porcentajeDeZona(sub[grupo[0]]), esZona: true },
+  ];
+  const repartir = (grupo, peso, nivel) => {
+    if (nivel === niveles.length) {
+      grupo.forEach((i) => { pesos[i] += peso / grupo.length; });
+      return;
+    }
+    const hijos = agrupar(grupo, niveles[nivel].clave);
+    let medidas = hijos.map(niveles[nivel].medida);
+    if (medidas.some((m) => m === null)) {
+      if (hijos.length > 1 && !niveles[nivel].esZona) sinAreas = true;
+      medidas = hijos.map(() => 1);
+    }
+    const total = medidas.reduce((a, b) => a + b, 0);
+    hijos.forEach((hijo, j) => repartir(hijo, peso * medidas[j] / total, nivel + 1));
+  };
+  if (sub.length > 0) repartir(sub.map((_, i) => i), 1, 0);
+  return { pesos, sinAreas };
+}
+
+// Pares [peso, valor] de los puntos que tienen dato para esa variable.
+function paresConDato(sub, pesos, extraer) {
+  const pares = [];
+  sub.forEach((f, i) => {
+    const v = extraer(f);
+    if (v === null || v === undefined || v === "" || !Number.isFinite(Number(v))) return;
+    pares.push([pesos[i], Number(v)]);
+  });
+  return pares;
+}
+
+function ponderado(sub, pesos, extraer) {
+  const pares = paresConDato(sub, pesos, extraer);
+  const suma = pares.reduce((t, [w]) => t + w, 0);
+  return suma > 0 ? pares.reduce((t, [w, v]) => t + w * v, 0) / suma : null;
+}
+
+// Desviación ponderada (con pesos iguales da la desviación estándar de siempre).
+function desviacionPonderada(sub, pesos, extraer) {
+  const pares = paresConDato(sub, pesos, extraer);
+  const suma = pares.reduce((t, [w]) => t + w, 0);
+  if (pares.length < 2 || suma <= 0) return 0;
+  const normal = pares.map(([w, v]) => [w / suma, v]);
+  const media = normal.reduce((t, [w, v]) => t + w * v, 0);
+  const divisor = 1 - normal.reduce((t, [w]) => t + w * w, 0);
+  if (divisor <= 0) return 0;
+  return Math.sqrt(normal.reduce((t, [w, v]) => t + w * (v - media) ** 2, 0) / divisor);
+}
+
 function fmt(v, pct) {
   return v === null || v === undefined ? "-" : pct ? `${(v * 100).toFixed(1)}%` : v.toFixed(1);
 }
@@ -175,24 +278,28 @@ function puntosDeUnidad(sub) {
 }
 
 function metricasDeUnidad(sub) {
-  const danoColl = promedio(sub.map((s) => s[COL.danoCollTotal]));
-  const danoMol = promedio(sub.map((s) => s[COL.danoMoluscos]));
-  const danoHongos = promedio(sub.map((s) => s[COL.danoHongos]));
+  const { pesos, sinAreas } = pesosDePuntos(sub);
+  const valor = (col) => ponderado(sub, pesos, (s) => s[col]);
+  const dispersion = (col) => desviacionPonderada(sub, pesos, (s) => s[col]);
+  const danoColl = valor(COL.danoCollTotal);
+  const danoMol = valor(COL.danoMoluscos);
+  const danoHongos = valor(COL.danoHongos);
   return {
-    n_puntos: sub.length, // cuántos puntos se promediaron (con 1 no hay dispersión posible)
-    incid_coll: promedio(sub.map((s) => s[COL.incidColl])),
-    sev_coll: promedio(sub.map((s) => s[COL.sevColl])),
-    incid_hongos: promedio(sub.map((s) => s[COL.incidHongos])),
-    sev_hongos: promedio(sub.map((s) => s[COL.sevHongos])),
-    adultos: promedio(sub.map((s) => s[COL.adultos])),
-    ninfas: promedio(sub.map((s) => s[COL.ninfas])),
-    loritos: promedio(sub.map((s) => s[COL.loritos])),
-    lepidopteros: promedio(sub.map((s) => s[COL.lepidopteros])),
-    hojas_moluscos: promedio(sub.map((s) => s[COL.hojasMoluscos])),
-    adultos_sd: desviacion(sub.map((s) => s[COL.adultos])),
-    ninfas_sd: desviacion(sub.map((s) => s[COL.ninfas])),
-    loritos_sd: desviacion(sub.map((s) => s[COL.loritos])),
-    lepidopteros_sd: desviacion(sub.map((s) => s[COL.lepidopteros])),
+    n_puntos: sub.length, // cuántos puntos entraron al ponderado (con 1 no hay dispersión posible)
+    sin_areas: sinAreas,
+    incid_coll: valor(COL.incidColl),
+    sev_coll: valor(COL.sevColl),
+    incid_hongos: valor(COL.incidHongos),
+    sev_hongos: valor(COL.sevHongos),
+    adultos: valor(COL.adultos),
+    ninfas: valor(COL.ninfas),
+    loritos: valor(COL.loritos),
+    lepidopteros: valor(COL.lepidopteros),
+    hojas_moluscos: valor(COL.hojasMoluscos),
+    adultos_sd: dispersion(COL.adultos),
+    ninfas_sd: dispersion(COL.ninfas),
+    loritos_sd: dispersion(COL.loritos),
+    lepidopteros_sd: dispersion(COL.lepidopteros),
     dano_coll: danoColl, dano_mol: danoMol, dano_hongos: danoHongos,
     pasto_sano: 1 - (danoColl || 0) - (danoMol || 0) - (danoHongos || 0),
   };
@@ -200,7 +307,9 @@ function metricasDeUnidad(sub) {
 
 // Barras contra umbral, anillos, promedio general y alertas: todo se arma igual, sea la tabla por
 // lotes de una finca o por fincas de un cliente.
-function resumenDeTabla(tabla, umbrales) {
+// `filasTodas` son todos los puntos de la finca (o de las fincas elegidas): el valor general se
+// pondera con ellos, no promediando los lotes como si todos pesaran igual.
+function resumenDeTabla(tabla, umbrales, filasTodas) {
   const barrasEstatica = {
     categorias: ["Adultos de Collaria", "Ninfas de Collaria", "Loritos", "Lepidópteros"],
     umbrales: [
@@ -217,17 +326,15 @@ function resumenDeTabla(tabla, umbrales) {
     lote: t.lote, valores: [t.dano_coll || 0, t.dano_mol || 0, t.dano_hongos || 0, Math.max(t.pasto_sano || 0, 0)],
   }));
 
-  const promedioFinca = {};
+  const general = metricasDeUnidad(filasTodas || []);
+  const promedioFinca = { sin_areas: general.sin_areas };
   ["incid_coll", "sev_coll", "incid_hongos", "sev_hongos", "adultos", "ninfas", "loritos",
     "lepidopteros", "dano_mol", "dano_coll", "dano_hongos", "pasto_sano"].forEach((campo) => {
-    promedioFinca[campo] = promedio(tabla.map((t) => t[campo]));
+    promedioFinca[campo] = general[campo];
   });
   const promedioBarras = {
     valores: [promedioFinca.adultos, promedioFinca.ninfas, promedioFinca.loritos, promedioFinca.lepidopteros],
-    errores: [
-      promedio(tabla.map((t) => t.adultos_sd)), promedio(tabla.map((t) => t.ninfas_sd)),
-      promedio(tabla.map((t) => t.loritos_sd)), promedio(tabla.map((t) => t.lepidopteros_sd)),
-    ],
+    errores: [general.adultos_sd, general.ninfas_sd, general.loritos_sd, general.lepidopteros_sd],
   };
   const promedioTorta = [
     promedioFinca.dano_coll || 0, promedioFinca.dano_mol || 0, promedioFinca.dano_hongos || 0,
@@ -268,8 +375,9 @@ function historialDeSeries(filas, meses, series, umbrales) {
       const promedios = [], errores = [];
       for (const mes of meses) {
         const sub = filas.filter((fila) => mesDeFecha(fila[COL.fecha]) === mes && serie.filtro(fila));
-        promedios.push(promedio(sub.map(extraer)));
-        errores.push(desviacion(sub.map(extraer)));
+        const { pesos } = pesosDePuntos(sub);
+        promedios.push(ponderado(sub, pesos, extraer));
+        errores.push(desviacionPonderada(sub, pesos, extraer));
       }
       porSerie[String(serie.clave)] = promedios;
       erroresPorSerie[String(serie.clave)] = errores;
@@ -722,7 +830,7 @@ const Informes = {
       cliente, finca, fecha, visita_numero: visitaNumero, lotes_reales: lotesReales, lotes_finca: lotesFinca,
       etiqueta_unidad: "Lote", plural_unidad: "lotes",
       tabla_lotes: tablaLotes, umbrales, maximos,
-      ...resumenDeTabla(tablaLotes, umbrales),
+      ...resumenDeTabla(tablaLotes, umbrales, visita),
       ...historialDeSeries(filas, ultimos6Meses, series, umbrales),
       productividad, orden_productos: ordenProductos,
     };
@@ -744,9 +852,11 @@ const Informes = {
 
     const productividad = [];
     const tablaFincas = [];
+    const puntosElegidos = [];
     for (const { finca, fecha } of seleccion) {
       const sub = filas.filter((f) => f[COL.cliente] === cliente && f[COL.finca] === finca && f[COL.fecha] === fecha);
       if (sub.length === 0) continue;
+      puntosElegidos.push(...sub);
       const lotes = [...new Set(sub.map((f) => f[COL.lote]))].sort((a, b) => a - b);
       const primero = sub[0];
 
@@ -819,7 +929,7 @@ const Informes = {
       es_cliente: true, etiqueta_unidad: "Finca", plural_unidad: "fincas",
       lotes_reales: fincas, lotes_finca: fincas, fechas_visitas: fechasVisitas,
       tabla_lotes: tablaFincas, umbrales, maximos,
-      ...resumenDeTabla(tablaFincas, umbrales),
+      ...resumenDeTabla(tablaFincas, umbrales, puntosElegidos),
       ...historialDeSeries(filas, mesesHistorial, series, umbrales),
       productividad, orden_productos: ordenProductos,
     };
@@ -857,7 +967,7 @@ const Informes = {
       <td${semaforo(t.loritos, defDe("loritos"))}>${fmt(t.loritos)}</td>
       <td${semaforo(t.lepidopteros, defDe("lepidopteros"))}>${fmt(t.lepidopteros)}</td>
     </tr>`).join("") + (D.tabla_lotes.length > 1 ? `<tr class="fila-promedio">
-      <td>Promedio general</td>
+      <td>Ponderado general</td>
       <td${semaforo(D.promedio_finca.incid_coll, defDe("incid_coll"))}>${fmt(D.promedio_finca.incid_coll, true)}</td>
       <td${semaforo(D.promedio_finca.sev_coll, defDe("sev_coll"))}>${fmt(D.promedio_finca.sev_coll, true)}</td>
       <td${semaforo(D.promedio_finca.incid_hongos, defDe("incid_hongos"))}>${fmt(D.promedio_finca.incid_hongos, true)}</td>
@@ -1044,9 +1154,10 @@ const Informes = {
       const clave = String(t.lote);
       const valores = D.barras_estatica.lotes[clave] || [];
       const errores = (D.barras_estatica.errores || {})[clave] || [];
-      const nota = t.n_puntos === 1
+      const nota = (t.n_puntos === 1
         ? "1 punto de muestreo (sin dispersión)."
-        : `Promedio de ${t.n_puntos} puntos de muestreo.`;
+        : `Ponderado de ${t.n_puntos} puntos de muestreo según zonas y potreros.`) +
+        (t.sin_areas ? " Sin areas de potreros registradas." : "");
       return `<div class="lote-bloque">
         <h3><button type="button" class="ver-detalle no-imprimir" onclick="document.getElementById('detalle${i}').showModal()">
           ${esc(nombreUnidad(t.lote))}${t.subtitulo ? ` — ${esc(t.subtitulo)}` : ""} <span class="lupa">ver puntos</span>
@@ -1058,7 +1169,7 @@ const Informes = {
     }).join("") + (D.tabla_lotes.length <= 1 ? "" : `<div class="lote-bloque lote-bloque-promedio">
         <h3>Estado general de la finca</h3>
         ${panelesHtml(D.promedio_barras.valores, D.promedio_barras.errores, D.promedio_torta)}
-        <p class="nota-puntos">Promedio de los ${D.tabla_lotes.length} lotes.</p>
+        <p class="nota-puntos">Ponderado de ${U === "Finca" ? "las" : "los"} ${D.tabla_lotes.length} ${UP}.${D.promedio_finca.sin_areas ? " Sin areas de potreros registradas." : ""}</p>
       </div>`);
 
     const opcionesVariable = GRUPOS_HISTORIAL.map((g) => `<option value="${g.id}">${g.nombre}</option>`).join("") +
@@ -1081,7 +1192,7 @@ const Informes = {
 
     const baseResultados = D.tabla_lotes.length === 1
       ? esc(nombreUnidad(D.tabla_lotes[0].lote))
-      : `Promedio de ${U === "Finca" ? "las" : "los"} ${D.tabla_lotes.length} ${UP}`;
+      : `Ponderado de ${U === "Finca" ? "las" : "los"} ${D.tabla_lotes.length} ${UP}`;
     const resultadosHtml = `<strong>${baseResultados}:</strong><br>` + (D.alertas.length
       ? D.alertas.map((a) => `• ${esc(a)}`).join("<br>")
       : "Ningún indicador superó su umbral en esta visita.");
