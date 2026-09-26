@@ -129,7 +129,7 @@ Dos modos, mismo motor:
 
 1. **Por lotes de una finca** → `calcularDatos(cliente, finca, fecha)`. Unidad = **Lote**.
 2. **Por fincas de un cliente** → `calcularDatosCliente(cliente, seleccion)`. Unidad = **Finca**.
-   El asesor elige **qué fincas y de qué visita**; se promedian todos los puntos de la finca.
+   El asesor elige **qué fincas y de qué visita**; cada finca se pondera (lotes por área, o iguales sin áreas).
 
 El motor está parametrizado por unidad: `metricasDeUnidad(sub)`, `puntosDeUnidad(sub)`,
 `resumenDeTabla(tabla, umbrales)`, `historialDeSeries(filas, meses, series, umbrales)`, y
@@ -152,9 +152,9 @@ Otros detalles del informe:
   → H "Peso de cada Potrero" (parte del potrero en el lote) → M "Peso de cada punto (x Lotes)" =
   L/"Suma pesos del potrero" × H → E "% del Lote" = 1 ÷ lotes de la finca en esa visita → N "Peso de
   cada punto (x Finca)" = M × E. O "(x Fincas de un cliente)" **no se llena** (pedido explícito). El
-  informe hace estas mismas cuentas en `pesosDePuntos`. Para escribir fórmulas en el Excel se edita el
-  XML del .xlsx (script `escribir_formulas2.py` en el scratchpad de esa sesión): **nunca con el Excel
-  abierto** y comprobando que el archivo no cambió desde que se leyó.
+  informe hace estas mismas cuentas en `pesosDePuntos`. Para tocar el Excel se usa **Excel por COM** desde
+  PowerShell (ver 2.2 en la sección 10): **nunca con el Excel abierto** y comprobando que el archivo no
+  cambió desde que se leyó.
 - **Historial:** agrupado **por mes**, no por día (`mesDeFecha`, `fmtMes`). 13 gráficas, una línea
   por lote/finca, en 3 grupos (Conteos / Epidemiología / Estado de las pasturas) + opción "Todas"
   (3 por hilera, que es la versión para imprimir).
@@ -212,7 +212,7 @@ Este fue un dolor real: el celular se quedaba pegado en versiones viejas ("que p
 
 ### Cómo publicar
 ```bash
-node pruebas/correr.js                       # 48 pruebas
+node pruebas/correr.js                       # todas las pruebas
 node publicar.js                             # corre las pruebas y sube la versión
 git add -A && git commit -m "..." && git push
 ```
@@ -262,7 +262,7 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 - 71 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
-  viven en las columnas U:X de las filas de los puntos. Y el **último punto** ya no se pierde al
+  viven en las filas de los puntos (hoy columnas AN:AQ; la app las ubica por título). Y el **último punto** ya no se pierde al
   terminar el lote: antes se exigía el formulario completo y si faltaba un campo se descartaba en
   silencio.
 - v66: subida automática, botón naranja/gris, sin franja de versión.
@@ -295,8 +295,8 @@ promedia: se pondera. Reglas acordadas:
 - Potrero = suma de valor × peso de sus puntos.
 - Lote de ganado = potreros ponderados por área; **si falta el área de algún potrero, pesan igual**
   y el informe dice **"Sin areas de potreros registradas"**.
-- Finca = lotes ponderados por el área de sus potreros muestreados; cliente = fincas igual. Sin
-  áreas, pesan igual (lotes, no puntos).
+- Finca: en el informe de lotes, **cada lote igual** (columna N del Excel); en el informe por
+  fincas de un cliente, lotes por área o iguales sin áreas.
 - El informe hace la misma cuenta de las columnas "(Pond)" pero con lo del celular + lo del Excel
   (`pesosDePuntos`, `ponderado`, `desviacionPonderada` en `informes.js`); **no** lee "(Pond)"
   porque con puntos sin subir o una visita retomada esas fórmulas todavía no tienen el número bueno.
