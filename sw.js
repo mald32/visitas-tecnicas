@@ -1,14 +1,26 @@
-const CACHE_NAME = "visitas-tecnicas-v2.2";
+const CACHE_NAME = "visitas-tecnicas-v2.3";
 const ARCHIVOS = [
   "./",
   "./index.html",
   "./styles.css",
-  "./app.js",
+  // Todos los scripts de index.html deben estar aquí: sin ellos la app no abre sin señal
+  // (hay una prueba que lo revisa).
   "./config.js",
   "./esquema.js",
   "./db.js",
   "./graph.js",
   "./informes.js",
+  "./informe-estilos.js",
+  "./informe-html.js",
+  "./app.js",
+  "./visita.js",
+  "./productividad.js",
+  "./manejo.js",
+  "./captura.js",
+  "./pantalla-informes.js",
+  "./historial.js",
+  "./sincronizacion.js",
+  "./arranque.js",
   "./manifest.json",
   "./lib/msal-browser.min.js",
   "./logo.png",

@@ -296,6 +296,20 @@ const Graph = {
     });
   },
 
+  // ¿Ya hay una fila con ese valor en la columna de ese dato? Lee solo esa columna (no la tabla
+  // entera). Se usa para no repetir un punto que sí llegó aunque la respuesta se perdiera.
+  async existeValorEnColumna(nombreTabla, dato, valor) {
+    const clave = esquemaDeTabla(nombreTabla);
+    const posicion = posicionesEnExcel(clave, await this.titulos(nombreTabla))[dato];
+    if (posicion === undefined) {
+      throw new Error(`En la tabla ${nombreTabla} del Excel no encuentro la columna "${tituloDe(clave, dato)}".`);
+    }
+    return this.conReintento(async (id) => {
+      const r = await this.llamar(`/me/drive/items/${id}/workbook/tables('${nombreTabla}')/columns/itemAt(index=${posicion})/dataBodyRange?$select=values`);
+      return (r.values || []).some((f) => String(f[0]) === String(valor));
+    });
+  },
+
   // Agrega una fila a cualquier tabla por su nombre. `valores` viene en el orden interno de la app
   // y aquí se acomoda según los títulos reales: cada dato a su columna, y las columnas que la app
   // no conoce (fórmulas, ponderados, abonos) vacías. Si falta una columna que la app necesita,

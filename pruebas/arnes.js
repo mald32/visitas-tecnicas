@@ -121,6 +121,10 @@ function cargarApp(archivos, stubs = {}, exponer = []) {
   return sandbox;
 }
 
+// La app y el informe están repartidos en varios archivos (mismo orden que index.html).
+const ARCHIVOS_APP = ["app.js","visita.js","productividad.js","manejo.js","captura.js","pantalla-informes.js","historial.js","sincronizacion.js","arranque.js"];
+const ARCHIVOS_INFORME = ["informes.js","informe-estilos.js","informe-html.js"];
+
 function resumen() {
   console.log("");
   if (resultados.fallos.length === 0) {
@@ -133,5 +137,5 @@ function resumen() {
 
 module.exports = {
   RAIZ, prueba, pruebaAsync, igual, cerca, contiene, noContiene, cierto,
-  cargarApp, elementoFalso, resumen, resultados,
+  cargarApp, elementoFalso, resumen, resultados, ARCHIVOS_APP, ARCHIVOS_INFORME,
 };

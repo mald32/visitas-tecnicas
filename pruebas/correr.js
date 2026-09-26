@@ -4,7 +4,7 @@
 
 const {
   prueba, pruebaAsync, igual, cerca, contiene, noContiene, cierto,
-  cargarApp, elementoFalso, resumen,
+  cargarApp, elementoFalso, resumen, ARCHIVOS_APP, ARCHIVOS_INFORME,
 } = require("./arnes");
 
 const {
@@ -29,7 +29,7 @@ const TITULOS_BASE_REALES = [
   "Incidencia Daño Moluscos (% de hojas) (Pond)", "Incidencia de Mancha Fungicas (% de hojas) (Pond)",
   "Severidad Manchas Fungicas (% de la hoja) (Pond)", "Daño Pasturas Moluscos (%)", "Daño Pasturas Collaria (%)",
   "Daño Pasturas Hongo (%)", "Observaciones", "Tipo de Fumigacion", "Litros de Mezcla/ha",
-  "Orden de Mezcla Correcto?", "pH Final de la Mezcla", "Suma pesos del potrero",
+  "Orden de Mezcla Correcto?", "pH Final de la Mezcla", "Suma pesos del potrero", "ID punto",
 ];
 const TITULOS_PRODUCTIVIDAD_REALES = [
   "Cliente", "Finca", "Fecha de Muestreo", "Lote", "Area del Lote (Hectareas)", "Animales en Ordeño",
@@ -74,7 +74,7 @@ prueba("con los títulos reales del Excel no falta ninguna columna", () => {
 prueba("cada dato del punto cae en la columna con su título", () => {
   const T = TITULOS_BASE_REALES;
   const fila = filaHaciaExcel("BASE", T, puntoInterno());
-  igual(fila.length, 40, "la fila debe tener las 40 columnas de la tabla");
+  igual(fila.length, 41, "la fila debe tener las 41 columnas de la tabla");
   igual(fila[columna(T, "Potrero")], "Entran 25");
   igual(fila[columna(T, "Lote")], 2);
   igual(fila[columna(T, "Punto de muestreo")], 3);
@@ -122,7 +122,7 @@ prueba("si falta una columna que la app necesita, no sube nada y dice cuál", ()
 prueba("al leer del Excel, cada dato sale de su título y los daños se calculan con los datos crudos", () => {
   const T = TITULOS_BASE_REALES;
   const B = ESQUEMA.BASE;
-  const excel = new Array(40).fill("");
+  const excel = new Array(41).fill("");
   excel[columna(T, "Cliente")] = "CLIENTE"; excel[columna(T, "Potrero")] = "P1";
   excel[columna(T, "Incidencia Daño Collaria (% de hojas)")] = 0.8; excel[columna(T, "Severidad del Daño Collaria (% de la hoja)")] = 0.25;
   excel[columna(T, "Hojas Atacadas por Moluscos (#)")] = 4; excel[columna(T, "Incidencia Daño Moluscos (% de hojas)")] = 0.4;
@@ -219,7 +219,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     TABLA_PRODUCTOS: "Tabla2",
     ASESOR: { nombre: "Miguel Leon", profesion: "Ingeniero Agrónomo" },
   };
-  return cargarApp(["esquema.js", "informes.js"], { Graph, DB, CONFIG }, ["Informes"]);
+  return cargarApp(["esquema.js", ...ARCHIVOS_INFORME], { Graph, DB, CONFIG }, ["Informes"]);
 }
 
 (async () => {
@@ -786,7 +786,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     cerca(paraExcel[columna(T, "Incidencia Daño Collaria (% de hojas)")], 0.5, 1e-9, "la incidencia capturada no se debe borrar");
     igual(paraExcel[columna(T, "Tipo de Fumigacion")], "Aerea (Dron)", "el manejo agronómico no se debe borrar");
     igual(paraExcel[columna(T, "Incidencia Daño Moluscos (% de hojas)")], null, "la incidencia de moluscos la calcula el Excel");
-    igual(paraExcel.length, 40, "la fila debe tener las 40 columnas de la tabla");
+    igual(paraExcel.length, 41, "la fila debe tener las 41 columnas de la tabla");
   });
 
   // -------------------------------------------------------------------------
@@ -794,7 +794,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
   // -------------------------------------------------------------------------
   console.log("\nProductividad");
 
-  const app = cargarApp(["esquema.js", "app.js"], {
+  const app = cargarApp(["esquema.js", ...ARCHIVOS_APP], {
     CONFIG: { ASESOR: {} }, DB: {}, Graph: {}, Informes: {},
   });
 
@@ -920,7 +920,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
       if (!elementos.has(id)) { const e = elementoFalso(); e.value = valores[id] || ""; elementos.set(id, e); }
       return elementos.get(id);
     };
-    return cargarApp(["esquema.js", "app.js"], {
+    return cargarApp(["esquema.js", ...ARCHIVOS_APP], {
       CONFIG: { ASESOR: {} }, DB: {}, Graph: {}, Informes: {},
       document: {
         addEventListener() {}, getElementById: dame,
@@ -960,6 +960,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const DB = {
       async leerCache(k) { return cache[k] ?? null; },
       async guardarCache(k, v) { cache[k] = v; },
+      async anotarIntento(id) { const it = cola.get(id); const previos = it.intentos || 0; it.intentos = previos + 1; return previos; },
       async agregarItem(tipo, datos) { const id = Math.max(0, ...cola.keys()) + 1; cola.set(id, { id, tipo, datos, estado: "pendiente" }); return id; },
       async listarItems() { return [...cola.values()].map((it) => ({ ...it })); },
       async leerItem(id) { return cola.has(id) ? { ...cola.get(id) } : null; },
@@ -968,13 +969,16 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
       async marcarSincronizado(id, revision) { marcados.push({ id, revision }); const it = cola.get(id); if (it && (it.revision || 0) === revision) it.estado = "sincronizado"; },
       async marcarError(id, msg) { const it = cola.get(id); if (it) it.ultimoError = msg; },
     };
+    const enExcel = new Set();
     const Graph = {
-      olvidarTitulos() {}, async agregarFila(fila) { subidos.push(fila); await alSubir(DB, subidos.length); },
+      olvidarTitulos() {},
+      async agregarFila(fila) { subidos.push(fila); enExcel.add(fila[ESQUEMA.BASE.idPunto]); await alSubir(DB, subidos.length); },
+      async existeValorEnColumna(tabla, dato, valor) { return enExcel.has(valor); },
       async eliminarFilasDonde() { return 0; },
       async agregarFilaEnTabla(tabla, fila) { if (tabla === "Visitas") filasVisitas.push(fila); },
     };
-    const a = cargarApp(["esquema.js", "app.js"], { CONFIG: { ASESOR: {}, TABLA_VISITAS: "Visitas" }, DB, Graph, Informes: { invalidarCache() {} } });
-    return { a, cola, subidos, marcados, filasVisitas };
+    const a = cargarApp(["esquema.js", ...ARCHIVOS_APP], { CONFIG: { ASESOR: {}, TABLA_VISITAS: "Visitas" }, DB, Graph, Informes: { invalidarCache() {} } });
+    return { a, cola, subidos, marcados, filasVisitas, enExcel };
   }
   const puntoCola = (id, lote) => ({ id, tipo: "punto", datos: { cliente: "C", finca: "F", fecha: "2026-09-23", lote, fila: new Array(24).fill(id) } });
 
@@ -1002,6 +1006,51 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     igual(subidos.length, 2, "los dos puntos suben");
     igual(filasVisitas.length, 1, "una sola fila para la visita");
     igual(JSON.stringify(filasVisitas[0]), JSON.stringify(["C", "F", "2026-09-23"]), "cliente, finca y fecha");
+  });
+
+  // -------------------------------------------------------------------------
+  // Sin señal la app solo abre si el service worker guardó TODOS sus archivos
+  // -------------------------------------------------------------------------
+  console.log("\nArchivos para trabajar sin señal");
+
+  prueba("todo script de index.html está en la lista del service worker", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const raiz = path.join(__dirname, "..");
+    const html = fs.readFileSync(path.join(raiz, "index.html"), "utf8");
+    const sw = fs.readFileSync(path.join(raiz, "sw.js"), "utf8");
+    const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
+    cierto(scripts.length >= 14, "deberían estar todos los archivos de la app");
+    for (const s of scripts) contiene(sw, `"./${s}"`, `${s} debe guardarse para abrir sin señal`);
+    for (const f of [...ARCHIVOS_APP, ...ARCHIVOS_INFORME]) cierto(scripts.includes(f), `${f} debe cargarse en index.html`);
+  });
+
+  // -------------------------------------------------------------------------
+  // Código único por punto: un punto que sí llegó no se vuelve a subir
+  // -------------------------------------------------------------------------
+  console.log("\nCódigo único por punto");
+
+  await pruebaAsync("si el punto llegó al Excel pero la respuesta se perdió, el reintento no lo duplica", async () => {
+    const { a, subidos, cola } = appConCola([{ ...puntoCola(1, 1), datos: { ...puntoCola(1, 1).datos, idPunto: "P-abc" } }],
+      async (DB, n) => { if (n === 1) throw new Error("Sin respuesta de internet"); });
+    await a.sincronizar({ silencioso: true });
+    igual(cola.get(1).estado, "pendiente", "el primer intento se da por fallido");
+    await a.sincronizar({ silencioso: true });
+    igual(subidos.length, 1, "el reintento vio que P-abc ya estaba y no lo agregó otra vez");
+    igual(cola.get(1).estado, "sincronizado");
+  });
+
+  await pruebaAsync("el primer intento sube directo, sin revisar el Excel", async () => {
+    const { a, subidos } = appConCola([puntoCola(1, 1)], async () => {});
+    await a.sincronizar({ silencioso: true });
+    igual(subidos.length, 1);
+    cierto(String(subidos[0][ESQUEMA.BASE.idPunto]).startsWith("P-cola-1-"), "un punto viejo sin código recibe uno fijo");
+  });
+
+  prueba("el código del punto va a la columna ID punto del Excel", () => {
+    const T = TITULOS_BASE_REORGANIZADA;
+    const f = puntoInterno(); f[ESQUEMA.BASE.idPunto] = "P-xyz";
+    igual(filaHaciaExcel("BASE", T, f)[columna(T, "ID punto")], "P-xyz");
   });
 
   process.exit(resumen());

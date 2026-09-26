@@ -104,6 +104,24 @@ const DB = {
     });
   },
 
+  // Anota que se va a intentar subir este dato y devuelve cuántas veces se había intentado antes.
+  // Se anota ANTES de subir: si la app se cierra a mitad de la subida, el próximo intento sabe que
+  // el anterior pudo haber llegado al Excel.
+  async anotarIntento(id) {
+    let previos = 0;
+    await withStore(STORE_COLA, "readwrite", (store) => {
+      const req = store.get(id);
+      req.onsuccess = () => {
+        const item = req.result;
+        if (!item) return;
+        previos = item.intentos || 0;
+        item.intentos = previos + 1;
+        store.put(item);
+      };
+    });
+    return previos;
+  },
+
   async marcarError(id, mensaje) {
     await withStore(STORE_COLA, "readwrite", (store) => {
       const req = store.get(id);

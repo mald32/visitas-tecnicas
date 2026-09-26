@@ -21,7 +21,7 @@ const ESQUEMA = {
     loritos: 10, lepidopteros: 11, hojasMoluscos: 12, incidMoluscos: 13, danoMoluscos: 14,
     incidHongos: 15, sevHongos: 16, danoHongos: 17, potrero: 18, observaciones: 19,
     tipoFumigacion: 20, litrosMezclaHa: 21, ordenMezclaCorrecto: 22, phFinalMezcla: 23,
-    areaPotrero: 24, zona: 25, areaZona: 26, pctZona: 27, pctPunto: 28,
+    areaPotrero: 24, zona: 25, areaZona: 26, pctZona: 27, pctPunto: 28, idPunto: 29,
   },
 
   // Tablas Productos_Aplicados y Productos_Recomendados (mismos encabezados).
@@ -66,7 +66,7 @@ const ESQUEMA = {
       // El 24/09/2026 se renombraron "Porcentaje de la zona/del punto" a "Peso de cada zona/punto".
       // Se aceptan los dos nombres para que un cambio de nombre no vuelva a trabar la subida.
       pctZona: ["Peso de cada zona", "Porcentaje de la zona"], pctPunto: ["Peso de cada punto", "Porcentaje del punto"],
-      punto: "Punto de muestreo",
+      punto: "Punto de muestreo", idPunto: "ID punto",
       adultos: "Collaria Adultos", ninfas: "Collaria Ninfas",
       incidColl: "Incidencia Daño Collaria (% de hojas)", sevColl: "Severidad del Daño Collaria (% de la hoja)",
       loritos: "Numero de Loritos", lepidopteros: "Numero de larvas de Lepidopteros",

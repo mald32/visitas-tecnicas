@@ -35,8 +35,18 @@ dato.
 | Archivo | Para qué sirve |
 |---|---|
 | `index.html` | Todas las pantallas (login, visita, lotes, punto, fin, informes, historial). |
-| `app.js` (~2.600 líneas) | Flujo completo: login, captura, manejo, productividad, cola, sincronización, informes, historial. |
-| `informes.js` (~1.650 líneas) | Lee datos, calcula indicadores y **genera el HTML del informe** (con su propio CSS y gráficas en SVG). |
+| `app.js` | Núcleo: estado compartido, utilidades, arranque de sesión y visitas en curso. |
+| `visita.js` · `productividad.js` · `manejo.js` · `captura.js` | Paso 1 (cliente/finca), productividad, manejo agronómico, pasos 2-3 (lote y puntos). |
+| `pantalla-informes.js` · `historial.js` | Pestañas Informes e Historial. |
+| `sincronizacion.js` | Cola, subida de cada tipo de dato, subida automática. |
+| `arranque.js` | Versión publicada, service worker y los botones; **va de último** en index.html. |
+| `informes.js` | Lee datos y **calcula** el informe (pesos, métricas, historial). |
+| `informe-html.js` · `informe-estilos.js` | Arma el HTML del informe (`Informes.generarHtml`) y su CSS. |
+
+> Desde la 2.3 el código está dividido por tema (antes `app.js` tenía 2.700 líneas y `generarHtml`
+> 840). Son scripts normales que comparten variables globales; el orden de index.html importa. **Todo
+> archivo nuevo debe ir en index.html, en `ARCHIVOS` de sw.js (si no, la app no abre sin señal) y en
+> `ARCHIVOS_APP`/`ARCHIVOS_INFORME` de pruebas/arnes.js**; hay una prueba que lo revisa.
 | `graph.js` | Todas las llamadas a Microsoft Graph. |
 | `db.js` | Cola local e IndexedDB. |
 | `esquema.js` | **Único** lugar donde se dice qué columna es cada cosa en el Excel. |
@@ -44,7 +54,7 @@ dato.
 | `sw.js` | Service worker (offline + control de versión). |
 | `version.json` | `{"version":"2.N"}` — lo que la app consulta para saber si se quedó atrás. |
 | `publicar.js` | Sube la versión en un paso, corriendo antes las pruebas. |
-| `pruebas/` | 71 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
+| `pruebas/` | 75 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
 | `lib/msal-browser.min.js` | MSAL copiado al repo **a propósito** (desde CDN no abría sin internet). |
 
 ---
@@ -98,7 +108,7 @@ tablas: se siguen leyendo por rango.
 
 | Hoja / Tabla | Contenido |
 |---|---|
-| `Base de datos` / `TablaBaseDatos` | Una fila **por punto de muestreo**. 40 columnas: Lote (de ganado) → Potrero → Zona (área, % de la zona) → Punto; datos crudos; ponderados "(Pond)", "Daño Pasturas" y "Suma pesos del potrero", que son fórmulas. |
+| `Base de datos` / `TablaBaseDatos` | Una fila **por punto de muestreo**. 48 columnas (con "ID punto" y las auxiliares "Peso en el potrero" y "Area x peso en el potrero", 2.3): Lote (de ganado) → Potrero → Zona (área, % de la zona) → Punto; datos crudos; ponderados "(Pond)", "Daño Pasturas" y "Suma pesos del potrero", que son fórmulas. |
 | `Productos_Aplicados` | Lo que el ganadero **ya aplicó** (manejo agronómico). 9 columnas. |
 | `Productos_Recomendados` | Lo que el asesor **recomienda** en el informe **de una finca** (cliente+finca+fecha). 9 columnas. La columna Lote va vacía **por diseño**. |
 | `Productividad_Fincas` | Área, animales, días, producción + abonos (estos los llena el usuario a mano). 25 columnas. |
@@ -258,8 +268,8 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ## 10. Estado al 24 de septiembre de 2026
 
-- Última versión publicada: **v2.2**, `main` al día con `origin/main`.
-- 71 pruebas pasando.
+- Última versión publicada: **v2.3**, `main` al día con `origin/main`.
+- 75 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
   viven en las filas de los puntos (hoy columnas AN:AQ; la app las ubica por título). Y el **último punto** ya no se pierde al
@@ -272,6 +282,14 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 - v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
   datos" para el muestreo por zonas y agregó abonos a Productividad).
+- **2.3**: código dividido por tema (ver sección 2). **ID único por punto** (`idPunto` en los datos
+  del item, columna "ID punto" del Excel; los 329 puntos viejos recibieron uno): antes de reintentar
+  una subida que pudo haber llegado (`DB.anotarIntento` > 0) se revisa con
+  `Graph.existeValorEnColumna` si ya está, y no se duplica. En el Excel, H "Peso de cada Potrero" y M
+  pasaron de SUMAPRODUCTO sobre toda la tabla a SUMAR.SI.CONJUNTO sobre las auxiliares (mismos
+  valores exactos; recalcular 174 → 96 ms con 329 filas). **Ojo: el Excel está en OneDrive y tiene
+  guardado automático: por COM, los cambios se graban aunque se cierre "sin guardar"**. Poner
+  `$wb.AutoSaveOn = $false` al abrir, o trabajar sobre una copia y reemplazar al final.
 - **2.2**: hoja/tabla `Visitas` que la app llena sola (para el agente del usuario). En el Excel se
   llenaron con fórmulas E "% del Lote", H "Peso de cada Potrero", M y N (verificado con Excel: M suma
   100 % en los 83 lotes y N en las 42 fincas-visita). Para tocar el Excel se usó **Excel por COM
