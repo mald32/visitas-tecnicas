@@ -54,7 +54,7 @@ dato.
 | `sw.js` | Service worker (offline + control de versión). |
 | `version.json` | `{"version":"2.N"}` — lo que la app consulta para saber si se quedó atrás. |
 | `publicar.js` | Sube la versión en un paso, corriendo antes las pruebas. |
-| `pruebas/` | 75 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
+| `pruebas/` | 80 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
 | `lib/msal-browser.min.js` | MSAL copiado al repo **a propósito** (desde CDN no abría sin internet). |
 
 ---
@@ -139,7 +139,9 @@ Dos modos, mismo motor:
 
 1. **Por lotes de una finca** → `calcularDatos(cliente, finca, fecha)`. Unidad = **Lote**.
 2. **Por fincas de un cliente** → `calcularDatosCliente(cliente, seleccion)`. Unidad = **Finca**.
-   El asesor elige **qué fincas y de qué visita**; cada finca se pondera (lotes por área, o iguales sin áreas).
+   El asesor elige **qué fincas y de qué visita** (por defecto la última de cada finca). Desde la 2.4
+   sigue la columna O del Excel: **cada finca igual y, dentro, cada lote igual** (`lotesIguales` +
+   `visitasIguales`). Verificado: los 24 clientes dan igual que Σ valor × O.
 
 El motor está parametrizado por unidad: `metricasDeUnidad(sub)`, `puntosDeUnidad(sub)`,
 `resumenDeTabla(tabla, umbrales)`, `historialDeSeries(filas, meses, series, umbrales)`, y
@@ -161,7 +163,9 @@ Otros detalles del informe:
   K "Peso de cada zona" (a mano) → L "Peso de cada punto" (fórmula del usuario: K ÷ puntos de la zona)
   → H "Peso de cada Potrero" (parte del potrero en el lote) → M "Peso de cada punto (x Lotes)" =
   L/"Suma pesos del potrero" × H → E "% del Lote" = 1 ÷ lotes de la finca en esa visita → N "Peso de
-  cada punto (x Finca)" = M × E. O "(x Fincas de un cliente)" **no se llena** (pedido explícito). El
+  cada punto (x Finca)" = M × E. O "(x Fincas de un cliente)" (2.4) = N ÷ fincas del cliente, solo
+  en la última visita de cada finca (auxiliar "Ultima visita de la finca", con MAXIFS); en visitas
+  viejas vale 0. El
   informe hace estas mismas cuentas en `pesosDePuntos`. Para tocar el Excel se usa **Excel por COM** desde
   PowerShell (ver 2.2 en la sección 10): **nunca con el Excel abierto** y comprobando que el archivo no
   cambió desde que se leyó.
@@ -266,10 +270,10 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ---
 
-## 10. Estado al 24 de septiembre de 2026
+## 10. Estado al 3 de octubre de 2026
 
-- Última versión publicada: **v2.3**, `main` al día con `origin/main`.
-- 75 pruebas pasando.
+- Última versión publicada: **v2.4**, `main` al día con `origin/main`.
+- 80 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
   viven en las filas de los puntos (hoy columnas AN:AQ; la app las ubica por título). Y el **último punto** ya no se pierde al
@@ -282,6 +286,21 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 - v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
   datos" para el muestreo por zonas y agregó abonos a Productividad).
+- **2.4**: **captura por potreros y zonas** en la pantalla del punto (caja "Dónde se toma el punto":
+  potrero + área, zona + % + área con conversión área ↔ %, botones "+ Nueva zona" / "+ Otro potrero",
+  resumen de zonas del lote). Cada punto guarda su ubicación (`ponerUbicacionEnFila`, índices 18 y
+  24-27); un punto guardado se ve con SU potrero/zona (`mostrarUbicacion`); lo último escrito por
+  lote vive en `sinGuardar.ubicacion`. Corregir área/% aplica a los puntos pendientes de ese
+  potrero/zona. "Terminar lote" no cierra si un potrero con 2+ zonas no suma 100 %
+  (`problemasDeZonas`). El potrero escrito al final ya NO se pone a todos los puntos del lote, solo
+  a los que no tienen. **Columna O** en el Excel y el informe por fincas siguiéndola. **"Por
+  visitar"** arriba del Historial (`calcularPorVisitar`): próxima visita = última + días de rotación
+  de la finca (o 30), lo atrasado primero y aparte las fincas nunca visitadas.
+  Tropiezos: en PowerShell la coma de `$a[$i,1]` dentro de los paréntesis de un método se lee como
+  separador de argumentos (sacarlo antes a una variable); el heredoc de bash convirtió `\\n` en salto
+  real (escribir los parches con la herramienta de archivos); el scratchpad se limpia solo con los días.
+  Para el Excel se trabajó sobre una **copia fuera de OneDrive** (sin guardado automático) y se
+  reemplazó al final solo si el original no había cambiado (hash) y no estaba abierto.
 - **2.3**: código dividido por tema (ver sección 2). **ID único por punto** (`idPunto` en los datos
   del item, columna "ID punto" del Excel; los 329 puntos viejos recibieron uno): antes de reintentar
   una subida que pudo haber llegado (`DB.anotarIntento` > 0) se revisa con
@@ -321,7 +340,7 @@ promedia: se pondera. Reglas acordadas:
   Verificado el 24/09/2026: los 85 potreros del Excel dan igual que la suma de sus "(Pond)".
 - **Ojo al explicarle esto al usuario:** decir "datos crudos" lo confundió (creyó que se botaban los
   ponderados). Decir: "la app hace la misma cuenta del ponderado".
-Falta: la captura por potreros/zonas en la app (hoy todo punto nuevo sube como Zona 1 = 100 %).
+La captura por potreros/zonas ya está en la app desde la 2.4.
 
 ### Pendiente de decisión del usuario
 1. ¿Registrar el manejo "En general" en **todos los lotes con puntos** también al **salir** de la

@@ -548,7 +548,7 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     igual(D.tabla_lotes.map((t) => t.lote).join(","), "AMAZONAS,SOLEDAD");
     cerca(D.tabla_lotes[0].adultos, 10.5, 1e-9, "AMAZONAS: lote 1 = 15 y lote 2 = 6, pesan igual");
     igual(D.tabla_lotes[0].n_puntos, 3, "cuenta los puntos de los 2 lotes");
-    cierto(D.tabla_lotes[0].sin_areas, "se avisa que no hay áreas");
+    cierto(!D.tabla_lotes[0].sin_areas, "los lotes pesan igual por regla (columna O), no por falta de área: no hay aviso");
     cierto(D.tabla_lotes[0].adultos_sd > 0, "hay desviación para las barras de error");
     cerca(D.promedio_finca.adultos, 6.75, 1e-9, "el general es entre fincas: (10,5 + 3) / 2");
   });
@@ -940,6 +940,78 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     cierto(!a.hayDatosEnPunto(), "sin nada escrito no se guarda nada");
   });
 
+  prueba("el potrero y la zona solos no cuentan como punto (vienen puestos de antes)", () => {
+    const a = appConFormulario({ "potrero-nombre-punto": "Potrero 3", "area-potrero": "4", "zona-punto": "2", "pct-zona": "25", "area-zona": "1" });
+    cierto(!a.hayDatosEnPunto(), "sin conteos ni daños no hay punto que guardar");
+  });
+
+  prueba("la ubicación del punto se lee con el % como fracción", () => {
+    const a = appConFormulario({ "potrero-nombre-punto": " Potrero 3 ", "area-potrero": "4", "zona-punto": "2", "pct-zona": "25", "area-zona": "1" });
+    const u = a.leerUbicacion();
+    igual(u.potrero, "Potrero 3"); igual(u.areaPotrero, 4); igual(u.zona, 2); igual(u.areaZona, 1); cerca(u.pctZona, 0.25, 1e-9);
+  });
+
+  prueba("las zonas de un potrero deben sumar 100 % para cerrar el lote", () => {
+    const a = appConFormulario({});
+    const B = ESQUEMA.BASE;
+    const f = (potrero, zona, pct, areaZona = "", areaPotrero = "") => { const x = new Array(30).fill(""); x[B.potrero] = potrero; x[B.zona] = zona; x[B.pctZona] = pct; x[B.areaZona] = areaZona; x[B.areaPotrero] = areaPotrero; return x; };
+    igual(a.problemasDeZonas([f("A", 1, ""), f("A", 1, "")]).length, 0, "una sola zona sin % es el 100 %");
+    igual(a.problemasDeZonas([f("A", 1, 0.6), f("A", 2, 0.4), f("B", 1, "")]).length, 0, "60 + 40 = 100");
+    contiene(a.problemasDeZonas([f("A", 1, 0.6), f("A", 2, 0.3)])[0], "suman 90 %");
+    contiene(a.problemasDeZonas([f("A", 1, 0.6), f("A", 2, "")])[0], "zona 2");
+    igual(a.problemasDeZonas([f("A", 1, "", 3, 4), f("A", 2, "", 1, 4)]).length, 0, "con áreas: 3/4 + 1/4 = 100 %");
+    contiene(a.resumenDeZonas([f("A", 1, 0.6), f("A", 2, 0.4), f("A", 2, 0.4)]), "zona 2 · 40 % · 2 punto(s)");
+  });
+
+  await pruebaAsync("captura real: cada punto queda con su potrero y su zona, y corregirlo no lo cambia de potrero", async () => {
+    const vm = require("vm");
+    const elementos = new Map();
+    const dame = (id) => { if (!elementos.has(id)) elementos.set(id, elementoFalso()); return elementos.get(id); };
+    const cola = [];
+    const DB = {
+      async listarItems() { return cola.map((it) => ({ ...it, datos: { ...it.datos, fila: [...it.datos.fila] } })); },
+      async agregarItem(tipo, datos) { cola.push({ id: cola.length + 1, tipo, datos, estado: "pendiente" }); },
+      async actualizarDatosItem(id, d) { const it = cola.find((x) => x.id === id); it.datos = { ...it.datos, ...d }; },
+      async leerCache() { return null; }, async guardarCache() {},
+    };
+    const a = cargarApp(["esquema.js", ...ARCHIVOS_APP], {
+      CONFIG: { ASESOR: {} }, DB, Graph: {}, Informes: {},
+      document: { addEventListener() {}, getElementById: dame, querySelectorAll() { return []; }, querySelector() { return elementoFalso(); }, createElement() { return elementoFalso(); } },
+    });
+    vm.runInContext(`visita = { cliente: "C", finca: "F", fecha: "2026-10-03", numeroLotes: 1 }; loteActual = 1;
+      capturandoLote = true; guardarBorrador = async () => {}; registrarVisitaEnLaLista = async () => {};`, a);
+    // El formulario de mentira no se borra con reset(): basta con poner los valores de cada paso.
+    dame("form-punto").reset = () => ["adultos", "ninfas"].forEach((id) => { dame(id).value = ""; });
+    const poner = (v) => Object.entries(v).forEach(([id, x]) => { dame(id).value = String(x); });
+
+    poner({ "potrero-nombre-punto": "A", "area-potrero": "4", "zona-punto": "1", "pct-zona": "60", "area-zona": "", adultos: 5 });
+    await a.guardarPuntoActual(1);
+    poner({ "zona-punto": "2", "pct-zona": "40", adultos: 7 });
+    await a.guardarPuntoActual(2);
+    await a.onOtroPotrero();
+    poner({ "potrero-nombre-punto": "B", adultos: 9 });
+    await a.guardarPuntoActual(3);
+
+    const B = ESQUEMA.BASE;
+    const fila = (n) => cola.find((it) => it.datos.fila[B.punto] === n).datos.fila;
+    igual(fila(1)[B.potrero], "A"); igual(fila(1)[B.zona], 1); cerca(fila(1)[B.pctZona], 0.6, 1e-9); igual(fila(1)[B.areaPotrero], 4);
+    igual(fila(2)[B.potrero], "A"); igual(fila(2)[B.zona], 2); cerca(fila(2)[B.pctZona], 0.4, 1e-9);
+    igual(fila(3)[B.potrero], "B"); igual(fila(3)[B.zona], 1); igual(fila(3)[B.pctZona], "", "zona única: el Excel la toma como 100 %");
+    igual(fila(3)[B.areaPotrero], "", "el área del potrero A no se arrastra al B");
+    igual(a.problemasDeZonas(cola.map((it) => it.datos.fila)).length, 0, "A suma 100 % y B es una sola zona");
+
+    // Volver al punto 1 (potrero A) y corregirlo: debe seguir en A, zona 1, aunque lo último escrito fuera B.
+    a.cargarPuntoEnFormulario(fila(1));
+    a.mostrarUbicacion(fila(1));
+    igual(dame("potrero-nombre-punto").value, "A", "al ver el punto 1 se ve SU potrero");
+    vm.runInContext(`editandoPuntoId = 1;`, a);
+    dame("adultos").value = "6";
+    await a.actualizarPuntoEditado();
+    igual(fila(1)[B.adultos], 6, "la corrección se guardó");
+    igual(fila(1)[B.potrero], "A", "y el punto sigue en el potrero A");
+    cerca(fila(1)[B.pctZona], 0.6, 1e-9);
+  });
+
   prueba("el potrero solo no cuenta como punto (viene puesto del lote)", () => {
     const a = appConFormulario({ "potrero-nombre-punto": "Potrero 3" });
     cierto(!a.hayDatosEnPunto(), "el potrero es del lote, no un dato del punto");
@@ -1051,6 +1123,30 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const T = TITULOS_BASE_REORGANIZADA;
     const f = puntoInterno(); f[ESQUEMA.BASE.idPunto] = "P-xyz";
     igual(filaHaciaExcel("BASE", T, f)[columna(T, "ID punto")], "P-xyz");
+  });
+
+  // -------------------------------------------------------------------------
+  // Por visitar: a quién hace rato no se visita y cuándo le toca
+  // -------------------------------------------------------------------------
+  console.log("\nPor visitar");
+
+  await pruebaAsync("ordena por lo más atrasado y usa los días de rotación de la finca", async () => {
+    const { Informes } = cargarInformes({
+      filas: [
+        filaPunto({ finca: "A", fecha: "2026-09-01" }), filaPunto({ finca: "A", fecha: "2026-09-20" }),
+        filaPunto({ finca: "B", fecha: "2026-09-28" }),
+      ],
+      productividad: [["CLIENTE", "A", "2026-09-20", 1, 10, 40, 35, 18, null, null, null]],
+    });
+    const r = await Informes.porVisitar([{ cliente: "CLIENTE", finca: "A" }, { cliente: "CLIENTE", finca: "B" }, { cliente: "CLIENTE", finca: "C" }], "2026-10-30");
+    igual(r.visitadas.map((v) => v.finca).join(","), "A,B", "A le tocaba el 25/10 y B el 28/10: primero la más atrasada");
+    const a = r.visitadas.find((v) => v.finca === "A");
+    igual(a.ultima, "2026-09-20", "cuenta desde la última visita, no la primera");
+    igual(a.diasRotacion, 35, "rotación registrada de la finca");
+    igual(a.proxima, "2026-10-25");
+    igual(a.faltan, -5, "le tocaba hace 5 días");
+    igual(r.visitadas.find((v) => v.finca === "B").diasRotacion, 30, "sin rotación registrada: 30 días");
+    igual(r.nunca.map((f) => f.finca).join(","), "C", "C nunca se ha visitado");
   });
 
   process.exit(resumen());

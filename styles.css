@@ -107,6 +107,18 @@ label.campo-invalido { color: var(--rojo); }
 input.campo-invalido, select.campo-invalido, textarea.campo-invalido { border-color: var(--rojo); background: #fbeae7; }
 
 .hint { font-size: 12px; color: var(--gris); margin: -4px 0 10px; }
+/* Pantalla del punto: dónde se toma (potrero y zona) */
+.caja-ubicacion { border: 1px solid #e0ddd6; border-radius: 8px; padding: 10px 10px 2px; margin-bottom: 12px; background: #faf8f4; }
+.botones-ubicacion { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.botones-ubicacion button.secundario { width: auto; padding: 6px 14px; font-size: 13px; }
+#resumen-zonas { margin: 0 0 8px; white-space: pre-line; }
+/* Historial: fincas por visitar */
+.por-visitar { margin-bottom: 16px; }
+.por-visitar summary { font-weight: 600; cursor: pointer; margin-bottom: 8px; }
+.por-visitar-finca { cursor: pointer; }
+.pv-atrasada { color: #a52a1f; font-weight: 600; }
+.pv-semana { color: #b26a00; font-weight: 600; }
+.pv-al-dia { color: var(--gris); }
 #datos-estado { margin-top: 10px; }
 
 .productividad-lote-bloque { margin-bottom: 10px; }

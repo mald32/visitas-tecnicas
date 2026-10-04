@@ -25,6 +25,34 @@ async function abrirHistorial() {
   } catch (e) {
     el("historial-estado").textContent = "No se pudo cargar el historial: " + e.message;
   }
+  try {
+    renderPorVisitar(await Informes.porVisitar(clientesFincas, fechaLocalHoy()));
+  } catch (e) {
+    el("por-visitar-lista").innerHTML = `<p class="hint">No se pudo armar la lista: ${esc(e.message)}</p>`;
+  }
+}
+
+// Lo mismo que puede preguntarle al agente ("¿a quién hace rato no visito?"), pero en el celular y
+// sin señal: primero lo atrasado, después lo que toca esta semana, y aparte lo nunca visitado.
+function renderPorVisitar({ visitadas, nunca }) {
+  const atrasadas = visitadas.filter((v) => v.faltan < 0).length;
+  const semana = visitadas.filter((v) => v.faltan >= 0 && v.faltan <= 7).length;
+  el("por-visitar-resumen").textContent = `· ${atrasadas} atrasada(s), ${semana} esta semana`;
+  const estado = (v) => v.faltan < 0
+    ? `<span class="pv-atrasada">le tocaba hace ${-v.faltan} día(s)</span>`
+    : v.faltan <= 7
+      ? `<span class="pv-semana">le toca ${v.faltan === 0 ? "hoy" : `en ${v.faltan} día(s)`}</span>`
+      : `<span class="pv-al-dia">le toca el ${Informes.formatoFechaVisible(v.proxima)}</span>`;
+  const filas = visitadas.map((v) => `<p class="visita-hoy por-visitar-finca" data-cliente="${esc(v.cliente)}">
+    <strong>${esc(v.cliente)} · ${esc(v.finca)}</strong> · ${estado(v)}<br>
+    <span class="hint">Última visita ${Informes.formatoFechaVisible(v.ultima)} (hace ${v.diasDesde} día(s)) · rotación ${v.diasRotacion} días${v.rotacionRegistrada ? "" : " (sin dato)"}</span></p>`);
+  const sinVisita = nunca.length
+    ? `<p class="hint por-visitar-nunca">Nunca visitadas: ${nunca.map((f) => `${esc(f.cliente)} · ${esc(f.finca)}`).join(" — ")}</p>`
+    : "";
+  el("por-visitar-lista").innerHTML = (filas.join("") || `<p class="hint">Todavía no hay visitas registradas.</p>`) + sinVisita;
+  el("por-visitar-lista").querySelectorAll(".por-visitar-finca").forEach((p) => {
+    p.addEventListener("click", () => { el("historial-cliente").value = p.dataset.cliente; renderListaHistorial(); el("historial-lista").scrollIntoView({ behavior: "smooth" }); });
+  });
 }
 
 function renderListaHistorial() {

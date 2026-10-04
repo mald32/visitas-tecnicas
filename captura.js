@@ -15,7 +15,6 @@ async function onElegirLote(lote) {
     capturandoLote = true;
     editandoPuntoId = null;
     await calcularSiguientePunto();
-    await precargarPotreroLote();
     el("lote-actual-num").textContent = loteActual;
     mostrarCajaObservacionesLote(false);
     await mostrarPunto(puntoActual);
@@ -115,11 +114,15 @@ async function mostrarPunto(numero) {
   editandoPuntoId = item && item.estado === "pendiente" ? item.id : null;
   puntoSincronizado = !!(item && item.estado !== "pendiente");
 
-  const potrero = el("potrero-nombre-punto").value;
-  el("form-punto").reset();
-  el("potrero-nombre-punto").value = potrero;
-  if (item) cargarPuntoEnFormulario(item.datos.fila);
-  else if (numero === puntoActual) llenarPuntoSinGuardar(); // lo que se estaba escribiendo del punto nuevo
+  el("form-punto").reset(); // el potrero y la zona están fuera del formulario: no se borran
+  if (item) {
+    cargarPuntoEnFormulario(item.datos.fila);
+    mostrarUbicacion(item.datos.fila); // un punto guardado se ve con SU potrero y SU zona
+  } else if (numero === puntoActual) {
+    await restaurarUbicacion();
+    llenarPuntoSinGuardar(); // lo que se estaba escribiendo del punto nuevo
+  }
+  await actualizarResumenZonas();
 
   el("punto-actual-num").textContent = numero;
   el("btn-punto-anterior").disabled = numero <= 1;
@@ -131,11 +134,198 @@ async function mostrarPunto(numero) {
   await guardarBorrador();
 }
 
-// Si se retoma un lote que ya tenia puntos guardados, se recupera el nombre de potrero ya usado.
-async function precargarPotreroLote() {
-  const delLote = await puntosDelLoteActual();
-  const existente = delLote.map((it) => it.datos.fila[ESQUEMA.BASE.potrero]).find((v) => v);
-  el("potrero-nombre-punto").value = existente || "";
+// ---------- Dónde se toma el punto: potrero y zona ----------
+// Desde el 24/09/2026 el muestreo es: lote de ganado → uno o más potreros → zonas del potrero →
+// puntos. Cada punto guarda su potrero (con su área) y su zona (con su área o su % del potrero). Con
+// eso el informe y el Excel reparten el peso de cada punto. Un potrero sin zonas es una sola zona
+// que ocupa todo el potrero (100 %).
+
+const nombreDePotrero = (texto) => String(texto == null ? "" : texto).trim().toLowerCase();
+const redondear = (x, decimales = 1) => Number(Number(x).toFixed(decimales));
+const numeroOVacio = (texto) => {
+  const n = Number(texto);
+  return String(texto).trim() !== "" && Number.isFinite(n) ? n : "";
+};
+
+function leerUbicacion() {
+  const pct = numeroOVacio(el("pct-zona").value);
+  return {
+    potrero: el("potrero-nombre-punto").value.trim(),
+    areaPotrero: numeroOVacio(el("area-potrero").value),
+    zona: Number(el("zona-punto").value) || 1,
+    areaZona: numeroOVacio(el("area-zona").value),
+    pctZona: pct === "" ? "" : pct / 100,
+  };
+}
+
+function ponerUbicacionEnFila(fila, u) {
+  const B = ESQUEMA.BASE;
+  fila[B.potrero] = u.potrero;
+  fila[B.areaPotrero] = u.areaPotrero;
+  fila[B.zona] = u.zona;
+  fila[B.areaZona] = u.areaZona;
+  fila[B.pctZona] = u.pctZona;
+}
+
+// % de la zona (como fracción) de un punto guardado: el escrito, o área de la zona ÷ área del potrero.
+function pctDeZonaDeFila(fila) {
+  const B = ESQUEMA.BASE;
+  const pct = numeroOVacio(fila[B.pctZona] == null ? "" : fila[B.pctZona]);
+  if (pct !== "") return pct;
+  const az = Number(fila[B.areaZona]), ap = Number(fila[B.areaPotrero]);
+  return az > 0 && ap > 0 ? az / ap : "";
+}
+
+function mostrarUbicacion(fila) {
+  const B = ESQUEMA.BASE;
+  const v = (x) => (x == null ? "" : x);
+  el("potrero-nombre-punto").value = v(fila[B.potrero]);
+  el("area-potrero").value = v(fila[B.areaPotrero]);
+  el("zona-punto").value = fila[B.zona] || 1;
+  el("area-zona").value = v(fila[B.areaZona]);
+  const pct = numeroOVacio(fila[B.pctZona] == null ? "" : fila[B.pctZona]);
+  el("pct-zona").value = pct === "" ? "" : redondear(pct * 100, 2);
+}
+
+// Al volver al punto nuevo (o al abrir el lote): lo último escrito en este lote; si no hay, el
+// potrero y la zona del último punto guardado; si el lote es nuevo, todo en blanco y zona 1.
+async function restaurarUbicacion() {
+  const escrita = (sinGuardar.ubicacion || {})[String(loteActual)];
+  if (escrita) {
+    CAMPOS_UBICACION.forEach((id) => { el(id).value = escrita[id] == null ? "" : escrita[id]; });
+    if (!el("zona-punto").value) el("zona-punto").value = 1;
+    return;
+  }
+  const delLote = (await puntosDelLoteActual()).sort((a, b) => Number(b.datos.fila[ESQUEMA.BASE.punto]) - Number(a.datos.fila[ESQUEMA.BASE.punto]));
+  if (delLote.length) { mostrarUbicacion(delLote[0].datos.fila); return; }
+  CAMPOS_UBICACION.forEach((id) => { el(id).value = ""; });
+  el("zona-punto").value = 1;
+}
+
+// Área de la zona ↔ % del potrero: se escribe uno y la app calcula el otro (si hay área del potrero).
+function convertirZona(origen) {
+  const areaPotrero = Number(el("area-potrero").value);
+  if (!(areaPotrero > 0)) return;
+  const area = el("area-zona").value, pct = el("pct-zona").value;
+  if (origen === "pct" || (origen === "potrero" && area === "" && pct !== "")) {
+    if (pct !== "") el("area-zona").value = redondear(Number(pct) / 100 * areaPotrero, 3);
+  } else if (area !== "") {
+    el("pct-zona").value = redondear(Number(area) / areaPotrero * 100, 2);
+  }
+}
+
+// Al escribir el nombre de un potrero que ya tiene puntos en este lote, se trae su área y su zona 1.
+async function alCambiarPotrero() {
+  const nombre = nombreDePotrero(el("potrero-nombre-punto").value);
+  const previo = (await puntosDelLoteActual()).map((it) => it.datos.fila)
+    .find((f) => nombreDePotrero(f[ESQUEMA.BASE.potrero]) === nombre);
+  if (!previo) return;
+  el("area-potrero").value = previo[ESQUEMA.BASE.areaPotrero] == null ? "" : previo[ESQUEMA.BASE.areaPotrero];
+  el("zona-punto").value = 1;
+  await alCambiarZona();
+}
+
+// Al cambiar de zona se traen su área y su % si ya tiene puntos; si es nueva, quedan en blanco.
+async function alCambiarZona() {
+  const nombre = nombreDePotrero(el("potrero-nombre-punto").value);
+  const zona = Number(el("zona-punto").value) || 1;
+  const previo = (await puntosDelLoteActual()).map((it) => it.datos.fila)
+    .find((f) => nombreDePotrero(f[ESQUEMA.BASE.potrero]) === nombre && Number(f[ESQUEMA.BASE.zona] || 1) === zona);
+  el("area-zona").value = previo && previo[ESQUEMA.BASE.areaZona] != null ? previo[ESQUEMA.BASE.areaZona] : "";
+  const pct = previo ? pctDeZonaDeFila(previo) : "";
+  el("pct-zona").value = pct === "" ? "" : redondear(pct * 100, 2);
+  convertirZona("potrero");
+  await actualizarResumenZonas();
+  await guardarBorrador();
+}
+
+async function onNuevaZona() {
+  const nombre = nombreDePotrero(el("potrero-nombre-punto").value);
+  const zonas = (await puntosDelLoteActual()).map((it) => it.datos.fila)
+    .filter((f) => nombreDePotrero(f[ESQUEMA.BASE.potrero]) === nombre).map((f) => Number(f[ESQUEMA.BASE.zona]) || 1);
+  el("zona-punto").value = Math.max(Number(el("zona-punto").value) || 1, ...zonas) + 1;
+  el("area-zona").value = "";
+  el("pct-zona").value = "";
+  el("pct-zona").focus();
+  await actualizarResumenZonas();
+  await guardarBorrador();
+}
+
+async function onOtroPotrero() {
+  CAMPOS_UBICACION.forEach((id) => { el(id).value = ""; });
+  el("zona-punto").value = 1;
+  el("potrero-nombre-punto").focus();
+  await actualizarResumenZonas();
+  await guardarBorrador();
+}
+
+// Si se corrige el área del potrero o el área/% de una zona, se corrige también en los puntos de
+// ese potrero (y de esa zona) que ya se guardaron y no han subido: todos deben decir lo mismo.
+async function aplicarUbicacionALosPuntos() {
+  if (!capturandoLote || puntoSincronizado || !loteActual) return;
+  const u = leerUbicacion();
+  if (!u.potrero) return;
+  const B = ESQUEMA.BASE;
+  for (const it of await puntosDelLoteActual()) {
+    if (it.estado !== "pendiente" || nombreDePotrero(it.datos.fila[B.potrero]) !== nombreDePotrero(u.potrero)) continue;
+    const fila = [...it.datos.fila];
+    fila[B.areaPotrero] = u.areaPotrero;
+    if (Number(fila[B.zona] || 1) === u.zona) { fila[B.areaZona] = u.areaZona; fila[B.pctZona] = u.pctZona; }
+    if (JSON.stringify(fila) !== JSON.stringify(it.datos.fila)) await DB.actualizarDatosItem(it.id, { fila });
+  }
+  await actualizarResumenZonas();
+}
+
+// Potreros y zonas de un grupo de puntos: [{potrero, area, zonas: [{zona, pct, puntos}]}].
+function potrerosYZonas(filas) {
+  const B = ESQUEMA.BASE;
+  const potreros = new Map();
+  for (const f of filas) {
+    const k = nombreDePotrero(f[B.potrero]);
+    if (!potreros.has(k)) potreros.set(k, { potrero: String(f[B.potrero] || "").trim(), area: f[B.areaPotrero], zonas: new Map() });
+    const p = potreros.get(k);
+    const z = Number(f[B.zona]) || 1;
+    if (!p.zonas.has(z)) p.zonas.set(z, { zona: z, pct: pctDeZonaDeFila(f), puntos: 0 });
+    p.zonas.get(z).puntos += 1;
+  }
+  return [...potreros.values()].map((p) => ({ ...p, zonas: [...p.zonas.values()].sort((a, b) => a.zona - b.zona) }));
+}
+
+// Texto corto de lo capturado en el lote, para ver de un vistazo si las zonas suman 100 %.
+function resumenDeZonas(filas) {
+  return potrerosYZonas(filas).map((p) => {
+    const nombre = p.potrero || "(sin nombre)";
+    const area = Number(p.area) > 0 ? ` (${p.area} ha)` : "";
+    if (p.zonas.length === 1 && p.zonas[0].pct === "") return `${nombre}${area}: ${p.zonas[0].puntos} punto(s)`;
+    const zonas = p.zonas.map((z) => `zona ${z.zona} · ${z.pct === "" ? "% sin definir" : redondear(z.pct * 100) + " %"} · ${z.puntos} punto(s)`).join("; ");
+    const suma = p.zonas.every((z) => z.pct !== "") ? ` (suma ${redondear(p.zonas.reduce((t, z) => t + z.pct, 0) * 100)} %)` : "";
+    return `${nombre}${area}: ${zonas}${suma}`;
+  }).join("\n");
+}
+
+// Lo que impide cerrar el lote: un potrero con varias zonas necesita el % (o el área) de cada una,
+// y que sumen 100 %. Un potrero de una sola zona no necesita nada (es el 100 %).
+function problemasDeZonas(filas) {
+  const problemas = [];
+  for (const p of potrerosYZonas(filas)) {
+    if (p.zonas.length < 2) continue;
+    const nombre = p.potrero || "(sin nombre)";
+    const sinPct = p.zonas.filter((z) => z.pct === "").map((z) => z.zona);
+    if (sinPct.length) { problemas.push(`Potrero ${nombre}: falta el % o el área de la zona ${sinPct.join(", ")}.`); continue; }
+    const suma = p.zonas.reduce((t, z) => t + z.pct, 0);
+    if (Math.abs(suma - 1) > 0.01) problemas.push(`Potrero ${nombre}: las zonas suman ${redondear(suma * 100)} % y deben sumar 100 %.`);
+  }
+  return problemas;
+}
+
+async function actualizarResumenZonas() {
+  const filas = (await puntosDelLoteActual()).map((it) => it.datos.fila);
+  el("resumen-zonas").textContent = filas.length ? "En este lote: " + resumenDeZonas(filas) : "";
+}
+
+// Potreros del lote actual, para las observaciones del lote y el resumen final.
+async function potrerosDelLote() {
+  return potrerosYZonas((await puntosDelLoteActual()).map((it) => it.datos.fila)).map((p) => p.potrero).filter(Boolean);
 }
 
 // ---------- Paso 3: capturar punto ----------
@@ -158,13 +348,12 @@ function leerCamposComunes() {
     incidMoluscos: hojasMoluscos / parametros.hojasEvaluadas,
     danoMoluscos: (hojasMoluscos / parametros.hojasEvaluadas) * parametros.severidadMoluscos,
     incidHongos, sevHongos, danoHongos: incidHongos * sevHongos,
-    potrero: el("potrero-nombre-punto").value.trim(),
     observaciones: el("observaciones").value || "",
   };
 }
 
-// El potrero no cuenta: es del lote entero y viene puesto de antes, no es un dato de este punto.
-const CAMPOS_PROPIOS_DEL_PUNTO = CAMPOS_PUNTO.filter((id) => id !== "potrero-nombre-punto");
+// El potrero y la zona no cuentan: vienen puestos de antes, no son datos de este punto.
+const CAMPOS_PROPIOS_DEL_PUNTO = CAMPOS_PUNTO.filter((id) => !CAMPOS_UBICACION.includes(id));
 
 // ¿El asesor alcanzó a escribir algo en el punto que está en pantalla? Se usa para no perder el
 // último punto al terminar el lote: antes se exigía el formulario completo (checkValidity) y, si
@@ -181,10 +370,9 @@ async function guardarPuntoEnPantallaSiHayDatos() {
   if (!hayDatosEnPunto()) return false;
   await guardarPuntoActual(puntoMostrado);
   if (puntoMostrado >= puntoActual) puntoActual = puntoMostrado + 1;
-  // Se limpia el formulario para no volver a guardar el mismo punto si se toca el botón otra vez.
-  const potrero = el("potrero-nombre-punto").value;
+  // Se limpia el formulario para no volver a guardar el mismo punto si se toca el botón otra vez
+  // (el potrero y la zona están fuera del formulario y siguen puestos).
   el("form-punto").reset();
-  el("potrero-nombre-punto").value = potrero;
   puntoMostrado = puntoActual;
   delete sinGuardar.punto[String(loteActual)];
   return true;
@@ -208,10 +396,11 @@ async function guardarPuntoActual(numero) {
     c.loritos, c.lepidopteros,
     c.hojasMoluscos, c.incidMoluscos, c.danoMoluscos,
     c.incidHongos, c.sevHongos, c.danoHongos,
-    c.potrero, c.observaciones,
+    "", c.observaciones,
     manejoActual.tipoFumigacion || "", manejoActual.litrosMezclaHa || "",
     manejoActual.ordenMezclaCorrecto || "", manejoActual.phFinalMezcla || "",
   ];
+  ponerUbicacionEnFila(fila, leerUbicacion());
 
   await DB.agregarItem("punto", {
     cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: loteActual, fila, idPunto: nuevoIdPunto(),
@@ -251,7 +440,8 @@ async function actualizarPuntoEditado() {
   fila[B.loritos] = c.loritos; fila[B.lepidopteros] = c.lepidopteros;
   fila[B.hojasMoluscos] = c.hojasMoluscos; fila[B.incidMoluscos] = c.incidMoluscos; fila[B.danoMoluscos] = c.danoMoluscos;
   fila[B.incidHongos] = c.incidHongos; fila[B.sevHongos] = c.sevHongos; fila[B.danoHongos] = c.danoHongos;
-  fila[B.potrero] = c.potrero; fila[B.observaciones] = c.observaciones;
+  fila[B.observaciones] = c.observaciones;
+  ponerUbicacionEnFila(fila, leerUbicacion()); // en pantalla está el potrero y la zona de ESTE punto
   await DB.actualizarDatosItem(editandoPuntoId, { fila });
 }
 
@@ -293,12 +483,13 @@ async function onPuntoAnterior() {
   await mostrarPunto(puntoMostrado - 1);
 }
 
-// Sin importar en que punto se haya escrito el nombre del potrero, al terminar el lote se le
-// pone ese mismo nombre a TODOS los puntos ya guardados de este lote (solo si aun no se sincronizaron).
+// Los puntos que se guardaron antes de escribir el nombre del potrero reciben el que está escrito
+// al terminar el lote. Antes se le ponía a TODOS los puntos del lote, pero ahora un lote puede
+// tener varios potreros y eso los habría juntado en uno solo.
 async function aplicarPotreroATodosLosPuntos(potrero) {
   const delLote = await puntosDelLoteActual();
   for (const it of delLote) {
-    if (it.estado === "pendiente" && it.datos.fila[ESQUEMA.BASE.potrero] !== potrero) {
+    if (it.estado === "pendiente" && !String(it.datos.fila[ESQUEMA.BASE.potrero] || "").trim()) {
       const fila = [...it.datos.fila];
       fila[ESQUEMA.BASE.potrero] = potrero;
       await DB.actualizarDatosItem(it.id, { fila });
@@ -314,6 +505,15 @@ async function onTerminarLote() {
   }
   await guardarPuntoEnPantallaSiHayDatos();
   await aplicarPotreroATodosLosPuntos(potrero);
+  // Las zonas de cada potrero deben sumar 100 % antes de cerrar el lote. Los puntos ya quedaron
+  // guardados: solo hay que corregir el % o el área de la zona que se indica.
+  const problemas = problemasDeZonas((await puntosDelLoteActual()).filter((it) => it.estado === "pendiente").map((it) => it.datos.fila));
+  if (problemas.length) {
+    await mostrarPunto(puntoActual);
+    alert("Antes de terminar el lote, revisa las zonas:\n\n" + problemas.join("\n") +
+      "\n\nElige el potrero y la zona arriba y corrige su % o su área. Los puntos ya están guardados.");
+    return;
+  }
   capturandoLote = false;
 
   // Antes de volver a la lista de lotes se piden las observaciones generales del lote.
@@ -336,7 +536,7 @@ async function onTerminarLote() {
 
 async function onFinalizarLote() {
   const texto = el("observaciones-lote").value.trim();
-  const potrero = el("potrero-nombre-punto").value.trim();
+  const potrero = (await potrerosDelLote()).join(", ") || el("potrero-nombre-punto").value.trim();
   const datos = { cliente: visita.cliente, finca: visita.finca, fecha: visita.fecha, lote: loteActual, potrero, observaciones: texto };
   const pendiente = (await DB.listarItems()).find((it) => it.tipo === "observacion_lote" && it.estado === "pendiente" &&
     it.datos.cliente === visita.cliente && it.datos.finca === visita.finca && it.datos.fecha === visita.fecha &&
@@ -346,7 +546,8 @@ async function onFinalizarLote() {
   } else if (texto !== (el("observaciones-lote").dataset.inicial || "").trim()) {
     await DB.agregarItem("observacion_lote", datos);
   }
-  if (potrero) await aplicarPotreroATodosLosPuntos(potrero);
+  const potreroEscrito = el("potrero-nombre-punto").value.trim();
+  if (potreroEscrito) await aplicarPotreroATodosLosPuntos(potreroEscrito);
 
   delete sinGuardar.obs[String(loteActual)];
   mostrarCajaObservacionesLote(false);
@@ -387,8 +588,8 @@ async function onFinMuestreo() {
   const lotesVisitados = [...new Set(puntosVisita.map((p) => p.datos.lote))].sort((a, b) => a - b);
   const lineas = lotesVisitados.map((lote) => {
     const delLote = puntosVisita.filter((p) => p.datos.lote === lote);
-    const potrero = delLote.map((p) => p.datos.fila[ESQUEMA.BASE.potrero]).find((v) => v);
-    const etiqueta = potrero ? `Lote ${lote} (Potrero ${potrero})` : `Lote ${lote}`;
+    const potreros = potrerosYZonas(delLote.map((p) => p.datos.fila)).map((p) => p.potrero).filter(Boolean);
+    const etiqueta = potreros.length ? `Lote ${lote} (${potreros.length > 1 ? "Potreros" : "Potrero"} ${potreros.join(", ")})` : `Lote ${lote}`;
     return `${etiqueta}: ${delLote.length} punto(s) de muestreo`;
   });
 

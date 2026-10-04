@@ -91,6 +91,54 @@ function promedio(valores) {
   return usables.reduce((a, b) => a + b, 0) / usables.length;
 }
 
+// ---------- Por visitar: a quién hace rato no se visita y cuándo le toca ----------
+// Cada finca se vuelve a visitar a los días de rotación de su lote (lo que tarda el ganado en volver
+// al mismo potrero), que es cuando el potrero que se muestreó está otra vez listo para entrar. Si la
+// finca no tiene días de rotación registrados se usa este valor.
+const DIAS_ENTRE_VISITAS_SIN_ROTACION = 30;
+
+const diaUTC = (fechaISO) => { const [y, m, d] = String(fechaISO).slice(0, 10).split("-").map(Number); return Date.UTC(y, m - 1, d); };
+const diasEntre = (desdeISO, hastaISO) => Math.round((diaUTC(hastaISO) - diaUTC(desdeISO)) / 86400000);
+const sumarDias = (fechaISO, dias) => new Date(diaUTC(fechaISO) + dias * 86400000).toISOString().slice(0, 10);
+
+// visitas: [{cliente, finca, fecha}] · productividad: filas de Productividad_Fincas · fincas:
+// [{cliente, finca}] de Clientes_Fincas. Devuelve primero lo más atrasado, y aparte las fincas que
+// nunca se han visitado.
+function calcularPorVisitar(visitas, productividad, fincas, hoyISO) {
+  const clave = (c, f) => `${c}|${f}`;
+  const ultima = {};
+  for (const v of visitas) {
+    const k = clave(v.cliente, v.finca);
+    if (!ultima[k] || v.fecha > ultima[k].fecha) ultima[k] = { cliente: v.cliente, finca: v.finca, fecha: v.fecha };
+  }
+  // Días de rotación de la visita más reciente que los tenga (promedio de sus lotes).
+  const rotacion = {};
+  const porVisita = {};
+  for (const p of productividad) {
+    const dias = Number(p[COL_PF.dias]);
+    if (!(dias > 0)) continue;
+    const k = clave(p[COL_PF.cliente], p[COL_PF.finca]);
+    const fecha = normalizarFecha(p[COL_PF.fecha]);
+    if (!porVisita[k] || fecha > porVisita[k].fecha) porVisita[k] = { fecha, dias: [] };
+    if (porVisita[k].fecha === fecha) porVisita[k].dias.push(dias);
+  }
+  for (const [k, v] of Object.entries(porVisita)) rotacion[k] = Math.round(v.dias.reduce((a, b) => a + b, 0) / v.dias.length);
+
+  const visitadas = Object.entries(ultima).map(([k, u]) => {
+    const dias = rotacion[k] || DIAS_ENTRE_VISITAS_SIN_ROTACION;
+    const proxima = sumarDias(u.fecha, dias);
+    return {
+      cliente: u.cliente, finca: u.finca, ultima: u.fecha, diasDesde: diasEntre(u.fecha, hoyISO),
+      diasRotacion: dias, rotacionRegistrada: !!rotacion[k], proxima, faltan: diasEntre(hoyISO, proxima),
+    };
+  }).sort((a, b) => a.faltan - b.faltan || String(a.cliente).localeCompare(String(b.cliente), "es") ||
+    String(a.finca).localeCompare(String(b.finca), "es"));
+  const nunca = fincas.filter((f) => !ultima[clave(f.cliente, f.finca)])
+    .map((f) => ({ cliente: f.cliente, finca: f.finca }))
+    .sort((a, b) => String(a.cliente).localeCompare(String(b.cliente), "es") || String(a.finca).localeCompare(String(b.finca), "es"));
+  return { visitadas, nunca };
+}
+
 // ---------- Ponderación del muestreo por zonas ----------
 // Desde el 24/09/2026 el muestreo es: lote de ganado → uno o más potreros → zonas del potrero →
 // puntos. Ya no se promedian los puntos: cada uno pesa según lo que representa.
@@ -145,7 +193,9 @@ function pesosDePuntos(sub, opciones = {}) {
     return total;
   };
   const niveles = [
-    { clave: claveVisitaFila, medida: areaDe },
+    // Con `visitasIguales` (informe por fincas de un cliente, columna O del Excel) cada finca pesa
+    // lo mismo, tenga el área que tenga.
+    { clave: claveVisitaFila, medida: opciones.visitasIguales ? () => 1 : areaDe },
     { clave: (f) => String(f[COL.lote]), medida: opciones.lotesIguales ? () => 1 : areaDe },
     { clave: clavePotrero, medida: areaDe },
     { clave: (f) => limpiar(f[COL.zona]) || "1", medida: (grupo) => porcentajeDeZona(sub[grupo[0]]), esZona: true },
@@ -614,6 +664,10 @@ const Informes = {
   // Visitas para el Historial: todas las de la hoja "Base de datos" (y las capturadas aún sin subir),
   // de la más reciente a la más antigua, indicando si les falta registrar productos aplicados, la
   // recomendación (productos recomendados o informe generado) o los datos de productividad.
+  async porVisitar(fincas, hoyISO) {
+    return calcularPorVisitar(await this.visitasHistorial(), await this.filasProductividad(), fincas, hoyISO);
+  },
+
   async visitasHistorial() {
     const filas = await this.filas();
     const visitas = {};
@@ -885,7 +939,8 @@ const Informes = {
         recomendados: await this.recomendacionesGuardadas(cliente, finca, fecha),
         informe: await this.informeGuardado(cliente, finca, fecha),
         puntos: puntosDeUnidad(sub),
-        ...metricasDeUnidad(sub),
+        // Igual que la columna "Peso de cada punto (x Finca)": cada lote de la finca pesa lo mismo.
+        ...metricasDeUnidad(sub, { lotesIguales: true }),
         manejo: {
           tipoFumigacion: primero[COL.tipoFumigacion] || "",
           litrosMezclaHa: primero[COL.litrosMezclaHa] || "",
@@ -927,7 +982,8 @@ const Informes = {
       es_cliente: true, etiqueta_unidad: "Finca", plural_unidad: "fincas",
       lotes_reales: fincas, lotes_finca: fincas, fechas_visitas: fechasVisitas,
       tabla_lotes: tablaFincas, umbrales,
-      ...resumenDeTabla(tablaFincas, umbrales, puntosElegidos),
+      // Columna "Peso de cada punto (x Fincas de un cliente)": cada finca igual y, dentro, cada lote igual.
+      ...resumenDeTabla(tablaFincas, umbrales, puntosElegidos, { lotesIguales: true, visitasIguales: true }),
       ...historialDeSeries(filas, mesesHistorial, series, umbrales),
       productividad, orden_productos: ordenProductos,
     };

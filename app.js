@@ -6,7 +6,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "2.3";
+const APP_VERSION = "2.4";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -168,8 +168,12 @@ function mostrarPantalla(id) {
 // se haya escrito: manejo, productos, el punto a medio llenar y las observaciones del lote. Puede
 // haber varias a la vez; se listan en "Visitas en curso". Si se recarga o se cierra la app estando
 // dentro de una, al volver se abre justo donde iba.
-const CAMPOS_PUNTO = ["potrero-nombre-punto", "adultos", "ninfas", "incid-coll", "sev-coll", "loritos", "lepidopteros",
+const CAMPOS_PUNTO = ["potrero-nombre-punto", "area-potrero", "zona-punto", "pct-zona", "area-zona",
+  "adultos", "ninfas", "incid-coll", "sev-coll", "loritos", "lepidopteros",
   "hojas-moluscos", "incid-hongos", "sev-hongos", "observaciones"];
+// Dónde se toma el punto (potrero y zona). No son datos del punto: siguen puestos de un punto al
+// siguiente, y lo último escrito se guarda por lote para volver a él (sinGuardar.ubicacion).
+const CAMPOS_UBICACION = ["potrero-nombre-punto", "area-potrero", "zona-punto", "pct-zona", "area-zona"];
 
 let borradores = {}; // {"cliente|finca|fecha": borrador}
 // Lo escrito y todavía no confirmado con un botón, por lote, para no perderlo al salir de la visita
@@ -204,6 +208,10 @@ function guardarBorrador() {
       const punto = {};
       CAMPOS_PUNTO.forEach((id) => { punto[id] = el(id).value; });
       sinGuardar.punto[lote] = punto;
+      const ubicacion = {};
+      CAMPOS_UBICACION.forEach((id) => { ubicacion[id] = el(id).value; });
+      if (!sinGuardar.ubicacion) sinGuardar.ubicacion = {};
+      sinGuardar.ubicacion[lote] = ubicacion;
     }
   }
   borradores[claveDeVisita(visita)] = {
@@ -240,7 +248,7 @@ async function restaurarBorrador(b, exacta) {
   capturandoLote = !!b.capturandoLote;
   editandoPuntoId = exacta ? (b.editandoPuntoId || null) : null;
   sinGuardar = b.sinGuardar || { manejo: {}, punto: {}, obs: {} };
-  ["manejo", "punto", "obs"].forEach((k) => { if (!sinGuardar[k]) sinGuardar[k] = {}; });
+  ["manejo", "punto", "obs", "ubicacion"].forEach((k) => { if (!sinGuardar[k]) sinGuardar[k] = {}; });
   await DB.guardarCache("visitaActiva", claveDeVisita(visita));
 
   el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;

@@ -125,6 +125,15 @@ document.addEventListener("DOMContentLoaded", () => {
   el("informe-volumen-mezcla").addEventListener("input", canecasInforme);
 
   el("form-punto").addEventListener("submit", onGuardarPunto);
+  // Potrero y zona del punto: área ↔ %, traer lo ya guardado y corregir los puntos de esa zona.
+  el("area-potrero").addEventListener("input", () => convertirZona("potrero"));
+  el("pct-zona").addEventListener("input", () => convertirZona("pct"));
+  el("area-zona").addEventListener("input", () => convertirZona("area"));
+  ["area-potrero", "pct-zona", "area-zona"].forEach((id) => el(id).addEventListener("change", aplicarUbicacionALosPuntos));
+  el("potrero-nombre-punto").addEventListener("change", alCambiarPotrero);
+  el("zona-punto").addEventListener("change", alCambiarZona);
+  el("btn-nueva-zona").addEventListener("click", onNuevaZona);
+  el("btn-otro-potrero").addEventListener("click", onOtroPotrero);
 
   el("btn-sincronizar").addEventListener("click", async () => {
     if (!navigator.onLine) { alert("No tienes conexión ahora mismo. Los datos quedan guardados y podrás sincronizar cuando recuperes señal."); return; }
