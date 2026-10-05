@@ -165,7 +165,13 @@
         <h3 class="titulo-punto">Punto <span id="punto-actual-num"></span></h3>
         <p id="aviso-punto" class="aviso-suave" hidden></p>
         <form id="form-punto">
-        <h3>Collaria scenica</h3>
+        <h3>Loritos y lepidópteros</h3>
+        <div class="fila">
+          <label>Número de loritos <input type="number" id="loritos" min="0" required></label>
+          <label>Número de lepidópteros <input type="number" id="lepidopteros" min="0" required></label>
+        </div>
+
+        <h3><em>Collaria scenica</em></h3>
         <div class="fila">
           <label>Individuos adultos <input type="number" id="adultos" min="0" required></label>
           <label>Ninfas <input type="number" id="ninfas" min="0" required></label>
@@ -175,21 +181,15 @@
           <label>Severidad daño (%) <input type="number" id="sev-coll" min="0" max="100" step="any" required></label>
         </div>
 
-        <h3>Loritos y lepidópteros</h3>
+        <h3>Hongos del kikuyo</h3>
         <div class="fila">
-          <label>Número de loritos <input type="number" id="loritos" min="0" required></label>
-          <label>Número de lepidópteros <input type="number" id="lepidopteros" min="0" required></label>
+          <label>Incidencia mancha (%) <input type="number" id="incid-hongos" min="0" max="100" step="any" required></label>
+          <label>Severidad mancha (%) <input type="number" id="sev-hongos" min="0" max="100" step="any" required></label>
         </div>
 
         <h3>Moluscos</h3>
         <div class="fila">
-          <label>Hojas atacadas (#) <input type="number" id="hojas-moluscos" min="0" required></label>
-        </div>
-
-        <h3>Hongos del Kikuyo</h3>
-        <div class="fila">
-          <label>Incidencia mancha (%) <input type="number" id="incid-hongos" min="0" max="100" step="any" required></label>
-          <label>Severidad mancha (%) <input type="number" id="sev-hongos" min="0" max="100" step="any" required></label>
+          <label>Hojas atacadas por moluscos (#) <input type="number" id="hojas-moluscos" min="0" required></label>
         </div>
 
         <h3>Observaciones de este punto</h3>

@@ -958,7 +958,22 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     contiene(a.problemasDelLote({ potreros: [potrero("A", [zona(1, 100), zona(3, "")])] }, filas).join(" "), "Zona 3 no tiene puntos");
     contiene(a.problemasDelLote({ potreros: [potrero("C", [])] }, filas)[0], "no tiene zonas");
     igual(a.problemasDelLote({ potreros: [potrero("A", [zona(1, "", { area: 3 }), zona(2, "", { area: 1 })], 4)] }, filas).length, 0, "con áreas: 3/4 + 1/4");
-    contiene(a.resumenDelLote({ potreros: [potrero("A", [zona(1, 60), zona(2, 40, { nombre: "Bajo", enPuntos: "2" })])] }, filas), "Bajo · 40 % · 1 punto(s)");
+    const resumen = a.resumenDelLote({ potreros: [potrero("A", [zona(1, 60), zona(2, 40, { nombre: "Bajo", enPuntos: "2" })])] }, filas).split("\n");
+    igual(resumen.length, 3, "una fila para el potrero y una para cada zona");
+    contiene(resumen[0], "Potrero A · suma 100 %");
+    igual(resumen[2], "Bajo · 40 % · 1 punto(s)");
+  });
+
+  prueba("lo escrito en una zona solo vuelve a aparecer en esa zona", () => {
+    const vm = require("vm");
+    const a = appConFormulario({});
+    vm.runInContext(`loteActual = 1; editandoPuntoId = null;
+      sinGuardar = { manejo: {}, obs: {}, punto: { "1": { adultos: "7", __zona: "e2" } }, seleccion: { "1": { potrero: "e1", zona: "e3" } } };`, a);
+    a.llenarPuntoSinGuardar();
+    igual(a.document.getElementById("adultos").value, "", "en otra zona no se mezcla");
+    vm.runInContext(`sinGuardar.seleccion["1"].zona = "e2";`, a);
+    a.llenarPuntoSinGuardar();
+    igual(a.document.getElementById("adultos").value, "7", "en su zona sí aparece lo escrito");
   });
 
   prueba("reparto del potrero: cuánto lleva cada zona y cuánto falta para el 100 %", () => {
@@ -1038,6 +1053,13 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     contiene(a.problemasDelLote(e, filas()).join(" "), "suman 90 %");
     await a.onTerminarLote();
     igual(vm.runInContext("capturandoLote", a), true, "con zonas que no suman 100 % el lote no se cierra (confirm = no)");
+    // Salir a otra pestaña con un punto escrito (sin "Siguiente punto"): se guarda como punto en su zona.
+    const antes = filas().length;
+    vm.runInContext(`pantallaFlujo = "pantalla-punto"; mostrarInicioVisitas = async () => {};`, a);
+    escribir("adultos", 3);
+    await a.salirDeVisita();
+    igual(filas().length, antes + 1, "el punto escrito al salir no se perdió");
+    igual(filas()[filas().length - 1][B.zona], "Bajo", "y quedó en la zona que estaba abierta");
   });
 
   prueba("el potrero solo no cuenta como punto (viene puesto del lote)", () => {

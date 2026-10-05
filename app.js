@@ -6,7 +6,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "2.9";
+const APP_VERSION = "2.10";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -205,6 +205,7 @@ function guardarBorrador() {
     } else if (!editandoPuntoId && !puntoSincronizado && puntoMostrado === puntoActual) {
       const punto = {};
       CAMPOS_PUNTO.forEach((id) => { punto[id] = el(id).value; });
+      punto.__zona = ((sinGuardar.seleccion || {})[lote] || {}).zona || null; // de qué zona es lo escrito
       sinGuardar.punto[lote] = punto;
     }
   }
@@ -278,6 +279,8 @@ async function restaurarBorrador(b, exacta) {
 function llenarPuntoSinGuardar() {
   const punto = sinGuardar.punto[String(loteActual)];
   if (!punto || editandoPuntoId) return;
+  const zona = ((sinGuardar.seleccion || {})[String(loteActual)] || {}).zona;
+  if (punto.__zona && punto.__zona !== zona) return; // lo escrito era de otra zona: no se mezcla
   CAMPOS_PUNTO.forEach((id) => {
     if (punto[id] != null && punto[id] !== "" ) el(id).value = punto[id];
   });
@@ -286,6 +289,11 @@ function llenarPuntoSinGuardar() {
 // Botón/pestaña "Visitas" estando dentro de una visita: se guarda tal cual y se vuelve al menú de
 // elegir cliente. La visita queda en "Visitas en curso" para retomarla cuando se quiera.
 async function salirDeVisita() {
+  // Bug real (04/10/2026): el punto escrito sin darle "Siguiente punto" quedaba solo como borrador
+  // y se perdía al volver a entrar al lote. Ahora se guarda como punto antes de salir.
+  if (visita && pantallaFlujo === "pantalla-punto") {
+    try { await guardarPuntoEnPantallaSiHayDatos(); } catch (e) { console.warn("No se pudo guardar el punto al salir:", e.message); }
+  }
   if (visita) await guardarBorrador();
   visita = null;
   loteActual = null;

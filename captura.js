@@ -15,10 +15,17 @@ async function onElegirLote(lote) {
 
     capturandoLote = true;
     editandoPuntoId = null;
-    // Al entrar al lote no hay zona elegida: primero se elige (o se añade) el potrero y la zona.
-    seleccionDelLote().potrero = null;
-    seleccionDelLote().zona = null;
+    // Al entrar al lote no hay zona elegida: primero se elige (o se añade) el potrero y la zona. Pero
+    // si quedó un punto a medio escribir (se salió sin darle "Siguiente punto"), se vuelve a esa
+    // zona con lo escrito a la vista, para no perderlo.
+    const borrador = sinGuardar.punto[String(lote)];
+    const hayBorrador = borrador && CAMPOS_PUNTO.some((id) => String(borrador[id] == null ? "" : borrador[id]).trim() !== "");
+    if (!hayBorrador) {
+      seleccionDelLote().potrero = null;
+      seleccionDelLote().zona = null;
+    }
     await prepararCapturaLote();
+    if (zonaElegida()) await mostrarPunto(puntoActual);
     el("lote-actual-num").textContent = loteActual;
     mostrarCajaObservacionesLote(false);
     mostrarPantalla("pantalla-punto");
@@ -224,7 +231,9 @@ async function renderCaptura() {
     ["nombre-zona", "pct-zona", "area-zona"].forEach((id) => { el(id).disabled = zonaSubida; });
     el("btn-borrar-zona").hidden = filasDeZona(filas, p, z).length > 0;
   }
-  el("resumen-zonas").textContent = e.potreros.length ? resumenDelLote(e, filas) : "";
+  el("resumen-zonas").innerHTML = e.potreros.length
+    ? `<strong>En este lote:</strong>` + lineasDelResumen(e, filas).map((l) => `<div class="rz-${l.nivel}">${esc(l.texto)}</div>`).join("")
+    : "";
 
   el("potreros-lote").querySelectorAll("[data-potrero]").forEach((b) => b.addEventListener("click", () => seleccionarPotrero(b.dataset.potrero)));
   el("btn-anadir-potrero").addEventListener("click", onAnadirPotrero);
@@ -298,7 +307,10 @@ function llenarCajaZona() {
 // algo): así nunca se pierde ni queda anotado en la zona equivocada.
 async function cerrarPuntoAbierto() {
   await guardarPuntoEnPantallaSiHayDatos();
-  delete sinGuardar.punto[String(loteActual)];
+  // Solo se descarta el borrador de ESTA zona (lo que quedaba en pantalla ya se guardó arriba). Antes
+  // se borraba cualquiera, y un punto escrito en otra zona se perdía al volver a entrar al lote.
+  const borrador = sinGuardar.punto[String(loteActual)];
+  if (borrador && (!borrador.__zona || borrador.__zona === seleccionDelLote().zona)) delete sinGuardar.punto[String(loteActual)];
   editandoPuntoId = null;
   el("form-punto").reset();
 }
@@ -503,19 +515,25 @@ function ponerUbicacionEnFila(fila, u) {
   fila[B.pctZona] = u.pctZona;
 }
 
-// Texto corto de cómo va el lote, para ver de un vistazo si las zonas suman 100 %.
-function resumenDelLote(e, filas) {
-  return "En este lote: " + e.potreros.map((p) => {
+// Cómo va el lote, para ver de un vistazo si las zonas suman 100 %: una fila por potrero y, debajo,
+// una fila por cada zona (antes iba todo seguido en un renglón y no se entendía).
+function lineasDelResumen(e, filas) {
+  const lineas = [];
+  for (const p of e.potreros) {
     const area = Number(p.area) > 0 ? ` (${p.area} ha)` : "";
-    if (!p.zonas.length) return `${etiquetaDePotrero(p)}${area}: sin zonas`;
-    const zonas = p.zonas.map((z) => {
-      const pct = pctDeZona(p, z);
-      return `${etiquetaDeZona(z)} · ${pct === "" ? "% sin definir" : redondear(pct * 100) + " %"} · ${filasDeZona(filas, p, z).length} punto(s)`;
-    }).join("; ");
     const pcts = p.zonas.map((z) => pctDeZona(p, z));
-    const suma = p.zonas.length > 1 && pcts.every((x) => x !== "") ? ` (suma ${redondear(pcts.reduce((t, x) => t + x, 0) * 100)} %)` : "";
-    return `${etiquetaDePotrero(p)}${area}: ${zonas}${suma}`;
-  }).join("\n");
+    const suma = p.zonas.length > 1 && pcts.every((x) => x !== "") ? ` · suma ${redondear(pcts.reduce((t, x) => t + x, 0) * 100)} %` : "";
+    lineas.push({ nivel: "potrero", texto: `Potrero ${etiquetaDePotrero(p)}${area}${p.zonas.length ? suma : " · sin zonas"}` });
+    p.zonas.forEach((z, i) => {
+      const pct = pcts[i];
+      lineas.push({ nivel: "zona", texto: `${etiquetaDeZona(z)} · ${pct === "" ? "% sin definir" : redondear(pct * 100) + " %"} · ${filasDeZona(filas, p, z).length} punto(s)` });
+    });
+  }
+  return lineas;
+}
+
+function resumenDelLote(e, filas) {
+  return lineasDelResumen(e, filas).map((l) => l.texto).join("\n");
 }
 
 // Lo que hay que corregir antes de cerrar el lote: potreros sin nombre o sin zonas, zonas sin

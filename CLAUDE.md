@@ -54,7 +54,7 @@ dato.
 | `sw.js` | Service worker (offline + control de versión). |
 | `version.json` | `{"version":"2.N"}` — lo que la app consulta para saber si se quedó atrás. |
 | `publicar.js` | Sube la versión en un paso, corriendo antes las pruebas. |
-| `pruebas/` | 83 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
+| `pruebas/` | 84 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
 | `lib/msal-browser.min.js` | MSAL copiado al repo **a propósito** (desde CDN no abría sin internet). |
 
 ---
@@ -272,8 +272,8 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ## 10. Estado al 4 de octubre de 2026
 
-- Última versión publicada: **v2.9**, `main` al día con `origin/main`.
-- 83 pruebas pasando.
+- Última versión publicada: **v2.10**, `main` al día con `origin/main`.
+- 84 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
   viven en las filas de los puntos (hoy columnas AN:AQ; la app las ubica por título). Y el **último punto** ya no se pierde al
@@ -286,6 +286,14 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 - v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
   datos" para el muestreo por zonas y agregó abonos a Productividad).
+- **2.10**: **el último punto ya no se pierde** (bug real reportado varias veces): al salir por una
+  pestaña con un punto escrito, `salirDeVisita` lo guarda como punto en su zona. El borrador del
+  punto lleva `__zona`: `llenarPuntoSinGuardar` solo lo muestra en esa zona y `cerrarPuntoAbierto`
+  solo descarta el de la zona abierta (antes, al volver a entrar al lote y tocar una zona, se borraba
+  el borrador de cualquier zona). Si al entrar al lote hay un borrador con datos, se reabre su zona.
+  Orden de los datos del punto: Loritos y lepidópteros → *Collaria scenica* (cursiva) → Hongos del
+  kikuyo → Moluscos ("Hojas atacadas por moluscos (#)") → Observaciones. "En este lote" va con una
+  fila por potrero y una por zona (`lineasDelResumen`).
 - **2.9**: en "Lotes a muestrear", **tocar el lote entra de una vez** (botón `.entrar-lote`); ya no
   se despliega con un botón "Iniciar/Continuar muestreo" adentro. La papelera sigue a la izquierda.
 - **2.8**: botón **"Guardar zona"** al lado de Punto anterior / Siguiente punto (`onGuardarZona`):
