@@ -54,7 +54,7 @@ dato.
 | `sw.js` | Service worker (offline + control de versión). |
 | `version.json` | `{"version":"2.N"}` — lo que la app consulta para saber si se quedó atrás. |
 | `publicar.js` | Sube la versión en un paso, corriendo antes las pruebas. |
-| `pruebas/` | 82 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
+| `pruebas/` | 83 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
 | `lib/msal-browser.min.js` | MSAL copiado al repo **a propósito** (desde CDN no abría sin internet). |
 
 ---
@@ -272,8 +272,8 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ## 10. Estado al 4 de octubre de 2026
 
-- Última versión publicada: **v2.6**, `main` al día con `origin/main`.
-- 82 pruebas pasando.
+- Última versión publicada: **v2.7**, `main` al día con `origin/main`.
+- 83 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
   viven en las filas de los puntos (hoy columnas AN:AQ; la app las ubica por título). Y el **último punto** ya no se pierde al
@@ -286,6 +286,11 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 - v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
   datos" para el muestreo por zonas y agregó abonos a Productividad).
+- **2.7**: **reparto del potrero entre zonas**: cada botón de zona dice su % (con un puntico del
+  color de su tramo); debajo, una barra del 100 % con un tramo por zona y lo que falta en gris
+  rayado, y una leyenda "Falta X %" / "Potrero completo" / "Te pasaste (sobra X %)" + zonas sin %.
+  Se redibuja con cada tecla (`renderBotonesZonas`, sin leer el celular; cálculo en
+  `repartoDeZonas`). La zona nueva trae lo que falte para el 100 % (la primera, 100 %).
 - **2.6**: la pantalla del lote pasó a ser un **árbol potreros → zonas → puntos** (pedido del usuario
   con captura de pantalla, 04/10/2026; reemplaza la caja única de la 2.4). Al entrar al lote solo se
   ve "Lote N" y el botón "+ Añadir potrero"; cada potrero es un botón (queda "espichado" al abrirlo)

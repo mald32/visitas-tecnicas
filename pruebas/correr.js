@@ -961,6 +961,18 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     contiene(a.resumenDelLote({ potreros: [potrero("A", [zona(1, 60), zona(2, 40, { nombre: "Bajo", enPuntos: "2" })])] }, filas), "Bajo · 40 % · 1 punto(s)");
   });
 
+  prueba("reparto del potrero: cuánto lleva cada zona y cuánto falta para el 100 %", () => {
+    const a = appConFormulario({});
+    const zona = (numero, pct, extra = {}) => ({ id: "z" + numero, numero, nombre: "", pct, area: "", ...extra });
+    const r = a.repartoDeZonas({ nombre: "A", area: "", zonas: [zona(1, 10), zona(2, 20), zona(3, 50)] });
+    igual(r.suma, 80); igual(r.falta, 20); igual(r.estado, "falta");
+    igual(a.repartoDeZonas({ nombre: "A", area: "", zonas: [zona(1, 60), zona(2, 40)] }).estado, "completo");
+    const sobra = a.repartoDeZonas({ nombre: "A", area: "", zonas: [zona(1, 70), zona(2, 40)] });
+    igual(sobra.estado, "sobra"); igual(sobra.sobra, 10);
+    const conArea = a.repartoDeZonas({ nombre: "A", area: 4, zonas: [zona(1, "", { area: 3 }), zona(2, "")] });
+    igual(conArea.suma, 75, "3 de 4 ha = 75 %"); igual(conArea.sinPct.length, 1, "la zona 2 todavía no tiene %");
+  });
+
   await pruebaAsync("flujo real: potrero → zona → puntos numerados por zona, y corregir zona o potrero corrige sus puntos", async () => {
     const vm = require("vm");
     const elementos = new Map();

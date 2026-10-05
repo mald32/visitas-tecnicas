@@ -216,9 +216,7 @@ async function renderCaptura() {
     el("nombre-potrero").disabled = potreroSubido;
     el("area-potrero").disabled = potreroSubido;
     el("btn-borrar-potrero").hidden = filasDePotrero(filas, p).length > 0;
-    el("zonas-potrero").innerHTML = p.zonas.map((x) =>
-      `<button type="button" class="chip${x === z ? " activo" : ""}" aria-pressed="${x === z}" data-zona="${x.id}">${esc(etiquetaDeZona(x))}</button>`
-    ).join("") + `<button type="button" class="chip chip-anadir" id="btn-anadir-zona">+ Añadir zona</button>`;
+    renderBotonesZonas();
   }
   el("caja-zona").hidden = !z;
   if (z) {
@@ -230,10 +228,54 @@ async function renderCaptura() {
 
   el("potreros-lote").querySelectorAll("[data-potrero]").forEach((b) => b.addEventListener("click", () => seleccionarPotrero(b.dataset.potrero)));
   el("btn-anadir-potrero").addEventListener("click", onAnadirPotrero);
-  if (p) {
-    el("zonas-potrero").querySelectorAll("[data-zona]").forEach((b) => b.addEventListener("click", () => seleccionarZona(b.dataset.zona)));
-    el("btn-anadir-zona").addEventListener("click", onAnadirZona);
+}
+
+// ---------- Reparto del potrero entre sus zonas ----------
+// Pedido del asesor (04/10/2026): mientras arma las zonas, ver cuánto % lleva cada una y cuánto le
+// falta para el 100 % del potrero. Cada botón de zona dice su %, y debajo va una barra con un tramo
+// de color por zona (el mismo color del puntico de su botón), lo que falta en gris rayado, y una
+// leyenda: "Falta 20 %", "Potrero completo" o "Te pasaste".
+const COLORES_ZONA = ["#2e7d4f", "#4f8fc0", "#d08a2c", "#8a5fb0", "#c0504d", "#3a9e9e", "#9a8a3a", "#6d6d6d"];
+const colorDeZona = (p, z) => COLORES_ZONA[p.zonas.indexOf(z) % COLORES_ZONA.length];
+
+// Cuánto lleva cada zona y cuánto falta (en %). estado: "completo", "falta" o "sobra".
+function repartoDeZonas(p) {
+  const tramos = p.zonas.map((z) => { const pct = pctDeZona(p, z); return { z, pct: pct === "" ? "" : pct * 100 }; });
+  const suma = redondear(tramos.reduce((t, x) => t + (x.pct === "" ? 0 : x.pct), 0), 1);
+  const sinPct = tramos.filter((x) => x.pct === "").map((x) => x.z);
+  const estado = Math.abs(suma - 100) <= 1 ? "completo" : suma < 100 ? "falta" : "sobra";
+  return { tramos, suma, falta: redondear(Math.max(0, 100 - suma), 1), sobra: redondear(Math.max(0, suma - 100), 1), sinPct, estado };
+}
+
+function renderBotonesZonas() {
+  const p = potreroElegido();
+  if (!p) return;
+  const z = zonaElegida();
+  const r = repartoDeZonas(p);
+  el("zonas-potrero").innerHTML = r.tramos.map(({ z: x, pct }) =>
+    `<button type="button" class="chip${x === z ? " activo" : ""}" aria-pressed="${x === z}" data-zona="${x.id}">` +
+    `<span class="punto-color" style="background:${colorDeZona(p, x)}"></span>${esc(etiquetaDeZona(x))} · ${pct === "" ? "sin %" : redondear(pct, 1) + " %"}</button>`
+  ).join("") + `<button type="button" class="chip chip-anadir" id="btn-anadir-zona">+ Añadir zona</button>`;
+
+  if (!p.zonas.length) {
+    el("reparto-zonas").innerHTML = "";
+  } else {
+    // Si se pasan del 100 %, la barra se dibuja sobre el total para que se vea cuánto sobra.
+    const base = Math.max(100, r.suma);
+    const tramos = r.tramos.filter((x) => x.pct !== "" && x.pct > 0).map(({ z: x, pct }) =>
+      `<span class="tramo${x === z ? " tramo-activo" : ""}" style="width:${(pct / base) * 100}%;background:${colorDeZona(p, x)}" title="${esc(etiquetaDeZona(x))}: ${redondear(pct, 1)} %"></span>`).join("");
+    const hueco = r.falta > 0 ? `<span class="tramo tramo-falta" style="width:${(r.falta / base) * 100}%"></span>` : "";
+    const textos = {
+      completo: `Potrero completo: 100 %`,
+      falta: `Falta ${r.falta} % para completar el potrero (llevas ${r.suma} %)`,
+      sobra: `Te pasaste: las zonas suman ${r.suma} % (sobra ${r.sobra} %)`,
+    };
+    const sinPct = r.sinPct.length ? ` · Sin %: ${r.sinPct.map(etiquetaDeZona).join(", ")}` : "";
+    el("reparto-zonas").innerHTML = `<div class="reparto-barra${r.estado === "sobra" ? " reparto-sobra" : ""}">${tramos}${hueco}</div>` +
+      `<p class="reparto-leyenda reparto-${r.estado}">${textos[r.estado]}${esc(sinPct)}</p>`;
   }
+  el("zonas-potrero").querySelectorAll("[data-zona]").forEach((b) => b.addEventListener("click", () => seleccionarZona(b.dataset.zona)));
+  el("btn-anadir-zona").addEventListener("click", onAnadirZona);
 }
 
 function llenarCajaPotrero() {
@@ -306,7 +348,12 @@ async function onAnadirZona() {
   const numero = Math.max(0, ...p.zonas.map((z) => z.numero)) + 1;
   // La primera zona es todo el potrero mientras no se añadan otras.
   const primera = p.zonas.length === 0;
-  const z = { id: nuevoIdEstructura(e), numero, nombre: "", pct: primera ? 100 : "", area: primera && p.area !== "" ? p.area : "", enPuntos: String(numero) };
+  const falta = primera ? 100 : repartoDeZonas(p).falta;
+  const areaPotrero = Number(p.area);
+  const z = {
+    id: nuevoIdEstructura(e), numero, nombre: "", pct: falta > 0 ? falta : "",
+    area: falta > 0 && areaPotrero > 0 ? redondear(falta / 100 * areaPotrero, 3) : "", enPuntos: String(numero),
+  };
   p.zonas.push(z);
   await seleccionarZona(z.id);
   el("nombre-zona").focus();
@@ -347,6 +394,7 @@ async function onEscribirPotrero() {
   if (!filasDePotrero((await puntosDelLoteActual()).map((it) => it.datos.fila), p).length) p.enPuntos = nombreDePotrero(p.nombre);
   convertirZona("potrero");
   el("titulo-ubicacion").textContent = zonaElegida() ? ` · ${etiquetaDePotrero(p)} · ${etiquetaDeZona(zonaElegida())}` : "";
+  renderBotonesZonas(); // el área del potrero cambia el % de las zonas que se dieron por área
 }
 
 async function onEscribirZona(origen) {
@@ -359,6 +407,7 @@ async function onEscribirZona(origen) {
   z.area = numeroOVacio(el("area-zona").value);
   if (!filasDeZona((await puntosDelLoteActual()).map((it) => it.datos.fila), p, z).length) z.enPuntos = claveDeZona(valorDeZona(z));
   el("titulo-ubicacion").textContent = ` · ${etiquetaDePotrero(p)} · ${etiquetaDeZona(z)}`;
+  renderBotonesZonas();
 }
 
 // Área de la zona ↔ % del potrero: se escribe uno y la app calcula el otro (si hay área del potrero).

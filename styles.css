@@ -117,6 +117,19 @@ button.chip-anadir { border-style: dashed; }
 .titulo-punto { margin: 12px 0 8px; }
 button.boton-borrar-chico { width: auto; padding: 4px 12px; font-size: 12px; margin: 0 0 10px; }
 #resumen-zonas { margin: 0 0 8px; white-space: pre-line; }
+/* Reparto del potrero entre zonas: puntico de color en cada botón y barra del 100 % */
+.punto-color { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; border: 1px solid rgba(255,255,255,.8); }
+.reparto { margin: -4px 0 12px; }
+.reparto-barra { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: #ece9e3; border: 1px solid #d8d3ca; }
+.reparto-barra.reparto-sobra { border-color: #a52a1f; }
+.tramo { height: 100%; }
+.tramo + .tramo { border-left: 2px solid #fff; }
+.tramo-activo { box-shadow: inset 0 0 0 2px rgba(0,0,0,.35); }
+.tramo-falta { background: repeating-linear-gradient(45deg, #ece9e3 0 6px, #d8d3ca 6px 12px); }
+.reparto-leyenda { margin: 4px 0 0; font-size: 13px; }
+.reparto-completo { color: #2e7d4f; font-weight: 600; }
+.reparto-falta { color: #6d6d6d; }
+.reparto-sobra { color: #a52a1f; font-weight: 600; }
 /* Historial: fincas por visitar */
 .por-visitar { margin-bottom: 16px; }
 .por-visitar summary { font-weight: 600; cursor: pointer; margin-bottom: 8px; }
