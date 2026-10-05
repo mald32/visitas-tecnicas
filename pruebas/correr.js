@@ -1149,5 +1149,43 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     igual(r.nunca.map((f) => f.finca).join(","), "C", "C nunca se ha visitado");
   });
 
+  // -------------------------------------------------------------------------
+  // Títulos de las tablas: una respuesta vacía del Excel no es "faltan columnas"
+  // (bug real del 03/10/2026: salió un aviso de que faltaban todas las columnas)
+  // -------------------------------------------------------------------------
+  console.log("\nTítulos de las tablas");
+
+  function graphConRespuestas(responder) {
+    const g = cargarApp(["esquema.js", "graph.js"], {
+      CONFIG: { TABLE_NAME: "TablaBaseDatos", CLIENT_ID: "x", AUTHORITY: "x", REDIRECT_URI: "x", GRAPH_SCOPES: [] },
+      msal: { PublicClientApplication: function () { return { initialize: async () => {} }; } },
+      fetch: async () => ({ ok: true, json: async () => ({}) }),
+    }, ["Graph"]);
+    g.Graph.conReintento = (fn) => fn("id-archivo");
+    g.Graph.llamar = async (path) => responder(path);
+    return g.Graph;
+  }
+
+  await pruebaAsync("los títulos se leen de las columnas de la tabla", async () => {
+    const G = graphConRespuestas((p) => p.includes("/columns") ? { value: [{ name: "Finca", index: 1 }, { name: "Cliente", index: 0 }] } : {});
+    igual(JSON.stringify(await G.titulos("TablaBaseDatos")), JSON.stringify(["Cliente", "Finca"]), "en el orden de la tabla");
+  });
+
+  await pruebaAsync("si las columnas no llegan, se usa la fila de títulos", async () => {
+    const G = graphConRespuestas((p) => p.includes("/headerRowRange") ? { values: [["Cliente", "Finca"]] } : null);
+    igual(JSON.stringify(await G.titulos("TablaBaseDatos")), JSON.stringify(["Cliente", "Finca"]));
+  });
+
+  await pruebaAsync("si el Excel responde vacío, falla para reintentar (no dice que faltan columnas)", async () => {
+    const G = graphConRespuestas(() => ({}));
+    let error = null;
+    try { await G.titulos("TablaBaseDatos"); } catch (e) { error = e.message; }
+    cierto(error, "debía fallar");
+    contiene(error, "no devolvió los títulos");
+    error = null;
+    try { await G.titulos("TablaBaseDatos"); } catch (e) { error = e.message; }
+    cierto(error, "y no se queda guardado el vacío: el siguiente intento vuelve a preguntar");
+  });
+
   process.exit(resumen());
 })();

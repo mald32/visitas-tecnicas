@@ -54,12 +54,27 @@ const Graph = {
   },
 
   // Títulos reales de la primera fila de una tabla, tal como están en el Excel.
+  // Los nombres salen de la definición de la tabla (sus columnas), que no depende de que Excel
+  // termine de calcular. El 03/10/2026, recién reemplazado el libro, Excel en línea respondió la fila
+  // de títulos vacía y la app creyó que faltaban TODAS las columnas (aviso falso en pantalla). Si
+  // aun así no llegan títulos, se falla y se reintenta en la próxima subida: nunca se toma una
+  // respuesta vacía como "faltan columnas".
   async titulos(nombreTabla) {
     if (!this._titulos[nombreTabla]) {
-      this._titulos[nombreTabla] = await this.conReintento(async (id) => {
-        const r = await this.llamar(`/me/drive/items/${id}/workbook/tables('${nombreTabla}')/headerRowRange?$select=values`);
-        return (r.values && r.values[0]) || [];
+      const titulos = await this.conReintento(async (id) => {
+        const base = `/me/drive/items/${id}/workbook/tables('${nombreTabla}')`;
+        const columnas = await this.llamar(`${base}/columns?$select=name,index`);
+        let nombres = ((columnas && columnas.value) || []).slice().sort((a, b) => a.index - b.index).map((c) => c.name);
+        if (!nombres.length) {
+          const encabezado = await this.llamar(`${base}/headerRowRange?$select=values`);
+          nombres = (encabezado && encabezado.values && encabezado.values[0]) || [];
+        }
+        return nombres;
       });
+      if (!titulos.length) {
+        throw new Error(`El Excel no devolvió los títulos de la tabla ${nombreTabla} (puede estar cargando). Se reintenta en la próxima subida.`);
+      }
+      this._titulos[nombreTabla] = titulos;
     }
     return this._titulos[nombreTabla];
   },
@@ -143,7 +158,9 @@ const Graph = {
       const detalle = await resp.text().catch(() => "");
       throw new Error(`Graph ${resp.status}: ${detalle}`);
     }
-    return resp.status === 204 ? null : resp.json();
+    if (resp.status === 202 || resp.status === 204) return null;
+    const texto = await resp.text();
+    return texto ? JSON.parse(texto) : null;
   },
 
   // Ubica el archivo por su ruta dentro de OneDrive y cachea su ID (localStorage).

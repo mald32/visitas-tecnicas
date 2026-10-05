@@ -54,7 +54,7 @@ dato.
 | `sw.js` | Service worker (offline + control de versión). |
 | `version.json` | `{"version":"2.N"}` — lo que la app consulta para saber si se quedó atrás. |
 | `publicar.js` | Sube la versión en un paso, corriendo antes las pruebas. |
-| `pruebas/` | 80 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
+| `pruebas/` | 83 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
 | `lib/msal-browser.min.js` | MSAL copiado al repo **a propósito** (desde CDN no abría sin internet). |
 
 ---
@@ -272,8 +272,8 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ## 10. Estado al 3 de octubre de 2026
 
-- Última versión publicada: **v2.4**, `main` al día con `origin/main`.
-- 80 pruebas pasando.
+- Última versión publicada: **v2.5**, `main` al día con `origin/main`.
+- 83 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
   viven en las filas de los puntos (hoy columnas AN:AQ; la app las ubica por título). Y el **último punto** ya no se pierde al
@@ -286,6 +286,12 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 - v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
   datos" para el muestreo por zonas y agregó abonos a Productividad).
+- **2.5**: arreglo de un aviso falso "faltan columnas" (TODAS las de TablaBaseDatos) que salió el
+  03/10/2026 justo después de reemplazar el libro: Excel en línea devolvió la fila de títulos vacía.
+  Ahora `Graph.titulos` lee los nombres de `tables/{t}/columns?$select=name,index` (definición de
+  la tabla, no depende del cálculo), luego `headerRowRange`, y si ambos vienen vacíos **falla** (queda
+  pendiente y se reintenta) en vez de devolver `[]`. `llamar` trata 202/sin cuerpo como `null`.
+  No se perdió nada: lo de esa tabla quedó pendiente en el celular.
 - **2.4**: **captura por potreros y zonas** en la pantalla del punto (caja "Dónde se toma el punto":
   potrero + área, zona + % + área con conversión área ↔ %, botones "+ Nueva zona" / "+ Otro potrero",
   resumen de zonas del lote). Cada punto guarda su ubicación (`ponerUbicacionEnFila`, índices 18 y
