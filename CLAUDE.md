@@ -272,7 +272,7 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ## 10. Estado al 4 de octubre de 2026
 
-- Última versión publicada: **v2.7**, `main` al día con `origin/main`.
+- Última versión publicada: **v2.8**, `main` al día con `origin/main`.
 - 83 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
@@ -286,6 +286,10 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 - v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
   datos" para el muestreo por zonas y agregó abonos a Productividad).
+- **2.8**: botón **"Guardar zona"** al lado de Punto anterior / Siguiente punto (`onGuardarZona`):
+  guarda el punto escrito, aplica nombre/%/área a los puntos de la zona, cierra la zona y avisa
+  "X guardada con N punto(s)" (`#aviso-zona-guardada`). Los tres botones van en una hilera y su
+  texto puede partirse en dos renglones (no se aprieta).
 - **2.7**: **reparto del potrero entre zonas**: cada botón de zona dice su % (con un puntico del
   color de su tramo); debajo, una barra del 100 % con un tramo por zona y lo que falta en gris
   rayado, y una leyenda "Falta X %" / "Potrero completo" / "Te pasaste (sobra X %)" + zonas sin %.

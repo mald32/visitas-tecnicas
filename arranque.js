@@ -135,6 +135,7 @@ document.addEventListener("DOMContentLoaded", () => {
   ["nombre-potrero", "area-potrero", "nombre-zona", "pct-zona", "area-zona"].forEach((id) => el(id).addEventListener("change", aplicarEstructuraALosPuntos));
   el("btn-borrar-potrero").addEventListener("click", onBorrarPotrero);
   el("btn-borrar-zona").addEventListener("click", onBorrarZona);
+  el("btn-guardar-zona").addEventListener("click", onGuardarZona);
 
   el("btn-sincronizar").addEventListener("click", async () => {
     if (!navigator.onLine) { alert("No tienes conexión ahora mismo. Los datos quedan guardados y podrás sincronizar cuando recuperes señal."); return; }

@@ -305,6 +305,7 @@ async function cerrarPuntoAbierto() {
 
 async function seleccionarPotrero(id) {
   await cerrarPuntoAbierto();
+  el("aviso-zona-guardada").hidden = true;
   const s = seleccionDelLote();
   s.potrero = s.potrero === id ? null : id; // tocar el potrero abierto lo cierra
   s.zona = null;
@@ -315,6 +316,7 @@ async function seleccionarPotrero(id) {
 
 async function seleccionarZona(id) {
   await cerrarPuntoAbierto();
+  el("aviso-zona-guardada").hidden = true;
   seleccionDelLote().zona = id;
   llenarCajaZona();
   await renderCaptura();
@@ -325,6 +327,7 @@ async function seleccionarZona(id) {
 
 async function onAnadirPotrero() {
   await cerrarPuntoAbierto();
+  el("aviso-zona-guardada").hidden = true;
   const e = estructuraDelLote();
   const p = { id: nuevoIdEstructura(e), nombre: "", area: "", zonas: [], enPuntos: "" };
   e.potreros.push(p);
@@ -435,7 +438,7 @@ async function aplicarEstructuraALosPuntos() {
   const zonaRepetida = e.potreros.some((p) => p.zonas.some((z, i) => p.zonas.findIndex((w) => claveDeZona(valorDeZona(w)) === claveDeZona(valorDeZona(z))) !== i));
   if (nombreRepetido || zonaRepetida) {
     alert(nombreRepetido ? "Ya hay otro potrero con ese nombre en este lote: usa un nombre distinto." : "Ya hay otra zona con ese nombre en este potrero: usa un nombre distinto.");
-    return;
+    return false;
   }
   for (const it of await puntosDelLoteActual()) {
     if (it.estado !== "pendiente") continue;
@@ -456,6 +459,28 @@ async function aplicarEstructuraALosPuntos() {
   e.potreros.forEach((p) => { p.enPuntos = nombreDePotrero(p.nombre); p.zonas.forEach((z) => { z.enPuntos = claveDeZona(valorDeZona(z)); }); });
   await renderCaptura();
   await guardarBorrador();
+  return true;
+}
+
+// "Guardar zona" (al lado de Punto anterior / Siguiente punto): guarda el punto que esté escrito,
+// deja la zona con su nombre, % y área en todos sus puntos, la cierra y vuelve a los botones del
+// potrero para seguir con otra zona u otro potrero.
+async function onGuardarZona() {
+  const p = potreroElegido();
+  const z = zonaElegida();
+  if (!p || !z) return;
+  await cerrarPuntoAbierto();
+  if ((await aplicarEstructuraALosPuntos()) === false) return;
+  const puntos = filasDeZona((await puntosDelLoteActual()).map((it) => it.datos.fila), p, z).length;
+  seleccionDelLote().zona = null;
+  await renderCaptura();
+  el("aviso-zona-guardada").textContent = puntos
+    ? `${etiquetaDeZona(z)} guardada con ${puntos} punto(s).`
+    : `${etiquetaDeZona(z)} todavía no tiene puntos.`;
+  el("aviso-zona-guardada").hidden = false;
+  el("caja-potrero").scrollIntoView({ behavior: "smooth", block: "start" });
+  await guardarBorrador();
+  await refrescarResumenCola();
 }
 
 // Lo que se guarda en cada punto: el potrero y la zona elegidos arriba.

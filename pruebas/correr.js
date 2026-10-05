@@ -1007,7 +1007,10 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     escribir("nombre-zona", "Bajo"); escribir("pct-zona", "40"); await a.onEscribirZona("pct");
     igual(String(dame("area-zona").value), "1.6", "40 % de 4 ha = 1,6 ha");
     igual(dame("punto-actual-num").textContent, 1, "la zona nueva empieza en su propio punto 1");
-    await guardarPunto(9);
+    escribir("adultos", 4);
+    await a.onGuardarZona(); // con un punto escrito sin pasar al siguiente: se guarda igual
+    igual(vm.runInContext("zonaElegida()", a), null, "Guardar zona cierra la zona");
+    contiene(dame("aviso-zona-guardada").textContent, "Bajo guardada con 1 punto(s)", "el punto escrito no se perdió");
     // Volver a la zona 1 y bajarla a 60 %: sus 2 puntos ya guardados se corrigen.
     const e = vm.runInContext("estructuraDelLote()", a);
     await a.seleccionarZona(e.potreros[0].zonas[0].id);
