@@ -54,7 +54,7 @@ dato.
 | `sw.js` | Service worker (offline + control de versión). |
 | `version.json` | `{"version":"2.N"}` — lo que la app consulta para saber si se quedó atrás. |
 | `publicar.js` | Sube la versión en un paso, corriendo antes las pruebas. |
-| `pruebas/` | 84 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
+| `pruebas/` | 85 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
 | `lib/msal-browser.min.js` | MSAL copiado al repo **a propósito** (desde CDN no abría sin internet). |
 
 ---
@@ -217,7 +217,7 @@ Este fue un dolor real: el celular se quedaba pegado en versiones viejas ("que p
    el conteo 69, 70…) en **tres** lugares a la vez: `APP_VERSION` (app.js),
    `CACHE_NAME` (sw.js) y `version.json`.
 2. `sw.js` **nunca** intercepta `version.json`.
-3. `app.js` → `revisarVersionPublicada()` pide `version.json` con `cache: "no-store"` al abrir, al
+3. (Ver también la 2.12: `?v=` en index.html y reintentos.) `arranque.js` → `revisarVersionPublicada()` pide `version.json` con `cache: "no-store"` al abrir, al
    volver a la app (`visibilitychange`) y al recuperar conexión. Si está atrasada, se actualiza sola
    **una vez por sesión** (`sessionStorage`) con `actualizarAhora()`: `postMessage("activar-ya")`,
    `registro.update()`, borra **todas** las cachés y recarga. **En silencio**: la franja verde con el
@@ -272,8 +272,8 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ## 10. Estado al 4 de octubre de 2026
 
-- Última versión publicada: **v2.11**, `main` al día con `origin/main`.
-- 84 pruebas pasando.
+- Última versión publicada: **v2.12**, `main` al día con `origin/main`.
+- 85 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
   viven en las filas de los puntos (hoy columnas AN:AQ; la app las ubica por título). Y el **último punto** ya no se pierde al
@@ -286,6 +286,15 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 - v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
   datos" para el muestreo por zonas y agregó abonos a Productividad).
+- **2.12**: **arreglo de la actualización** ("recargo y recargo y nada"). Causa: GitHub Pages manda
+  `Cache-Control: max-age=600` y el navegador reusaba archivos viejos 10 minutos; el SW, al
+  instalarse, guardaba esa copia vieja con el nombre nuevo; y el intento automático era UNO por
+  sesión. Ahora: el SW instala con `cache: "reload"` y pide a la red con `cache: "no-cache"`; cada
+  script y la hoja de estilos van con `?v=VERSIÓN` en index.html (lo pone `publicar.js`; hay una
+  prueba) y el SW busca primero la dirección exacta (sin señal, cualquier versión guardada);
+  `revisarVersionPublicada` hace hasta 3 intentos por sesión separados 30 s
+  (`sessionStorage.intentosActualizar`); el número de versión del encabezado dice "v2.11 → v2.12"
+  y al tocarlo actualiza (`onTocarVersion`). No es una franja: el usuario no quiere avisos grandes.
 - **2.11**: el asterisco de los campos obligatorios queda en la misma línea del texto (en las filas
   de dos campos cada parte de la etiqueta iba en su renglón: ahora texto + asterisco van en un
   `<span>`). **Zona y punto en recuadros separados**: `#caja-zona` (nombre, %, área) y aparte

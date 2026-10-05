@@ -1144,10 +1144,21 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     const raiz = path.join(__dirname, "..");
     const html = fs.readFileSync(path.join(raiz, "index.html"), "utf8");
     const sw = fs.readFileSync(path.join(raiz, "sw.js"), "utf8");
-    const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
+    const scripts = [...html.matchAll(/<script src="([^"?]+)/g)].map((m) => m[1]);
     cierto(scripts.length >= 14, "deberían estar todos los archivos de la app");
     for (const s of scripts) contiene(sw, `"./${s}"`, `${s} debe guardarse para abrir sin señal`);
     for (const f of [...ARCHIVOS_APP, ...ARCHIVOS_INFORME]) cierto(scripts.includes(f), `${f} debe cargarse en index.html`);
+  });
+
+  prueba("cada archivo de la app lleva en su dirección la versión actual (para que nunca entre una copia vieja)", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const raiz = path.join(__dirname, "..");
+    const html = fs.readFileSync(path.join(raiz, "index.html"), "utf8");
+    const version = fs.readFileSync(path.join(raiz, "app.js"), "utf8").match(/const APP_VERSION = "([\d.]+)";/)[1];
+    const locales = [...html.matchAll(/(?:<script src="|<link rel="stylesheet" href=")((?!https?:)[^"]+\.(?:js|css)[^"]*)"/g)].map((m) => m[1]);
+    cierto(locales.length >= 15, "deberían estar todos los scripts y la hoja de estilos");
+    for (const archivo of locales) contiene(archivo, `?v=${version}`, `${archivo} debe llevar ?v=${version}`);
   });
 
   // -------------------------------------------------------------------------

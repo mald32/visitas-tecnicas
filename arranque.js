@@ -20,10 +20,20 @@ async function revisarVersionPublicada() {
     const resp = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
     const datos = await resp.json();
     const publicada = String(datos.version || "");
-    if (!publicada || publicada === APP_VERSION) return;
-    // Una sola vez por sesión: si algo saliera mal, no se queda recargando en bucle.
-    if (sessionStorage.getItem("intentoActualizar")) return;
-    sessionStorage.setItem("intentoActualizar", "1");
+    if (!publicada || publicada === APP_VERSION) {
+      el("app-version").textContent = "v" + APP_VERSION;
+      el("app-version").classList.remove("version-atrasada");
+      return;
+    }
+    // El número de versión del encabezado avisa que hay una nueva; al tocarlo se actualiza.
+    el("app-version").textContent = `v${APP_VERSION} → v${publicada}`;
+    el("app-version").classList.add("version-atrasada");
+    // Antes se intentaba UNA sola vez por sesión: si ese intento caía dentro de los 10 minutos en que
+    // el navegador guarda los archivos, fallaba y no se volvía a intentar ("recargo y nada"). Ahora
+    // hasta 3 intentos por sesión, separados al menos 30 s (para no quedar recargando en bucle).
+    const intentos = JSON.parse(sessionStorage.getItem("intentosActualizar") || "[]");
+    if (intentos.length >= 3 || (intentos.length && Date.now() - intentos[intentos.length - 1] < 30000)) return;
+    sessionStorage.setItem("intentosActualizar", JSON.stringify([...intentos, Date.now()]));
     await actualizarAhora();
   } catch (e) {
     console.warn("No se pudo revisar la versión publicada:", e.message);
@@ -51,6 +61,13 @@ async function actualizarAhora() {
     console.warn("No se pudieron borrar las copias guardadas:", e.message);
   }
   window.location.reload();
+}
+
+// Tocar el número de versión cuando dice que hay una nueva: actualiza ya, sin esperar los reintentos.
+function onTocarVersion() {
+  if (!el("app-version").classList.contains("version-atrasada")) return;
+  if (!navigator.onLine) { alert("Sin internet no se puede actualizar ahora. Lo capturado sigue guardado."); return; }
+  actualizarAhora();
 }
 
 function registrarServiceWorker() {
@@ -125,6 +142,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("informe-volumen-mezcla").addEventListener("input", canecasInforme);
 
   el("form-punto").addEventListener("submit", onGuardarPunto);
+  el("app-version").addEventListener("click", onTocarVersion);
   // Potrero y zona del punto: área ↔ %, traer lo ya guardado y corregir los puntos de esa zona.
   // Potrero y zona: lo escrito actualiza la organización del lote al instante; al terminar de
   // escribir (change) se corrige en los puntos ya guardados de ese potrero o zona.

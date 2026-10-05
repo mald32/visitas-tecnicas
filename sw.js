@@ -1,4 +1,4 @@
-const CACHE_NAME = "visitas-tecnicas-v2.11";
+const CACHE_NAME = "visitas-tecnicas-v2.12";
 const ARCHIVOS = [
   "./",
   "./index.html",
@@ -32,8 +32,13 @@ self.addEventListener("message", (event) => {
   if (event.data === "activar-ya") self.skipWaiting();
 });
 
+// GitHub Pages le dice al navegador que guarde cada archivo 10 minutos (Cache-Control: max-age=600).
+// Bug real (05/10/2026, "recargo y recargo y nada"): al instalar la versión nueva, sus archivos se
+// descargaban de esa copia de 10 minutos y quedaba guardado el contenido VIEJO con el nombre nuevo.
+// Con cache: "reload" se pide siempre al servidor.
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ARCHIVOS)));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) =>
+    cache.addAll(ARCHIVOS.map((url) => new Request(url, { cache: "reload" })))));
   self.skipWaiting();
 });
 
@@ -58,7 +63,9 @@ self.addEventListener("fetch", (event) => {
   // y el celular se podía quedar pegado en una versión vieja.
   if (event.request.mode === "navigate") {
     const guardada = caches.match("./index.html");
-    const red = fetch(event.request).then((respuesta) => {
+    // "no-cache": se le pregunta al servidor si cambió (respuesta liviana si no), en vez de usar la
+    // copia de 10 minutos del navegador.
+    const red = fetch(event.request.url, { cache: "no-cache", credentials: "same-origin" }).then((respuesta) => {
       if (respuesta && respuesta.ok) {
         const copia = respuesta.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copia));
@@ -70,19 +77,24 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Los archivos de la app se responden al instante desde la copia guardada, pero se vuelven a
-  // pedir a la red en segundo plano y se guarda la versión nueva: así, si por lo que sea el service
-  // worker no se actualizó, la próxima vez que abras la app ya tienes los archivos nuevos.
+  // Los archivos de la app llevan la versión en la dirección (app.js?v=2.12, la pone publicar.js):
+  // si ya está guardada ESA dirección exacta se responde al instante y se revisa en segundo plano;
+  // si no (versión nueva), se pide al servidor. Sin señal, se usa la copia guardada del archivo
+  // aunque sea de otra versión (ignorando el ?v=), para que la app abra igual.
   event.respondWith(
-    caches.match(event.request, { ignoreSearch: true }).then((cacheada) => {
-      const deLaRed = fetch(event.request).then((respuesta) => {
+    caches.match(event.request).then((exacta) => {
+      const deLaRed = fetch(event.request, { cache: "no-cache" }).then((respuesta) => {
         if (respuesta && respuesta.ok) {
           const copia = respuesta.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copia));
         }
         return respuesta;
-      }).catch(() => cacheada);
-      return cacheada || deLaRed;
+      });
+      if (exacta) {
+        deLaRed.catch(() => {});
+        return exacta;
+      }
+      return deLaRed.catch(() => caches.match(event.request, { ignoreSearch: true }));
     })
   );
 });

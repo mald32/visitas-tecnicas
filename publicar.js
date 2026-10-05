@@ -50,7 +50,15 @@ const nueva = siguienteVersion(versionApp[1]);
 fs.writeFileSync(RUTA_APP, app.replace(/const APP_VERSION = "[\d.]+";/, `const APP_VERSION = "${nueva}";`));
 fs.writeFileSync(RUTA_SW, sw.replace(/const CACHE_NAME = "visitas-tecnicas-v[\d.]+";/, `const CACHE_NAME = "visitas-tecnicas-v${nueva}";`));
 
+// Cada archivo de la app lleva la versión en su dirección (app.js?v=2.12): así el navegador nunca
+// usa una copia vieja guardada (GitHub Pages las deja 10 minutos) cuando sale una versión nueva.
+const RUTA_INDEX = path.join(RAIZ, "index.html");
+const index = leer(RUTA_INDEX);
+fs.writeFileSync(RUTA_INDEX, index.replace(
+  /(<script src="|<link rel="stylesheet" href=")((?!https?:)[^"?]+\.(?:js|css))(\?v=[^"]*)?"/g,
+  (_, a, archivo) => `${a}${archivo}?v=${nueva}"`));
+
 // La app compara su propia versión contra este archivo para saber si el celular se quedó atrás.
 fs.writeFileSync(RUTA_VERSION, JSON.stringify({ version: String(nueva) }) + "\n");
 
-console.log(`\n✅ Versión subida a v${nueva} (app.js, sw.js y version.json). Ya puedes hacer commit y push.`);
+console.log(`\n✅ Versión subida a v${nueva} (app.js, sw.js, version.json e index.html). Ya puedes hacer commit y push.`);

@@ -107,6 +107,8 @@ label.campo-invalido { color: var(--rojo); }
 input.campo-invalido, select.campo-invalido, textarea.campo-invalido { border-color: var(--rojo); background: #fbeae7; }
 
 .hint { font-size: 12px; color: var(--gris); margin: -4px 0 10px; }
+/* Número de versión cuando hay una nueva: se ve distinto y se puede tocar para actualizar */
+#app-version.version-atrasada { color: #b26a00; font-weight: 600; text-decoration: underline; cursor: pointer; }
 /* Lote por dentro: potreros → zonas → puntos (botones que quedan "espichados" al elegirlos) */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
 button.chip { width: auto; padding: 8px 16px; font-size: 14px; border-radius: 999px; background: #fff; color: var(--verde, #00783c); border: 1.5px solid currentColor; margin: 0; }
