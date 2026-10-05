@@ -207,20 +207,17 @@ async function renderLotesAMuestrear() {
     const sub = deVisita.filter((f) => String(f[B.lote]) === String(i));
     const potreros = potrerosDeFilas(sub);
     const detalle = sub.length ? `${sub.length} punto(s)${potreros.length ? ` · ${potreros.length > 1 ? "Potreros" : "Potrero"} ${esc(potreros.join(", "))}` : ""}` : "sin puntos";
+    // Tocar el lote entra de una vez (antes se desplegaba y había que tocar "Iniciar muestreo").
     html += `<div class="acordeon-lote">
       <div class="acordeon-cabeza">
         <button type="button" class="btn-papelera btn-borrar-lote" data-lote="${i}" title="Borrar el Lote ${i}" aria-label="Borrar el Lote ${i}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12H7L6 9zm4 2v8h2v-8h-2zm4 0v8h2v-8h-2z"/></svg></button>
-        ${botonAcordeon(`Lote ${i}`, detalle)}
-      </div>
-      <div class="acordeon-cuerpo" hidden>
-        <button type="button" class="boton-lote" data-lote="${i}">${sub.length ? "Continuar muestreo" : "Iniciar muestreo"}</button>
+        <button type="button" class="secundario acordeon-titulo entrar-lote" data-lote="${i}"><span>Lote ${i} <small>· ${detalle}</small></span><span class="flecha" aria-hidden="true">›</span></button>
       </div>
     </div>`;
   }
   const contenedor = el("botones-lotes");
   contenedor.innerHTML = html;
-  activarAcordeones(contenedor);
-  contenedor.querySelectorAll(".boton-lote").forEach((btn) => {
+  contenedor.querySelectorAll(".entrar-lote").forEach((btn) => {
     btn.addEventListener("click", () => onElegirLote(Number(btn.dataset.lote)));
   });
   contenedor.querySelectorAll(".btn-borrar-lote").forEach((btn) => {

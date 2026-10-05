@@ -4,8 +4,8 @@
 // ---------- Paso 2: elegir lote y muestrearlo ----------
 
 async function onElegirLote(lote) {
-  const boton = el("botones-lotes").querySelector(`.boton-lote[data-lote="${lote}"]`);
-  if (boton) { boton.disabled = true; boton.textContent = "Abriendo..."; }
+  const boton = el("botones-lotes").querySelector(`.entrar-lote[data-lote="${lote}"]`);
+  if (boton) { boton.disabled = true; boton.querySelector("small").textContent = "· Abriendo..."; }
   try {
     loteActual = lote;
     await confirmarManejoDeLotes([lote]);

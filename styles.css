@@ -186,7 +186,6 @@ button.secundario {
   gap: 10px;
   margin: 16px 0;
 }
-.boton-lote { padding: 18px 10px; font-size: 16px; background: var(--acento); }
 
 #resumen-final { white-space: pre-line; line-height: 1.5; }
 
