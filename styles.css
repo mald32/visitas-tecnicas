@@ -107,10 +107,15 @@ label.campo-invalido { color: var(--rojo); }
 input.campo-invalido, select.campo-invalido, textarea.campo-invalido { border-color: var(--rojo); background: #fbeae7; }
 
 .hint { font-size: 12px; color: var(--gris); margin: -4px 0 10px; }
-/* Pantalla del punto: dónde se toma (potrero y zona) */
-.caja-ubicacion { border: 1px solid #e0ddd6; border-radius: 8px; padding: 10px 10px 2px; margin-bottom: 12px; background: #faf8f4; }
-.botones-ubicacion { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.botones-ubicacion button.secundario { width: auto; padding: 6px 14px; font-size: 13px; }
+/* Lote por dentro: potreros → zonas → puntos (botones que quedan "espichados" al elegirlos) */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+button.chip { width: auto; padding: 8px 16px; font-size: 14px; border-radius: 999px; background: #fff; color: var(--verde, #00783c); border: 1.5px solid currentColor; margin: 0; }
+button.chip.activo { background: var(--verde, #00783c); color: #fff; box-shadow: inset 0 2px 4px rgba(0,0,0,.25); }
+button.chip-anadir { border-style: dashed; }
+.caja-ubicacion { border: 1px solid #e0ddd6; border-radius: 8px; padding: 10px 10px 4px; margin-bottom: 12px; background: #faf8f4; }
+.caja-zona { border: 1px solid #c9dccf; border-radius: 8px; padding: 10px 10px 4px; margin: 4px 0 10px; background: #f3f8f4; }
+.titulo-punto { margin: 12px 0 8px; }
+button.boton-borrar-chico { width: auto; padding: 4px 12px; font-size: 12px; margin: 0 0 10px; }
 #resumen-zonas { margin: 0 0 8px; white-space: pre-line; }
 /* Historial: fincas por visitar */
 .por-visitar { margin-bottom: 16px; }

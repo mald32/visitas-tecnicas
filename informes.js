@@ -326,7 +326,9 @@ function puntosDeUnidad(sub) {
     adultos: f[COL.adultos], ninfas: f[COL.ninfas], loritos: f[COL.loritos], lepidopteros: f[COL.lepidopteros],
     incid_coll: f[COL.incidColl], sev_coll: f[COL.sevColl],
     incid_hongos: f[COL.incidHongos], sev_hongos: f[COL.sevHongos],
-  })).sort((a, b) => (a.lote - b.lote) || (a.punto - b.punto));
+  })).sort((a, b) => (a.lote - b.lote) ||
+    String(a.potrero || "").localeCompare(String(b.potrero || ""), "es") ||
+    String(a.zona).localeCompare(String(b.zona), "es", { numeric: true }) || (a.punto - b.punto));
 }
 
 function metricasDeUnidad(sub, opciones = {}) {

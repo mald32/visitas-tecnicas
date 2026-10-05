@@ -54,7 +54,7 @@ dato.
 | `sw.js` | Service worker (offline + control de versión). |
 | `version.json` | `{"version":"2.N"}` — lo que la app consulta para saber si se quedó atrás. |
 | `publicar.js` | Sube la versión en un paso, corriendo antes las pruebas. |
-| `pruebas/` | 83 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
+| `pruebas/` | 82 pruebas en Node, sin navegador (`arnes.js` carga los archivos con `vm`). |
 | `lib/msal-browser.min.js` | MSAL copiado al repo **a propósito** (desde CDN no abría sin internet). |
 
 ---
@@ -270,10 +270,10 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ---
 
-## 10. Estado al 3 de octubre de 2026
+## 10. Estado al 4 de octubre de 2026
 
-- Última versión publicada: **v2.5**, `main` al día con `origin/main`.
-- 83 pruebas pasando.
+- Última versión publicada: **v2.6**, `main` al día con `origin/main`.
+- 82 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
   viven en las filas de los puntos (hoy columnas AN:AQ; la app las ubica por título). Y el **último punto** ya no se pierde al
@@ -286,6 +286,22 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 - v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
   datos" para el muestreo por zonas y agregó abonos a Productividad).
+- **2.6**: la pantalla del lote pasó a ser un **árbol potreros → zonas → puntos** (pedido del usuario
+  con captura de pantalla, 04/10/2026; reemplaza la caja única de la 2.4). Al entrar al lote solo se
+  ve "Lote N" y el botón "+ Añadir potrero"; cada potrero es un botón (queda "espichado" al abrirlo)
+  con nombre y área; dentro, "+ Añadir zona" (la primera viene con 100 %), con nombre opcional, % y
+  área (conversión área ↔ %); recién dentro de la zona aparece "Punto N" y el formulario. **Los
+  puntos se numeran por zona.** La organización del lote vive en `sinGuardar.estructura[lote]`
+  (se guarda aunque no haya puntos) y lo abierto en `sinGuardar.seleccion[lote]`; si falta, se arma
+  desde los puntos (`completarEstructuraConPuntos`). Cada potrero/zona recuerda con qué nombre está
+  en sus puntos (`enPuntos`) para poder renombrar: al terminar de escribir (`change`),
+  `aplicarEstructuraALosPuntos` corrige nombre/área/% en los puntos pendientes. Potrero o zona con
+  puntos ya subidos: sus campos quedan bloqueados. Se pueden borrar potreros/zonas **sin puntos**.
+  En el Excel la columna "Zona" lleva **el nombre de la zona** (o su número si no tiene nombre).
+  Antes de cambiar de potrero/zona se guarda el punto que se estaba escribiendo (`cerrarPuntoAbierto`).
+  "Terminar lote" revisa `problemasDelLote` (potrero sin nombre o sin zonas, zona sin puntos, zonas
+  que no suman 100 %) y pregunta si terminar igual. La ventana "ver puntos" del informe se ordena
+  por potrero → zona → punto.
 - **2.5**: arreglo de un aviso falso "faltan columnas" (TODAS las de TablaBaseDatos) que salió el
   03/10/2026 justo después de reemplazar el libro: Excel en línea devolvió la fila de títulos vacía.
   Ahora `Graph.titulos` lee los nombres de `tables/{t}/columns?$select=name,index` (definición de

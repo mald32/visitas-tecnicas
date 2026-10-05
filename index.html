@@ -134,63 +134,76 @@
 
 <!-- Paso 3: capturar puntos de muestreo del lote elegido -->
 <section id="pantalla-punto" hidden>
-  <h2>Lote <span id="lote-actual-num"></span> · punto <span id="punto-actual-num"></span></h2>
+  <h2>Lote <span id="lote-actual-num"></span><span id="titulo-ubicacion"></span></h2>
 
-  <div id="caja-ubicacion" class="caja-ubicacion">
-    <div class="fila">
-      <label>Potrero <span class="asterisco">*</span> <input type="text" id="potrero-nombre-punto" placeholder="Ej: Potrero 3"></label>
-      <label>Área del potrero (ha) <input type="number" id="area-potrero" min="0" step="any" inputmode="decimal"></label>
+  <div id="area-captura">
+    <!-- Potreros del lote: uno por botón, y el de añadir. -->
+    <div id="potreros-lote" class="chips"></div>
+
+    <div id="caja-potrero" class="caja-ubicacion" hidden>
+      <div class="fila">
+        <label>Nombre del potrero <span class="asterisco">*</span> <input type="text" id="nombre-potrero" placeholder="Ej: Potrero 3"></label>
+        <label>Área del potrero (ha) <input type="number" id="area-potrero" min="0" step="any" inputmode="decimal"></label>
+      </div>
+      <button type="button" id="btn-borrar-potrero" class="secundario boton-borrar-chico">Borrar este potrero</button>
+
+      <!-- Zonas del potrero: una por botón, y el de añadir. -->
+      <div id="zonas-potrero" class="chips"></div>
+
+      <div id="caja-zona" class="caja-zona" hidden>
+        <div class="fila">
+          <label>Nombre de la zona <input type="text" id="nombre-zona" placeholder="Zona 1"></label>
+        </div>
+        <div class="fila">
+          <label>% del potrero <input type="number" id="pct-zona" min="0" max="100" step="any" inputmode="decimal"></label>
+          <label>Área de la zona (ha) <input type="number" id="area-zona" min="0" step="any" inputmode="decimal"></label>
+        </div>
+        <button type="button" id="btn-borrar-zona" class="secundario boton-borrar-chico">Borrar esta zona</button>
+
+        <h3 class="titulo-punto">Punto <span id="punto-actual-num"></span></h3>
+        <p id="aviso-punto" class="aviso-suave" hidden></p>
+        <form id="form-punto">
+        <h3>Collaria scenica</h3>
+        <div class="fila">
+          <label>Individuos adultos <input type="number" id="adultos" min="0" required></label>
+          <label>Ninfas <input type="number" id="ninfas" min="0" required></label>
+        </div>
+        <div class="fila">
+          <label>Incidencia daño (%) <input type="number" id="incid-coll" min="0" max="100" step="any" required></label>
+          <label>Severidad daño (%) <input type="number" id="sev-coll" min="0" max="100" step="any" required></label>
+        </div>
+
+        <h3>Loritos y lepidópteros</h3>
+        <div class="fila">
+          <label>Número de loritos <input type="number" id="loritos" min="0" required></label>
+          <label>Número de lepidópteros <input type="number" id="lepidopteros" min="0" required></label>
+        </div>
+
+        <h3>Moluscos</h3>
+        <div class="fila">
+          <label>Hojas atacadas (#) <input type="number" id="hojas-moluscos" min="0" required></label>
+        </div>
+
+        <h3>Hongos del Kikuyo</h3>
+        <div class="fila">
+          <label>Incidencia mancha (%) <input type="number" id="incid-hongos" min="0" max="100" step="any" required></label>
+          <label>Severidad mancha (%) <input type="number" id="sev-hongos" min="0" max="100" step="any" required></label>
+        </div>
+
+        <h3>Observaciones de este punto</h3>
+        <label>Observaciones <textarea id="observaciones" rows="2"></textarea></label>
+
+        <div class="botones-punto">
+          <button type="button" id="btn-punto-anterior" class="secundario">Punto anterior</button>
+          <button type="submit" id="btn-punto-siguiente">Siguiente punto</button>
+        </div>
+      </form>
+      </div>
     </div>
-    <div class="fila">
-      <label>Zona <input type="number" id="zona-punto" min="1" step="1" value="1" inputmode="numeric"></label>
-      <label>% del potrero <input type="number" id="pct-zona" min="0" max="100" step="any" inputmode="decimal" placeholder="100"></label>
-      <label>Área de la zona (ha) <input type="number" id="area-zona" min="0" step="any" inputmode="decimal"></label>
-    </div>
-    <div class="botones-ubicacion">
-      <button type="button" id="btn-nueva-zona" class="secundario">+ Nueva zona</button>
-      <button type="button" id="btn-otro-potrero" class="secundario">+ Otro potrero</button>
-    </div>
+
     <p id="resumen-zonas" class="hint"></p>
-  </div>
-  <p id="aviso-punto" class="aviso-suave" hidden></p>
-
-  <form id="form-punto">
-    <h3>Collaria scenica</h3>
-    <div class="fila">
-      <label>Individuos adultos <input type="number" id="adultos" min="0" required></label>
-      <label>Ninfas <input type="number" id="ninfas" min="0" required></label>
-    </div>
-    <div class="fila">
-      <label>Incidencia daño (%) <input type="number" id="incid-coll" min="0" max="100" step="any" required></label>
-      <label>Severidad daño (%) <input type="number" id="sev-coll" min="0" max="100" step="any" required></label>
-    </div>
-
-    <h3>Loritos y lepidópteros</h3>
-    <div class="fila">
-      <label>Número de loritos <input type="number" id="loritos" min="0" required></label>
-      <label>Número de lepidópteros <input type="number" id="lepidopteros" min="0" required></label>
-    </div>
-
-    <h3>Moluscos</h3>
-    <div class="fila">
-      <label>Hojas atacadas (#) <input type="number" id="hojas-moluscos" min="0" required></label>
-    </div>
-
-    <h3>Hongos del Kikuyo</h3>
-    <div class="fila">
-      <label>Incidencia mancha (%) <input type="number" id="incid-hongos" min="0" max="100" step="any" required></label>
-      <label>Severidad mancha (%) <input type="number" id="sev-hongos" min="0" max="100" step="any" required></label>
-    </div>
-
-    <h3>Observaciones de este punto</h3>
-    <label>Observaciones <textarea id="observaciones" rows="2"></textarea></label>
-
-    <div class="botones-punto">
-      <button type="button" id="btn-punto-anterior" class="secundario">Punto anterior</button>
-      <button type="submit" id="btn-punto-siguiente">Siguiente punto</button>
-    </div>
     <button type="button" id="btn-terminar-lote">Terminar lote</button>
-  </form>
+  </div>
 
   <div id="caja-observaciones-lote" class="caja-nueva" hidden>
     <h3>Observaciones lote</h3>

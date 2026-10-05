@@ -126,14 +126,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("form-punto").addEventListener("submit", onGuardarPunto);
   // Potrero y zona del punto: área ↔ %, traer lo ya guardado y corregir los puntos de esa zona.
-  el("area-potrero").addEventListener("input", () => convertirZona("potrero"));
-  el("pct-zona").addEventListener("input", () => convertirZona("pct"));
-  el("area-zona").addEventListener("input", () => convertirZona("area"));
-  ["area-potrero", "pct-zona", "area-zona"].forEach((id) => el(id).addEventListener("change", aplicarUbicacionALosPuntos));
-  el("potrero-nombre-punto").addEventListener("change", alCambiarPotrero);
-  el("zona-punto").addEventListener("change", alCambiarZona);
-  el("btn-nueva-zona").addEventListener("click", onNuevaZona);
-  el("btn-otro-potrero").addEventListener("click", onOtroPotrero);
+  // Potrero y zona: lo escrito actualiza la organización del lote al instante; al terminar de
+  // escribir (change) se corrige en los puntos ya guardados de ese potrero o zona.
+  ["nombre-potrero", "area-potrero"].forEach((id) => el(id).addEventListener("input", onEscribirPotrero));
+  el("nombre-zona").addEventListener("input", () => onEscribirZona("nombre"));
+  el("pct-zona").addEventListener("input", () => onEscribirZona("pct"));
+  el("area-zona").addEventListener("input", () => onEscribirZona("area"));
+  ["nombre-potrero", "area-potrero", "nombre-zona", "pct-zona", "area-zona"].forEach((id) => el(id).addEventListener("change", aplicarEstructuraALosPuntos));
+  el("btn-borrar-potrero").addEventListener("click", onBorrarPotrero);
+  el("btn-borrar-zona").addEventListener("click", onBorrarZona);
 
   el("btn-sincronizar").addEventListener("click", async () => {
     if (!navigator.onLine) { alert("No tienes conexión ahora mismo. Los datos quedan guardados y podrás sincronizar cuando recuperes señal."); return; }

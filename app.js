@@ -6,7 +6,7 @@
 
 // Version visible en el encabezado. Se sube junto con CACHE_NAME en sw.js en cada cambio, para
 // poder verificar de un vistazo que el celular ya esta viendo la version mas reciente.
-const APP_VERSION = "2.5";
+const APP_VERSION = "2.6";
 
 let clientesFincas = []; // [{cliente, finca, numeroLotes}]
 let parametros = { hojasEvaluadas: 10, severidadMoluscos: 0.1 };
@@ -168,12 +168,10 @@ function mostrarPantalla(id) {
 // se haya escrito: manejo, productos, el punto a medio llenar y las observaciones del lote. Puede
 // haber varias a la vez; se listan en "Visitas en curso". Si se recarga o se cierra la app estando
 // dentro de una, al volver se abre justo donde iba.
-const CAMPOS_PUNTO = ["potrero-nombre-punto", "area-potrero", "zona-punto", "pct-zona", "area-zona",
-  "adultos", "ninfas", "incid-coll", "sev-coll", "loritos", "lepidopteros",
+// Los datos de cada punto. El potrero y la zona no van aquí: se eligen arriba (botones) y se
+// guardan aparte, en la organización del lote (sinGuardar.estructura).
+const CAMPOS_PUNTO = ["adultos", "ninfas", "incid-coll", "sev-coll", "loritos", "lepidopteros",
   "hojas-moluscos", "incid-hongos", "sev-hongos", "observaciones"];
-// Dónde se toma el punto (potrero y zona). No son datos del punto: siguen puestos de un punto al
-// siguiente, y lo último escrito se guarda por lote para volver a él (sinGuardar.ubicacion).
-const CAMPOS_UBICACION = ["potrero-nombre-punto", "area-potrero", "zona-punto", "pct-zona", "area-zona"];
 
 let borradores = {}; // {"cliente|finca|fecha": borrador}
 // Lo escrito y todavía no confirmado con un botón, por lote, para no perderlo al salir de la visita
@@ -208,10 +206,6 @@ function guardarBorrador() {
       const punto = {};
       CAMPOS_PUNTO.forEach((id) => { punto[id] = el(id).value; });
       sinGuardar.punto[lote] = punto;
-      const ubicacion = {};
-      CAMPOS_UBICACION.forEach((id) => { ubicacion[id] = el(id).value; });
-      if (!sinGuardar.ubicacion) sinGuardar.ubicacion = {};
-      sinGuardar.ubicacion[lote] = ubicacion;
     }
   }
   borradores[claveDeVisita(visita)] = {
@@ -248,7 +242,7 @@ async function restaurarBorrador(b, exacta) {
   capturandoLote = !!b.capturandoLote;
   editandoPuntoId = exacta ? (b.editandoPuntoId || null) : null;
   sinGuardar = b.sinGuardar || { manejo: {}, punto: {}, obs: {} };
-  ["manejo", "punto", "obs", "ubicacion"].forEach((k) => { if (!sinGuardar[k]) sinGuardar[k] = {}; });
+  ["manejo", "punto", "obs", "estructura", "seleccion"].forEach((k) => { if (!sinGuardar[k]) sinGuardar[k] = {}; });
   await DB.guardarCache("visitaActiva", claveDeVisita(visita));
 
   el("resumen-visita").textContent = `${visita.cliente} · ${visita.finca} · ${visita.fecha}`;
@@ -267,14 +261,14 @@ async function restaurarBorrador(b, exacta) {
   const pantalla = exacta && loteActual && PANTALLAS_FLUJO.includes(b.pantalla) ? b.pantalla : "pantalla-lotes";
   if (pantalla === "pantalla-punto") {
     el("lote-actual-num").textContent = loteActual;
-    await calcularSiguientePunto();
+    await prepararCapturaLote(); // vuelve al potrero y la zona que estaban abiertos
     const obs = sinGuardar.obs[String(loteActual)];
     if (obs != null && b.pantalla === "pantalla-punto" && capturandoLote === false) {
       mostrarCajaObservacionesLote(true);
       el("observaciones-lote").value = obs;
     } else {
       mostrarCajaObservacionesLote(false);
-      await mostrarPunto(Math.min(b.puntoMostrado || puntoActual, puntoActual));
+      if (zonaElegida()) await mostrarPunto(Math.min(b.puntoMostrado || puntoActual, puntoActual));
     }
     await refrescarResumenCola();
   }
@@ -386,7 +380,7 @@ async function mostrarInicioVisitas() {
 
 function mostrarCajaObservacionesLote(mostrar) {
   el("caja-observaciones-lote").hidden = !mostrar;
-  el("form-punto").hidden = mostrar;
+  el("area-captura").hidden = mostrar;
 
   if (mostrar) ajustarAltoTexto(el("observaciones-lote"));
 }
@@ -459,14 +453,13 @@ async function renderVisitasEnCurso() {
     const v = b.visita;
     const puntos = items.filter((it) => it.tipo === "punto" && it.datos.cliente === v.cliente && it.datos.finca === v.finca && it.datos.fecha === v.fecha);
     const lotes = {};
-    puntos.forEach((p) => {
-      const l = lotes[p.datos.lote] || (lotes[p.datos.lote] = { cantidad: 0, potrero: "" });
-      l.cantidad += 1;
-      if (!l.potrero && p.datos.fila[ESQUEMA.BASE.potrero]) l.potrero = p.datos.fila[ESQUEMA.BASE.potrero];
-    });
+    puntos.forEach((p) => { (lotes[p.datos.lote] || (lotes[p.datos.lote] = [])).push(p.datos.fila); });
     const detalle = Object.keys(lotes).length
-      ? Object.entries(lotes).sort((a, b) => a[0] - b[0]).map(([lote, info]) =>
-        `${info.potrero ? `Lote ${lote} (Potrero ${esc(info.potrero)})` : `Lote ${lote}`}: ${info.cantidad} punto(s)`).join("<br>")
+      ? Object.entries(lotes).sort((a, b) => a[0] - b[0]).map(([lote, filas]) => {
+        const potreros = potrerosDeFilas(filas);
+        const nombre = potreros.length ? `Lote ${lote} (${potreros.length > 1 ? "Potreros" : "Potrero"} ${esc(potreros.join(", "))})` : `Lote ${lote}`;
+        return `${nombre}: ${filas.length} punto(s)`;
+      }).join("<br>")
       : "Sin puntos todavía";
     html += `<p class="visita-hoy" data-clave="${esc(claveDeVisita(v))}"><strong>${esc(v.cliente)} · ${esc(v.finca)}</strong><br>${Informes.formatoFechaVisible(v.fecha)}<br>${detalle}<br><span class="hint">Toca para continuar la visita</span></p>`;
   });
