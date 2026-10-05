@@ -122,6 +122,7 @@ td.sem-alto{color:var(--alerta);font-weight:700;}
 .lote-fila{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1.1fr);gap:var(--e3);align-items:center;}
 .panel-barras,.panel-anillo{min-width:0;}
 .panel-anillo{text-align:center;}
+.lote-bloque-lote{background:#e8eef6;border-color:#9fb3cc;}
 .lote-bloque-promedio{background:var(--marca-tenue);border-color:var(--marca);}
 .nota-puntos{font-size:var(--t-micro);color:var(--tinta-suave);margin:var(--e2) 0 0;line-height:1.4;}
 

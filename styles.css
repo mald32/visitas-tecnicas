@@ -114,7 +114,10 @@ button.chip.activo { background: var(--verde, #00783c); color: #fff; box-shadow:
 button.chip-anadir { border-style: dashed; }
 .caja-ubicacion { border: 1px solid #e0ddd6; border-radius: 8px; padding: 10px 10px 4px; margin-bottom: 12px; background: #faf8f4; }
 .caja-zona { border: 1px solid #c9dccf; border-radius: 8px; padding: 10px 10px 4px; margin: 4px 0 10px; background: #f3f8f4; }
-.titulo-punto { margin: 12px 0 8px; }
+/* Recuadro del punto: aparte del de la zona y con otro aspecto, para saber siempre dónde se está */
+.caja-punto { border: 2px solid var(--verde, #00783c); border-radius: 10px; padding: 10px 12px 12px; margin: 0 0 12px; background: #fff; }
+.titulo-punto { margin: 0 0 8px; }
+.titulo-punto small { font-size: 14px; color: var(--gris); font-weight: 400; }
 button.boton-borrar-chico { width: auto; padding: 4px 12px; font-size: 12px; margin: 0 0 10px; }
 #resumen-zonas { margin: 0 0 8px; }
 #resumen-zonas .rz-potrero { margin-top: 4px; font-weight: 600; }

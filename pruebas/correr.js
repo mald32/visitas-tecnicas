@@ -762,6 +762,9 @@ function cargarInformes({ filas = [], productosAplicados = [], recomendados = []
     contiene(html, `<tr class="fila-promedio">`, "fila general con su fondo");
     contiene(html, "Lote 1 — Potrero A", "gráficas del potrero A");
     contiene(html, "Lote 1 — Potrero B", "gráficas del potrero B");
+    cierto(html.indexOf("Lote 1 — Potrero A") < html.indexOf("Lote 1 — Ponderado de los 2 potreros"), "primero los potreros y después el ponderado del lote");
+    contiene(html, "Lote 2 — Potrero C", "un lote de un solo potrero: una sola gráfica, Lote X — Potrero Y");
+    noContiene(html, "Lote 2 — Ponderado", "sin ponderado repetido para un lote de un potrero");
     igual(html.split('class="lote-bloque lote-bloque-potrero"').length - 1, 2, "solo A y B: el lote 2 no repite gráficas");
   });
 

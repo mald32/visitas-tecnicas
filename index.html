@@ -39,19 +39,19 @@
 <section id="pantalla-visita" hidden>
   <h2>Nueva visita</h2>
 
-  <label>Cliente <span class="asterisco">*</span>
+  <label><span>Cliente <span class="asterisco">*</span></span>
     <select id="cliente"></select>
   </label>
   <div id="nuevo-cliente-caja" class="caja-nueva" hidden>
-    <label>Nombre del cliente nuevo <span class="asterisco">*</span> <input id="nuevo-cliente" placeholder="Ej: Wilson"></label>
+    <label><span>Nombre del cliente nuevo <span class="asterisco">*</span></span> <input id="nuevo-cliente" placeholder="Ej: Wilson"></label>
   </div>
 
-  <label>Finca <span class="asterisco">*</span>
+  <label><span>Finca <span class="asterisco">*</span></span>
     <select id="finca"></select>
   </label>
   <div id="nueva-finca-caja" class="caja-nueva" hidden>
-    <label>Nombre de la finca nueva <span class="asterisco">*</span> <input id="nueva-finca" placeholder="Ej: Soledad"></label>
-    <label>Número de lotes de esta finca <span class="asterisco">*</span>
+    <label><span>Nombre de la finca nueva <span class="asterisco">*</span></span> <input id="nueva-finca" placeholder="Ej: Soledad"></label>
+    <label><span>Número de lotes de esta finca <span class="asterisco">*</span></span>
       <input type="number" id="nueva-finca-lotes" min="1" max="20" value="2">
     </label>
     <p class="hint">Usualmente 1 o 2 lotes, pueden ser hasta 5 o más.</p>
@@ -142,7 +142,7 @@
 
     <div id="caja-potrero" class="caja-ubicacion" hidden>
       <div class="fila">
-        <label>Nombre del potrero <span class="asterisco">*</span> <input type="text" id="nombre-potrero" placeholder="Ej: Potrero 3"></label>
+        <label><span>Nombre del potrero <span class="asterisco">*</span></span> <input type="text" id="nombre-potrero" placeholder="Ej: Potrero 3"></label>
         <label>Área del potrero (ha) <input type="number" id="area-potrero" min="0" step="any" inputmode="decimal"></label>
       </div>
       <button type="button" id="btn-borrar-potrero" class="secundario boton-borrar-chico">Borrar este potrero</button>
@@ -161,8 +161,12 @@
           <label>Área de la zona (ha) <input type="number" id="area-zona" min="0" step="any" inputmode="decimal"></label>
         </div>
         <button type="button" id="btn-borrar-zona" class="secundario boton-borrar-chico">Borrar esta zona</button>
+      </div>
+    </div>
 
-        <h3 class="titulo-punto">Punto <span id="punto-actual-num"></span></h3>
+    <!-- El punto va en su propio recuadro, aparte de la zona, para no perderse al muestrear. -->
+    <div id="caja-punto" class="caja-punto" hidden>
+        <h3 class="titulo-punto">Punto <span id="punto-actual-num"></span><small id="punto-ubicacion"></small></h3>
         <p id="aviso-punto" class="aviso-suave" hidden></p>
         <form id="form-punto">
         <h3>Loritos y lepidópteros</h3>
@@ -201,7 +205,6 @@
           <button type="button" id="btn-guardar-zona" class="guardar-zona">Guardar zona</button>
         </div>
       </form>
-      </div>
     </div>
 
     <p id="resumen-zonas" class="hint"></p>
@@ -263,11 +266,11 @@
     </select>
   </label>
 
-  <label>Cliente <span class="asterisco">*</span> <select id="informe-cliente"></select></label>
+  <label><span>Cliente <span class="asterisco">*</span></span> <select id="informe-cliente"></select></label>
 
   <div id="informe-campos-visita">
-    <label>Finca <span class="asterisco">*</span> <select id="informe-finca"></select></label>
-    <label>Fecha de la visita <span class="asterisco">*</span> <select id="informe-fecha"></select></label>
+    <label><span>Finca <span class="asterisco">*</span></span> <select id="informe-finca"></select></label>
+    <label><span>Fecha de la visita <span class="asterisco">*</span></span> <select id="informe-fecha"></select></label>
   </div>
 
   <div id="informe-campos-cliente" hidden>
@@ -285,7 +288,7 @@
     <h3>Tipo de fumigación</h3>
     <p class="hint">Con qué equipo se recomienda aplicar estos productos.</p>
     <div class="fila">
-      <label>Tipo de fumigación <span class="asterisco">*</span>
+      <label><span>Tipo de fumigación <span class="asterisco">*</span></span>
         <select id="informe-tipo-fumigacion">
           <option value="">-</option>
           <option value="Aerea (Dron)">Aérea (Dron)</option>
@@ -293,7 +296,7 @@
           <option value="Terrestre (Bomba de espalda)">Terrestre (Bomba de espalda)</option>
         </select>
       </label>
-      <label>Volumen de mezcla/hectárea <span class="asterisco">*</span> <input type="text" id="informe-volumen-mezcla" placeholder="Ej: 200"></label>
+      <label><span>Volumen de mezcla/hectárea <span class="asterisco">*</span></span> <input type="text" id="informe-volumen-mezcla" placeholder="Ej: 200"></label>
     </div>
     <p id="informe-canecas" class="canecas" hidden></p>
 

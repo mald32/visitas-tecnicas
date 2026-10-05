@@ -227,19 +227,25 @@ Informes.generarHtml = function (D, productosRecomendados, notasAdicionales, man
         ? "1 punto de muestreo (sin dispersión)."
         : `Ponderado de ${t.n_puntos} puntos de muestreo según zonas y potreros.`) +
         (t.sin_areas ? " Sin areas de potreros registradas." : "");
-      return `<div class="lote-bloque">
-        <h3><button type="button" class="ver-detalle no-imprimir" onclick="document.getElementById('detalle${i}').showModal()">
-          ${esc(nombreUnidad(t.lote))}${t.subtitulo ? ` — ${esc(t.subtitulo)}` : ""} <span class="lupa">ver puntos</span>
-        </button><span class="solo-pdf">${esc(nombreUnidad(t.lote))}${t.subtitulo ? ` — ${esc(t.subtitulo)}` : ""}</span></h3>
-        ${detalleHtml(t, i)}
-        ${panelesHtml(valores, errores, D.tortas[i].valores)}
-        <p class="nota-puntos">${nota}</p>
-      </div>` + (t.potreros_detalle || []).map((p) => `<div class="lote-bloque lote-bloque-potrero">
+      // Pedido del asesor (05/10/2026): primero la gráfica de cada potrero y DESPUÉS el ponderado del
+      // lote (solo si el lote tiene 2 o más potreros). Con un solo potrero queda una sola gráfica,
+      // "Lote X — Potrero Y". Antes salía primero el ponderado y confundía.
+      const varios = (t.potreros_detalle || []).length > 1;
+      const titulo = varios ? `Ponderado de los ${t.potreros_detalle.length} potreros` : t.subtitulo;
+      const potreros = (t.potreros_detalle || []).map((p) => `<div class="lote-bloque lote-bloque-potrero">
         <h3>${esc(nombreUnidad(t.lote))} — Potrero ${esc(p.potrero)}</h3>
         ${panelesHtml([p.adultos, p.ninfas, p.loritos, p.lepidopteros], [p.adultos_sd, p.ninfas_sd, p.loritos_sd, p.lepidopteros_sd],
           [p.dano_coll || 0, p.dano_mol || 0, p.dano_hongos || 0, Math.max(p.pasto_sano || 0, 0)])}
         <p class="nota-puntos">${p.n_puntos === 1 ? "1 punto de muestreo (sin dispersión)." : `Ponderado de ${p.n_puntos} puntos de muestreo según sus zonas.`}</p>
       </div>`).join("");
+      return potreros + `<div class="lote-bloque${varios ? " lote-bloque-lote" : ""}">
+        <h3><button type="button" class="ver-detalle no-imprimir" onclick="document.getElementById('detalle${i}').showModal()">
+          ${esc(nombreUnidad(t.lote))}${titulo ? ` — ${esc(titulo)}` : ""} <span class="lupa">ver puntos</span>
+        </button><span class="solo-pdf">${esc(nombreUnidad(t.lote))}${titulo ? ` — ${esc(titulo)}` : ""}</span></h3>
+        ${detalleHtml(t, i)}
+        ${panelesHtml(valores, errores, D.tortas[i].valores)}
+        <p class="nota-puntos">${varios ? `Potreros ${esc(t.potreros_detalle.map((p) => p.potrero).join(", "))}. ` : ""}${nota}</p>
+      </div>`;
     }).join("") + (D.tabla_lotes.length <= 1 ? "" : `<div class="lote-bloque lote-bloque-promedio">
         <h3>Estado general de la finca</h3>
         ${panelesHtml(D.promedio_barras.valores, D.promedio_barras.errores, D.promedio_torta)}

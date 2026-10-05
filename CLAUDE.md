@@ -272,7 +272,7 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 ## 10. Estado al 4 de octubre de 2026
 
-- Última versión publicada: **v2.10**, `main` al día con `origin/main`.
+- Última versión publicada: **v2.11**, `main` al día con `origin/main`.
 - 84 pruebas pasando.
 - v65: el manejo agronómico (tipo de fumigación, volumen, orden y pH) de una visita **ya subida** se
   corrige en el Excel con `Graph.actualizarColumnasDonde` (cola: `manejo_puntos`), porque esos datos
@@ -286,6 +286,12 @@ curl -s https://mald32.github.io/visitas-tecnicas/version.json
 
 - v68: lectura y escritura del Excel **por títulos** de columna (el usuario reorganizó "Base de
   datos" para el muestreo por zonas y agregó abonos a Productividad).
+- **2.11**: el asterisco de los campos obligatorios queda en la misma línea del texto (en las filas
+  de dos campos cada parte de la etiqueta iba en su renglón: ahora texto + asterisco van en un
+  `<span>`). **Zona y punto en recuadros separados**: `#caja-zona` (nombre, %, área) y aparte
+  `#caja-punto` (borde verde, "Punto N · Potrero · Zona"). **Informe de lotes**: primero la gráfica
+  de cada potrero y después el ponderado del lote ("Lote X — Ponderado de los N potreros", fondo
+  azul), solo si hay 2+ potreros; con uno solo, una única gráfica "Lote X — Potrero Y".
 - **2.10**: **el último punto ya no se pierde** (bug real reportado varias veces): al salir por una
   pestaña con un punto escrito, `salirDeVisita` lo guarda como punto en su zona. El borrador del
   punto lleva `__zona`: `llenarPuntoSinGuardar` solo lo muestra en esa zona y `cerrarPuntoAbierto`

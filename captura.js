@@ -226,6 +226,8 @@ async function renderCaptura() {
     renderBotonesZonas();
   }
   el("caja-zona").hidden = !z;
+  el("caja-punto").hidden = !z;
+  el("punto-ubicacion").textContent = z ? ` · ${etiquetaDePotrero(p)} · ${etiquetaDeZona(z)}` : "";
   if (z) {
     const zonaSubida = filasDeZona(subidas, p, z).length > 0;
     ["nombre-zona", "pct-zona", "area-zona"].forEach((id) => { el(id).disabled = zonaSubida; });
